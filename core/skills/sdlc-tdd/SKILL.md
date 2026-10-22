@@ -28,7 +28,7 @@ user-invocable: true
 5. **REFACTOR**: with everything green, remove duplication and clarify names. Keep the tests green. Don't add features.
 6. **Repeat from 3** for the next behaviour. Never write the whole list of tests up front.
 7. **Prove it at the boundary.** If unit tests rely on mocks of the thing being changed, add one integration or e2e check at the real boundary (DB, HTTP, queue, browser), or name why it can't run.
-8. **Run each test command once, non-interactively, with a timeout.** No watch modes. Test runners must fail when zero tests are discovered (no pass-with-no-tests flags).
+8. **Run each test command once, non-interactively, with a timeout** (see `.sdlc/principles/prove-it-works.md` for portable timeouts). No watch modes. Test runners must fail when zero tests are discovered (no pass-with-no-tests flags).
 
 ## Rationalizations
 

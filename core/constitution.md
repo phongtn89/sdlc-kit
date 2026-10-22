@@ -11,7 +11,7 @@ Read the file in `.sdlc/principles/` before applying a principle. Cite the princ
 3. **evidence-over-claims**: no claim without evidence (command, output, revision). Skipped or unverified work is not done.
 4. **subtract-before-adding**: walk the decision ladder before adding code, types, files or dependencies.
 5. **thin-vertical-slices**: each task is one testable path end to end, with explicit blocking edges.
-6. **prove-it-works**: write the test first, watch it fail, then make it pass on the real surface.
+6. **prove-it-works**: write the test first, watch it fail, then make it pass on the real surface. Run commands once, non-interactively, with the runner's own timeout options (plain macOS has no `timeout`).
 7. **root-causes**: reproduce before explaining; make the smallest fix plus a regression test.
 8. **guard-context**: read only what the task needs, delegate wide searches, hand off cleanly.
 9. **fail-safe-keep-work**: on a blocker, checkpoint and stop. Never discard work or retry auth failures.

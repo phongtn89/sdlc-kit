@@ -28,7 +28,7 @@ disable-model-invocation: true
 
    | Track | Signals | Skills, in order |
    |---|---|---|
-   | T0 Trivial | No behaviour change (typo, docs, pin bump, config value) | do it → verify → `sdlc-ship` |
+   | T0 Trivial | No behaviour change (typo, docs, pin bump, config value) | do it → verify → offer `sdlc-ship` (don't commit unasked) |
    | T1 Bug | Observable wrong behaviour | `sdlc-debug` → `sdlc-review` → `sdlc-ship` |
    | T2 Change | One session, one seam, no contract, data-model, auth or tenant change | `sdlc-grill` (light) → mini-spec → `sdlc-tdd` → `sdlc-review` → `sdlc-ship` |
    | T3 Feature | New behaviour, an API, event or schema contract, a migration, security-sensitive, or more than one seam | `sdlc-specify` → `sdlc-clarify` → `sdlc-plan` → `sdlc-tasks` → `sdlc-analyze` → **human approval** → `sdlc-implement` → `sdlc-converge` → `sdlc-review` → `sdlc-ship` |

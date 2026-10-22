@@ -48,7 +48,7 @@ Start with **`/sdlc <task>`**. It looks at the code, picks a track and opens the
 
 | Track | When | Flow |
 |---|---|---|
-| T0 Trivial | No behaviour change | do → verify → ship |
+| T0 Trivial | No behaviour change | do → verify → offer ship |
 | T1 Bug | Wrong behaviour | `sdlc-debug` → review → ship |
 | T2 Change | One session, one seam, no contract, data or security change | grill (light) → mini-spec → `sdlc-tdd` → review → ship |
 | T3 Feature | Contract, data model, security, more than one seam | specify → clarify → plan → tasks → analyze → **approval** → implement → converge → review → ship |

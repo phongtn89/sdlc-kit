@@ -22,9 +22,9 @@ user-invocable: true
 ## Process
 
 1. **Check the branch.** Never commit straight to the default branch. If you're on it, create a feature branch (name it after the spec or issue), or ask. Don't rename an assigned branch.
-2. **Run the final gate on this exact revision**: the configured build, test, lint, typecheck and integration commands, each run once, non-interactively, with a timeout. Record each outcome. Anything failing or skipped is named, and blocks a "ready" claim.
+2. **Run the final gate on this exact revision**: the configured build, test, lint, typecheck and integration commands, each run once, non-interactively, with a timeout. Record each outcome. Anything failing or skipped is named, and blocks a "ready" claim. If a gate fails or is skipped, or you find a defect in the change yourself, **stop before any outward action and report it**, even if the push or PR was authorized up front. That authorization covered verified work, and this work isn't verified. A failure proven to exist before the change (the same failure on the base revision) can be shipped only if you say so explicitly and the user agrees.
 3. **Check the diff.** `git status` and `git diff --stat`: only the intended files. No secrets, debug output, `.only`, large generated noise or unrelated user changes. Stage explicit paths, never `git add -A` over unknown files.
-4. **Commit** in focused, conventional messages (`type(scope): summary`, then a body with the why). Add any attribution lines the repository requires.
+4. **Commit** only when the user asked to ship or commit. Otherwise show the proposed branch, files and message, and ask. Use focused, conventional messages (`type(scope): summary`, then a body with the why). Add any attribution lines the repository requires.
 5. **Write the PR** from `.sdlc/templates/pr.md`, or from the repository's own template:
    - Link the spec or issue.
    - Paste the verification commands with their real outcomes.

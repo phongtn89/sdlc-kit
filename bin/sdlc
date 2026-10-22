@@ -590,6 +590,7 @@ SCRIPT_RE = re.compile(r"^(test|lint|typecheck|build|integration|validate|check)
 SURFACES = [".specify", ".claude/skills", ".claude/agents", ".claude/commands", ".agents/skills",
             ".github/agents", ".github/prompts", ".codex", "skills-lock.json", "opencode.jsonc"]
 CRED_RE = re.compile(r"^([a-z][a-z0-9+.-]*://)[^/@]*@", re.I)
+BUILT_FROM_RE = re.compile(r"^Built from: `?([0-9a-f]{7,40})`?", re.M)
 
 
 def git_read(repo, *args):
@@ -622,7 +623,22 @@ def speckit_version(repo):
     return None
 
 
-def describe_repo(repo):
+def context_info(repo, ws):
+    """Freshness of the workspace's .sdlc/context/<repo>.md against the repo HEAD."""
+    rel = ".sdlc/context/%s.md" % os.path.basename(repo)
+    path = os.path.join(ws, *rel.split("/"))
+    if not os.path.isfile(path):
+        return None
+    m = BUILT_FROM_RE.search(read_text(path))
+    built = m.group(1) if m else None
+    behind = None
+    if built:
+        n = git_read(repo, "rev-list", "--count", built + "..HEAD")
+        behind = int(n) if n and n.isdigit() else None
+    return {"path": rel, "built_from": built, "stale": behind != 0, "commits_behind": behind}
+
+
+def describe_repo(repo, ws):
     pkg = {}
     if os.path.isfile(os.path.join(repo, "package.json")):
         try:
@@ -664,6 +680,7 @@ def describe_repo(repo):
         "agents_md_lines": line_count(os.path.join(repo, "AGENTS.md")),
         "claude_md_lines": line_count(os.path.join(repo, "CLAUDE.md")),
         "sdlc_version": sdlc_version,
+        "context": context_info(repo, ws),
     }
 
 
@@ -675,21 +692,24 @@ def cmd_discover(a, kit):
         if n == "node_modules" or os.path.islink(full) or not os.path.isdir(full):
             continue
         if os.path.exists(os.path.join(full, ".git")):
-            repos.append(describe_repo(full))
+            repos.append(describe_repo(full, ws))
     data = {"workspace": ws, "repos": repos}
     if a.json:
         return 0, [json.dumps(data, indent=2)]
     if not repos:
         return 0, ["no repos found under %s" % ws]
-    out = ["| Repo | Branch @ HEAD | Dirty | Package manager | Lockfiles | Scripts | CI | Specs (dup prefixes) | Spec Kit | Agent surfaces |",
-           "|---|---|---|---|---|---|---|---|---|---|"]
+    out = ["| Repo | Branch @ HEAD | Dirty | Package manager | Lockfiles | Scripts | CI | Specs (dup prefixes) | Spec Kit | Agent surfaces | Context |",
+           "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in repos:
         dups = ", ".join(sorted(r["specs"]["duplicates"])) or "-"
-        out.append("| %s | %s @ %s | %d | %s | %s | %s | %d | %d (%s) | %s | %s |" % (
+        c = r["context"]
+        ctx = "-" if c is None else ("STALE (%s behind)" % (c["commits_behind"] if c["commits_behind"] is not None else "?")
+                                     if c["stale"] else "fresh")
+        out.append("| %s | %s @ %s | %d | %s | %s | %s | %d | %d (%s) | %s | %s | %s |" % (
             r["name"], r["branch"] or "-", r["head"] or "-", r["dirty"], r["package_manager"] or "-",
             ", ".join(r["lockfiles"]) or "-", ", ".join(r["scripts"]) or ", ".join(r["manifests"]) or "-",
             r["ci_workflows"], r["specs"]["count"], dups, r["speckit_version"] or "-",
-            ", ".join(r["surfaces"]) or "-"))
+            ", ".join(r["surfaces"]) or "-", ctx))
     return 0, out
 
 
@@ -703,7 +723,7 @@ def lint_refs(kit, text, label, errors, kit_paths):
         if text[m.end():m.end() + 1] in ("*", "<"):
             continue  # glob or placeholder, not a concrete path
         ref = m.group(1).rstrip(".,;:").rstrip("/")
-        if not ref or ref in ("config.json", "lock.json", "workspace.md"):
+        if not ref or ref in ("config.json", "lock.json", "workspace.md") or ref.startswith("context"):
             continue
         if ref not in kit_paths:
             errors.append("%s: references missing .sdlc/%s" % (label, ref))

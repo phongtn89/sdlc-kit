@@ -555,6 +555,25 @@ class DiscoverTests(unittest.TestCase):
         self.assertIsNone(lib["package_manager"])
         self.assertEqual(lib["specs"]["count"], 0)
 
+    def test_context_freshness(self):
+        self.build()
+        api = os.path.join(self.ws, "api")
+        head = subprocess.run(["git", "-C", api, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        ctx = os.path.join(self.ws, ".sdlc", "context")
+        os.makedirs(ctx)
+        with open(os.path.join(ctx, "api.md"), "w") as f:
+            f.write("# Context: api\n\nBuilt from: `%s` (main) on 2026-10-22\n" % head[:12])
+        data = json.loads(self.discover("--json")[1])
+        api_r, lib_r = data["repos"]
+        self.assertEqual(api_r["context"], {"path": ".sdlc/context/api.md", "built_from": head[:12],
+                                            "stale": False, "commits_behind": 0})
+        self.assertIsNone(lib_r["context"])
+        git(api, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "next")
+        api_r = json.loads(self.discover("--json")[1])["repos"][0]
+        self.assertTrue(api_r["context"]["stale"])
+        self.assertEqual(api_r["context"]["commits_behind"], 1)
+        self.assertIn("STALE", self.discover()[1])
+
     def test_markdown_table(self):
         self.build()
         code, out, _ = self.discover()

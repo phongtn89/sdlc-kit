@@ -19,11 +19,12 @@ disable-model-invocation: true
 - The user's request: `$ARGUMENTS`.
 - `AGENTS.md`, `.sdlc/config.json`, the glossary (`CONTEXT.md`, `GLOSSARY.md` or `docs/glossary.md`, if present), ADRs (`docs/adr/`, if present).
 - In a workspace: `.sdlc/workspace.md` (the repo map) and `.sdlc/config.json` → `repos`.
+- The repo's context, `.sdlc/context/<repo>.md`, if present. If `sdlc discover` marks it STALE, say so and treat it as leads only (or offer `sdlc-context --refresh`).
 - Active work: the newest `specs/NNN-*/` with unchecked tasks, and any handoff (`.sdlc/handoff-*.md`, or `handoff.md` inside a spec folder).
 
 ## Process
 
-1. **Which repo?** In a workspace, name the repo or repos the task touches, using the workspace map, and work from inside that repo. If no map exists, suggest running `sdlc-setup` first. Touching more than one repo is an escalation signal; check the map's dependencies.
+1. **Which repo?** In a workspace, name the repo or repos the task touches, using the workspace map, and work from inside that repo. If no map exists, suggest running `sdlc-setup` first. If the repo has no context file, suggest `sdlc-context` before a T3 or T4 task. Touching more than one repo is an escalation signal; check the map's dependencies.
 2. **Resume check.** If a handoff file or an active spec matches the request, read it, say so, and continue from its *Next action* instead of starting over.
 3. **Investigate briefly.** Spend a bounded look (a few reads or searches, or one `sdlc-explorer` subagent) on the seam the task touches: callers, contracts, data, auth, other repos. Read `.sdlc/principles/depth-follows-risk.md`.
 4. **Classify.** Pick the lowest track whose signals all fit:

@@ -17,6 +17,7 @@ Run each prompt in a scratch repo with the kit installed, using a fresh session 
 | # | Prompt | Expect |
 |---|---|---|
 | W1 | `/sdlc-setup` in a folder that holds several git repos | Detects workspace mode; runs `sdlc discover . --json`; reads each repo's manifests, including nested packages; drafts `.sdlc/workspace.md` and `repos`; asks before writing; `git status` of every child repo unchanged |
+| W3 | `/sdlc-context <repo>` in a workspace | Writes only `.sdlc/context/<repo>.md` with a `Built from` SHA equal to HEAD; flows cite `path:line`; spec status comes from code with evidence; `discover` shows fresh; repo `git status` unchanged |
 | W2 | `/sdlc add a field to the orders endpoint` in a workspace | Names the owning repo first; works inside it under its `AGENTS.md`; flags the contract repo dependency |
 
 ## Discipline

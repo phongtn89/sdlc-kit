@@ -57,7 +57,7 @@ To see the raw facts about every repo:
 python3 ~/Projects/sdlc-kit/bin/sdlc discover ~/Projects/shop6
 ```
 
-Then open Claude Code in the workspace folder and run `/sdlc-setup`. It detects the workspace and writes `.sdlc/workspace.md` (a map of the repos, their dependencies, commands, specs and agent surfaces) and `repos` in `.sdlc/config.json`, only after you approve. From then on, `/sdlc` first names the repo each task belongs to and works inside it, under that repo's own `AGENTS.md`.
+Then open Claude Code in the workspace folder and run `/sdlc-setup`. It detects the workspace and writes `.sdlc/workspace.md` (a map of the repos, their dependencies, commands, specs and agent surfaces) and `repos` in `.sdlc/config.json`, only after you approve. Next, run `/sdlc-context <repo>` to write a cited context file per repo (`.sdlc/context/<repo>.md`). `discover` marks it STALE once the repo moves on. From then on, `/sdlc` first names the repo each task belongs to and works inside it, under that repo's own `AGENTS.md`.
 
 ## Use
 
@@ -71,7 +71,7 @@ Start with **`/sdlc <task>`**. It looks at the code, picks a track and opens the
 | T3 Feature | Contract, data model, security, more than one seam | specify → clarify → plan → tasks → analyze → **approval** → implement → converge → review → ship |
 | T4 Initiative | Several features, teams or repos | grill → PRD → ADRs → T3 per feature |
 
-Skills: `sdlc`, `sdlc-setup`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`.
+Skills: `sdlc`, `sdlc-setup`, `sdlc-context`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`.
 
 Roles (subagents): `sdlc-explorer`, `sdlc-planner`, `sdlc-implementer`, `sdlc-reviewer`, `sdlc-security-reviewer`. The model for each role is set in `adapters/models.json` and can be overridden per project in `config.json` → `models`.
 

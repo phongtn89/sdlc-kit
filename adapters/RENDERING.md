@@ -25,6 +25,7 @@ Paths are relative to the project root. `<P>` = role file stem.
 | Instructions | Managed block in `AGENTS.md`; `CLAUDE.md` must import `@AGENTS.md` (see below) | Managed block in `.github/copilot-instructions.md` |
 | Shared docs | `.sdlc/constitution.md`, `.sdlc/principles/`, `.sdlc/checklists/`, `.sdlc/templates/` | same (written once) |
 | Project config | `.sdlc/config.json`: created from `adapters/config.default.json` if absent, **never overwritten, never hashed**. In a workspace, `sdlc-setup` adds `repos: {<name>: {path, spec_dir, commands}}`. | same |
+| Repo context | `.sdlc/context/<repo>.md`: written by `sdlc-context` from `.sdlc/templates/context.md`, starting with a `Built from: \`<sha>\`` line. Project-owned, not hashed. `discover` reports `context: {path, built_from, stale, commits_behind}` per repo. | same |
 | Workspace map | `.sdlc/workspace.md`: written by `sdlc-setup` in workspace mode from `.sdlc/templates/workspace.md`. Project-owned, not hashed. | same |
 | Lock | `.sdlc/lock.json` | same |
 

@@ -1,0 +1,10 @@
+{
+  "claude": {
+    "explorer": "haiku",
+    "planner": "opus",
+    "implementer": "sonnet",
+    "reviewer": "opus",
+    "security-reviewer": "opus"
+  },
+  "copilot": {}
+}

@@ -1,0 +1,743 @@
+#!/usr/bin/env python3
+"""sdlc: render the portable SDLC agent kit into a project (see adapters/RENDERING.md)."""
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+
+BEGIN = "<!-- BEGIN sdlc-kit (managed; edit .sdlc/config.json or the kit instead) -->"
+END = "<!-- END sdlc-kit -->"
+BLOCK_RE = re.compile(re.escape(BEGIN) + r"\n(.*?)\n" + re.escape(END), re.S)
+IMPORT_RE = re.compile(r"^[ \t]*@AGENTS\.md[ \t]*$", re.M)
+ALL_TARGETS = ["claude", "copilot"]
+TRACKS = [
+    ("T0 Trivial", "no behaviour change: do, verify."),
+    ("T1 Bug", "reproduce, root cause, failing test, fix, verify (sdlc-debug)."),
+    ("T2 Change", "one session, one seam, no contract/data/security change: mini-spec, TDD, review, ship."),
+    ("T3 Feature", "new behaviour, contract, data model, security-sensitive or >1 seam: specify, clarify, plan, tasks, analyze, human approval, implement, converge, review, ship."),
+    ("T4 Initiative", "several features/teams/repos: grill, prd, ADRs, split into T3 features."),
+]
+SKILL_KEYS = {"name", "description", "argument-hint", "user-invocable", "disable-model-invocation"}
+SKILL_BOOLS = {"user-invocable", "disable-model-invocation"}
+ROLE_KEYS = {"name", "description", "access"}
+SKILL_SECTIONS = ["## When to use", "## Process", "## Rationalizations", "## Red flags", "## Verification"]
+SHARED_DIRS = ["checklists", "templates"]
+
+
+class SdlcError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------- helpers
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def read_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def read_text(path):
+    return read_bytes(path).decode("utf-8")
+
+
+def load_json(path, what):
+    try:
+        return json.loads(read_text(path))
+    except (OSError, ValueError) as e:
+        raise SdlcError("cannot read %s (%s): %s" % (what, path, e))
+
+
+def version_tuple(v):
+    try:
+        return tuple(int(x) for x in v.strip().split("."))
+    except ValueError:
+        return (0,)
+
+
+def parse_frontmatter(text):
+    """Strict subset. Returns (dict key -> value, body, errors).
+    Values: str, or bool for bare true/false. Quoted strings are unescaped."""
+    errors = []
+    if not text.startswith("---\n"):
+        return {}, text, ["missing frontmatter"]
+    lines = text.split("\n")
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i] == "---":
+            end = i
+            break
+    if end is None:
+        return {}, text, ["unterminated frontmatter"]
+    fm = {}
+    for n, line in enumerate(lines[1:end], 2):
+        if not line.strip():
+            continue
+        m = re.match(r"^([A-Za-z][A-Za-z0-9_-]*):[ ]*(.*?)\s*$", line)
+        if not m:
+            errors.append("line %d: not 'key: value' (lists are not allowed)" % n)
+            continue
+        key, raw = m.groups()
+        if key in fm:
+            errors.append("line %d: duplicate key %s" % (n, key))
+            continue
+        if raw.startswith('"'):
+            q = re.match(r'^"((?:[^"\\]|\\.)*)"$', raw)
+            if not q:
+                errors.append("line %d: malformed quoted string" % n)
+                continue
+            fm[key] = re.sub(r"\\(.)", r"\1", q.group(1))
+        elif raw in ("true", "false"):
+            fm[key] = raw == "true"
+        elif raw == "" or raw[0] in "[{-|>&*!":
+            errors.append("line %d: %s must be a bare word, true/false or a quoted string" % (n, key))
+        elif '"' in raw:
+            errors.append("line %d: stray quote in %s" % (n, key))
+        else:
+            fm[key] = raw
+    body = "\n".join(lines[end + 1:])
+    return fm, body, errors
+
+
+def yaml_scalar(v):
+    unsafe = (": " in v or " #" in v or v.endswith(":") or not v or v[0] in "-?:,[]{}#&*!|>'\"%@`"
+              or v in ("true", "false"))
+    return json.dumps(v, ensure_ascii=False) if unsafe else v
+
+
+def safe_path(target, rel):
+    """Join rel under target; refuse anything that would escape it."""
+    if not isinstance(rel, str) or not rel or os.path.isabs(rel) or "\\" in rel:
+        raise SdlcError("unsafe path: %r" % (rel,))
+    parts = rel.split("/")
+    if any(p in ("", ".", "..") for p in parts):
+        raise SdlcError("unsafe path: %r" % (rel,))
+    full = os.path.join(target, *parts)
+    real_t = os.path.realpath(target)
+    real_f = os.path.realpath(full)
+    if real_f != real_t and not real_f.startswith(real_t + os.sep):
+        raise SdlcError("path escapes target: %r" % (rel,))
+    return full
+
+
+def write_file(target, rel, data):
+    full = safe_path(target, rel)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "wb") as f:
+        f.write(data)
+
+
+def prune_dirs(target, rel):
+    d = os.path.dirname(safe_path(target, rel))
+    real_t = os.path.realpath(target)
+    while os.path.realpath(d) != real_t and os.path.realpath(d).startswith(real_t + os.sep):
+        try:
+            os.rmdir(d)
+        except OSError:
+            break
+        d = os.path.dirname(d)
+
+
+def check_target(path):
+    if not os.path.isdir(path):
+        raise SdlcError("target is not an existing directory: %s" % path)
+    return os.path.abspath(path)
+
+
+def list_files(root):
+    out = []
+    for dp, dn, fn in os.walk(root):
+        dn.sort()
+        for f in sorted(fn):
+            full = os.path.join(dp, f)
+            out.append(os.path.relpath(full, root).replace(os.sep, "/"))
+    return sorted(out)
+
+
+def read_lock(target):
+    p = os.path.join(target, ".sdlc", "lock.json")
+    if not os.path.isfile(p):
+        return None
+    lock = load_json(p, "lock")
+    for k in ("files", "blocks"):
+        if not isinstance(lock.get(k), dict):
+            raise SdlcError("invalid lock: %s" % k)
+    lock.setdefault("targets", [])
+    lock.setdefault("modules", [])
+    for rel in list(lock["files"]) + list(lock["blocks"]):
+        safe_path(target, rel)
+    return lock
+
+
+def read_config(target, kit=None):
+    p = os.path.join(target, ".sdlc", "config.json")
+    if os.path.isfile(p):
+        return load_json(p, "config.json")
+    if kit:
+        return load_json(os.path.join(kit, "adapters", "config.default.json"), "default config")
+    return {}
+
+
+def extract_block(text):
+    m = BLOCK_RE.search(text)
+    return (m.group(1), m) if m else (None, None)
+
+
+# ---------------------------------------------------------------- kit loading
+
+def source_dirs(kit, modules):
+    return [os.path.join(kit, "core")] + [os.path.join(kit, "modules", m) for m in modules]
+
+
+def load_kit(kit, modules):
+    """Return dict with skills, roles, shared docs (all as bytes) from core + modules."""
+    for m in modules:
+        if not os.path.isdir(os.path.join(kit, "modules", m)):
+            raise SdlcError("unknown module: %s" % m)
+    skills, roles, shared = {}, {}, {}
+    cpath = os.path.join(kit, "core", "constitution.md")
+    if not os.path.isfile(cpath):
+        raise SdlcError("kit has no core/constitution.md")
+    constitution = read_bytes(cpath)
+    shared[".sdlc/constitution.md"] = constitution
+    pdir = os.path.join(kit, "core", "principles")
+    if os.path.isdir(pdir):
+        for f in list_files(pdir):
+            shared[".sdlc/principles/" + f] = read_bytes(os.path.join(pdir, f))
+    for src in source_dirs(kit, modules):
+        sdir = os.path.join(src, "skills")
+        if os.path.isdir(sdir):
+            for name in sorted(os.listdir(sdir)):
+                d = os.path.join(sdir, name)
+                if os.path.isdir(d) and os.path.isfile(os.path.join(d, "SKILL.md")):
+                    files = {f: read_bytes(os.path.join(d, f)) for f in list_files(d)}
+                    fm, _, _ = parse_frontmatter(files["SKILL.md"].decode("utf-8"))
+                    skills[name] = {"files": files, "description": str(fm.get("description", ""))}
+        rdir = os.path.join(src, "roles")
+        if os.path.isdir(rdir):
+            for f in sorted(os.listdir(rdir)):
+                if f.endswith(".md"):
+                    text = read_text(os.path.join(rdir, f))
+                    fm, body, errs = parse_frontmatter(text)
+                    if errs:
+                        raise SdlcError("role %s: %s" % (f, "; ".join(errs)))
+                    roles[f[:-3]] = {"fm": fm, "body": body}
+        for kind in SHARED_DIRS:
+            d = os.path.join(src, kind)
+            if os.path.isdir(d):
+                for f in list_files(d):
+                    shared[".sdlc/%s/%s" % (kind, f)] = read_bytes(os.path.join(d, f))
+    return {"skills": skills, "roles": roles, "shared": shared, "constitution": constitution.decode("utf-8")}
+
+
+def first_sentence(desc):
+    desc = " ".join(desc.split())
+    m = re.match(r"^(.*?[.!?])(\s|$)", desc)
+    return (m.group(1) if m else desc).rstrip(".")
+
+
+def block_inner(data, config):
+    lines = data["constitution"].split("\n")
+    idx = next((i for i, l in enumerate(lines) if l.startswith("# ")), -1)
+    body = "\n".join(lines[idx + 1:]).strip("\n")
+    out = [body, "", "## Index", "", "### Tracks", "", "| Track | Path |", "|---|---|"]
+    out += ["| %s | %s |" % t for t in TRACKS]
+    out += ["", "### Skills", ""]
+    out += ["- **%s** — %s" % (n, first_sentence(data["skills"][n]["description"])) for n in sorted(data["skills"])]
+    out += ["", "### Roles", ""]
+    out += ["- **sdlc-%s** — %s" % (r, data["roles"][r]["fm"].get("description", "")) for r in sorted(data["roles"])]
+    extra = [str(x) for x in config.get("extra_instructions", []) or []]
+    if extra:
+        out += ["", "## Project rules", ""] + ["- " + x for x in extra]
+    return "\n".join(out)
+
+
+def render_role(name, role, target, config, models):
+    fm, body = role["fm"], role["body"]
+    ro = fm.get("access") == "read-only"
+    lines = ["---", "name: sdlc-%s" % name, "description: %s" % yaml_scalar(str(fm.get("description", "")))]
+    both = "claude" in config["_targets"]
+    if target == "claude":
+        if ro:
+            lines.append("tools: Read, Grep, Glob")
+        model = (config.get("models", {}).get("claude", {}) or {}).get(name) or models.get("claude", {}).get(name)
+        if model:
+            lines.append("model: %s" % model)
+    else:
+        lines.append("tools: ['read', 'search']" if ro else "tools: ['read', 'search', 'edit', 'execute', 'todo']")
+        model = (config.get("models", {}).get("copilot", {}) or {}).get(name) or models.get("copilot", {}).get(name)
+        if model:
+            lines.append("model: %s" % model)
+        if both:
+            lines.append("target: github-copilot")
+    lines.append("---")
+    return ("\n".join(lines) + "\n" + body).encode("utf-8")
+
+
+def render(kit, targets, modules, config):
+    """Return (files {rel: bytes}, blocks {rel: inner})."""
+    data = load_kit(kit, modules)
+    models = load_json(os.path.join(kit, "adapters", "models.json"), "models.json")
+    cfg = dict(config)
+    cfg["_targets"] = targets
+    files = dict(data["shared"])
+    blocks = {}
+    inner = block_inner(data, config)
+    for t in targets:
+        if t == "claude":
+            for n, s in data["skills"].items():
+                for f, b in s["files"].items():
+                    files[".claude/skills/%s/%s" % (n, f)] = b
+            for r, role in data["roles"].items():
+                files[".claude/agents/sdlc-%s.md" % r] = render_role(r, role, "claude", cfg, models)
+            blocks["AGENTS.md"] = inner
+        else:
+            if "claude" not in targets:
+                for n, s in data["skills"].items():
+                    for f, b in s["files"].items():
+                        files[".github/skills/%s/%s" % (n, f)] = b
+            for r, role in data["roles"].items():
+                files[".github/agents/sdlc-%s.agent.md" % r] = render_role(r, role, "copilot", cfg, models)
+            blocks[".github/copilot-instructions.md"] = inner
+    return files, blocks
+
+
+# ---------------------------------------------------------------- install / update
+
+def apply_block(text, inner):
+    new = BEGIN + "\n" + inner + "\n" + END
+    if BLOCK_RE.search(text):
+        return BLOCK_RE.sub(lambda m: new, text, count=1)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    if text:
+        text += "\n"
+    return text + new + "\n"
+
+
+def remove_block(text):
+    m = BLOCK_RE.search(text)
+    if not m:
+        return text
+    start, end = m.start(), m.end()
+    if text[end:end + 1] == "\n":
+        end += 1
+    if start >= 2 and text[start - 2:start] == "\n\n":
+        start -= 1
+    elif start == 1 and text[0] == "\n":
+        start = 0
+    return text[:start] + text[end:]
+
+
+def plan_claude_md(target, old):
+    """Decide how CLAUDE.md gets its @AGENTS.md import. Returns (files_add, blocks_add)."""
+    rel = "CLAUDE.md"
+    full = safe_path(target, rel)
+    if rel in old["blocks"]:
+        return {}, {rel: "@AGENTS.md"}
+    if not os.path.exists(full):
+        return {rel: b"@AGENTS.md\n"}, {}
+    cur = read_bytes(full)
+    if IMPORT_RE.search(cur.decode("utf-8", "replace")):
+        return ({rel: cur} if rel in old["files"] else {}), {}
+    return {}, {rel: "@AGENTS.md"}
+
+
+def sync(target, kit, targets, modules, force, first):
+    """Render into target. Returns (exit_code, report lines)."""
+    old = read_lock(target) or {"files": {}, "blocks": {}}
+    config = read_config(target, kit)
+    files, blocks = render(kit, targets, modules, config)
+    if "claude" in targets:
+        f_add, b_add = plan_claude_md(target, old)
+        files.update(f_add)
+        blocks.update(b_add)
+    out = []
+    written = skipped = removed = 0
+    new_lock_files, new_lock_blocks = {}, {}
+    conflicts = []
+    actions = []  # (kind, rel, payload)
+
+    for rel in sorted(files):
+        data = files[rel]
+        h = sha(data)
+        full = safe_path(target, rel)
+        exists = os.path.isfile(full)
+        cur = sha(read_bytes(full)) if exists else None
+        if exists and cur == h:
+            new_lock_files[rel] = h
+            continue
+        if exists and not force:
+            if rel in old["files"]:
+                if cur != old["files"][rel]:
+                    out.append("SKIP %s (modified locally)" % rel)
+                    skipped += 1
+                    new_lock_files[rel] = old["files"][rel]
+                    continue
+            else:
+                conflicts.append(rel)
+                continue
+        actions.append(("write", rel, data))
+        new_lock_files[rel] = h
+
+    if first and conflicts:
+        return 2, ["CONFLICT %s (exists, not managed; use --force)" % c for c in conflicts] + \
+            ["conflicts: %d, nothing written" % len(conflicts)]
+    for c in conflicts:
+        out.append("SKIP %s (exists, not managed; use --force)" % c)
+        skipped += 1
+
+    for rel in sorted(blocks):
+        inner = blocks[rel]
+        full = safe_path(target, rel)
+        text = read_text(full) if os.path.isfile(full) else ""
+        cur_inner, _ = extract_block(text)
+        h = sha(inner.encode("utf-8"))
+        if cur_inner is not None and cur_inner == inner:
+            new_lock_blocks[rel] = h
+            continue
+        if not force and rel in old["blocks"]:
+            if cur_inner is None or sha(cur_inner.encode("utf-8")) != old["blocks"][rel]:
+                out.append("SKIP %s (managed block modified locally)" % rel)
+                skipped += 1
+                new_lock_blocks[rel] = old["blocks"][rel]
+                continue
+        actions.append(("block", rel, inner))
+        new_lock_blocks[rel] = h
+
+    for rel in sorted(old["files"]):
+        if rel in files:
+            continue
+        full = safe_path(target, rel)
+        if not os.path.isfile(full):
+            continue
+        if sha(read_bytes(full)) == old["files"][rel] or force:
+            actions.append(("remove", rel, None))
+        else:
+            out.append("KEPT %s (modified locally, no longer managed)" % rel)
+    for rel in sorted(old["blocks"]):
+        if rel not in blocks:
+            actions.append(("unblock", rel, None))
+
+    if not os.path.exists(os.path.join(target, ".sdlc", "config.json")):
+        write_file(target, ".sdlc/config.json", read_bytes(os.path.join(kit, "adapters", "config.default.json")))
+        written += 1
+    for kind, rel, payload in actions:
+        if kind == "write":
+            write_file(target, rel, payload)
+            written += 1
+        elif kind == "block":
+            full = safe_path(target, rel)
+            text = read_text(full) if os.path.isfile(full) else ""
+            write_file(target, rel, apply_block(text, payload).encode("utf-8"))
+            written += 1
+        elif kind == "remove":
+            os.remove(safe_path(target, rel))
+            prune_dirs(target, rel)
+            removed += 1
+        else:
+            if drop_block(target, rel):
+                removed += 1
+    lock = {"kit_version": read_text(os.path.join(kit, "VERSION")).strip(), "targets": targets,
+            "modules": modules, "files": new_lock_files, "blocks": new_lock_blocks}
+    write_file(target, ".sdlc/lock.json", (json.dumps(lock, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+    out.append("sdlc: written %d, skipped %d, removed %d" % (written, skipped, removed))
+    return (2 if skipped else 0), out
+
+
+def drop_block(target, rel):
+    full = safe_path(target, rel)
+    if not os.path.isfile(full):
+        return False
+    text = read_text(full)
+    if not BLOCK_RE.search(text):
+        return False
+    new = remove_block(text)
+    if new.strip():
+        write_file(target, rel, new.encode("utf-8"))
+    else:
+        os.remove(full)
+        prune_dirs(target, rel)
+    return True
+
+
+def parse_list(s, allowed=None, what="value"):
+    items = sorted({x.strip() for x in s.split(",") if x.strip()})
+    if allowed is not None:
+        bad = [i for i in items if i not in allowed]
+        if bad:
+            raise SdlcError("unknown %s: %s" % (what, ", ".join(bad)))
+    return items
+
+
+def cmd_install(a, kit):
+    target = check_target(a.dir)
+    lock = read_lock(target)
+    if a.targets is not None:
+        targets = parse_list(a.targets, ALL_TARGETS, "target")
+    else:
+        targets = lock["targets"] if lock else list(ALL_TARGETS)
+    modules = parse_list(a.modules, None, "module") if a.modules is not None else (lock["modules"] if lock else [])
+    if not targets:
+        raise SdlcError("no targets selected")
+    return sync(target, kit, targets, modules, a.force, lock is None)
+
+
+def cmd_update(a, kit):
+    target = check_target(a.dir)
+    lock = read_lock(target)
+    if lock is None:
+        raise SdlcError("not installed (no .sdlc/lock.json); run install")
+    return sync(target, kit, lock["targets"], lock["modules"], a.force, False)
+
+
+# ---------------------------------------------------------------- check / uninstall / next-spec
+
+def spec_dirs(target, config):
+    sd = config.get("spec_dir", "specs") or "specs"
+    d = safe_path(target, sd.strip("/"))
+    if not os.path.isdir(d):
+        return []
+    return sorted(n for n in os.listdir(d) if os.path.isdir(os.path.join(d, n)) and re.match(r"^\d{3}-", n))
+
+
+def cmd_check(a, kit):
+    target = check_target(a.dir)
+    lock = read_lock(target)
+    if lock is None:
+        raise SdlcError("not installed (no .sdlc/lock.json)")
+    out, drift = [], False
+    for rel in sorted(lock["files"]):
+        full = safe_path(target, rel)
+        if not os.path.isfile(full):
+            out.append("MISSING %s" % rel)
+            drift = True
+        elif sha(read_bytes(full)) != lock["files"][rel]:
+            if rel == "CLAUDE.md" and IMPORT_RE.search(read_text(full)):
+                continue
+            out.append("MODIFIED %s" % rel)
+            drift = True
+    for rel in sorted(lock["blocks"]):
+        full = safe_path(target, rel)
+        if not os.path.isfile(full):
+            out.append("MISSING %s" % rel)
+            drift = True
+            continue
+        inner, _ = extract_block(read_text(full))
+        if inner is None:
+            out.append("DRIFT %s: managed block missing" % rel)
+            drift = True
+        elif sha(inner.encode("utf-8")) != lock["blocks"][rel]:
+            out.append("DRIFT %s: managed block edited" % rel)
+            drift = True
+    groups = {}
+    for n in spec_dirs(target, read_config(target)):
+        groups.setdefault(n[:3], []).append(n)
+    for prefix in sorted(groups):
+        if len(groups[prefix]) > 1:
+            out.append("DUPLICATE-SPEC %s: %s" % (prefix, ", ".join(groups[prefix])))
+    kv = read_text(os.path.join(kit, "VERSION")).strip()
+    lv = str(lock.get("kit_version", "0"))
+    if version_tuple(lv) < version_tuple(kv):
+        out.append("OUTDATED lock %s < kit %s (run update)" % (lv, kv))
+    if not out:
+        out.append("ok")
+    return (1 if drift else 0), out
+
+
+def cmd_uninstall(a, kit):
+    target = check_target(a.dir)
+    lock = read_lock(target)
+    if lock is None:
+        raise SdlcError("not installed (no .sdlc/lock.json)")
+    out, removed = [], 0
+    for rel in sorted(lock["files"]):
+        full = safe_path(target, rel)
+        if not os.path.isfile(full):
+            continue
+        if sha(read_bytes(full)) == lock["files"][rel]:
+            os.remove(full)
+            prune_dirs(target, rel)
+            removed += 1
+        else:
+            out.append("KEPT %s (modified locally)" % rel)
+    for rel in sorted(lock["blocks"]):
+        if drop_block(target, rel):
+            removed += 1
+    os.remove(safe_path(target, ".sdlc/lock.json"))
+    prune_dirs(target, ".sdlc/lock.json")
+    out.append("sdlc: removed %d, kept config.json" % removed)
+    return 0, out
+
+
+def cmd_next_spec(a, kit):
+    target = check_target(a.dir)
+    nums = [int(n[:3]) for n in spec_dirs(target, read_config(target))]
+    return 0, ["%03d" % (max(nums) + 1 if nums else 1)]
+
+
+# ---------------------------------------------------------------- lint
+
+REF_RE = re.compile(r"\.sdlc/([A-Za-z0-9_./-]*)")
+
+
+def lint_refs(kit, text, label, errors, kit_paths):
+    for m in REF_RE.finditer(text):
+        if text[m.end():m.end() + 1] in ("*", "<"):
+            continue  # glob or placeholder, not a concrete path
+        ref = m.group(1).rstrip(".,;:").rstrip("/")
+        if not ref or ref == "config.json":
+            continue
+        if ref not in kit_paths:
+            errors.append("%s: references missing .sdlc/%s" % (label, ref))
+
+
+def kit_sdlc_paths(kit):
+    paths = {"constitution.md"}
+
+    def add(prefix, root):
+        if os.path.isdir(root):
+            paths.add(prefix)
+            for f in list_files(root):
+                paths.add(prefix + "/" + f)
+                parts = f.split("/")
+                for i in range(1, len(parts)):
+                    paths.add(prefix + "/" + "/".join(parts[:i]))
+
+    add("principles", os.path.join(kit, "core", "principles"))
+    mods = os.path.join(kit, "modules")
+    roots = [os.path.join(kit, "core")]
+    if os.path.isdir(mods):
+        roots += [os.path.join(mods, m) for m in sorted(os.listdir(mods))]
+    for r in roots:
+        for k in SHARED_DIRS:
+            add(k, os.path.join(r, k))
+    return paths
+
+
+def lint_frontmatter(fm, errs, label, allowed, errors):
+    errors += ["%s: %s" % (label, e) for e in errs]
+    for k in fm:
+        if k not in allowed:
+            errors.append("%s: unknown frontmatter key %s" % (label, k))
+
+
+def cmd_lint(a, kit):
+    errors = []
+    paths = kit_sdlc_paths(kit)
+    roots = [os.path.join(kit, "core")]
+    mods = os.path.join(kit, "modules")
+    if os.path.isdir(mods):
+        roots += [os.path.join(mods, m) for m in sorted(os.listdir(mods)) if os.path.isdir(os.path.join(mods, m))]
+    if not os.path.isfile(os.path.join(kit, "core", "constitution.md")):
+        errors.append("core/constitution.md: missing")
+    if not os.path.isfile(os.path.join(kit, "VERSION")):
+        errors.append("VERSION: missing")
+    for root in roots:
+        rl = os.path.relpath(root, kit)
+        sdir = os.path.join(root, "skills")
+        if os.path.isdir(sdir):
+            for name in sorted(os.listdir(sdir)):
+                d = os.path.join(sdir, name)
+                if not os.path.isdir(d):
+                    continue
+                label = "%s/skills/%s/SKILL.md" % (rl, name)
+                sk = os.path.join(d, "SKILL.md")
+                if not os.path.isfile(sk):
+                    errors.append("%s: missing" % label)
+                    continue
+                text = read_text(sk)
+                fm, _, errs = parse_frontmatter(text)
+                lint_frontmatter(fm, errs, label, SKILL_KEYS, errors)
+                if fm.get("name") != name:
+                    errors.append("%s: name %r must equal folder %r" % (label, fm.get("name"), name))
+                desc = fm.get("description")
+                if not isinstance(desc, str) or not desc:
+                    errors.append("%s: description required" % label)
+                elif len(desc) > 1024:
+                    errors.append("%s: description exceeds 1024 chars" % label)
+                for k in SKILL_BOOLS:
+                    if k in fm and not isinstance(fm[k], bool):
+                        errors.append("%s: %s must be true or false" % (label, k))
+                if "argument-hint" in fm and not isinstance(fm["argument-hint"], str):
+                    errors.append("%s: argument-hint must be a string" % label)
+                present = {l.rstrip() for l in text.split("\n")}
+                for sec in SKILL_SECTIONS:
+                    if sec not in present:
+                        errors.append("%s: missing section '%s'" % (label, sec))
+                n = len(text.split("\n")) - (1 if text.endswith("\n") else 0)
+                if n > 200:
+                    errors.append("%s: %d lines (max 200)" % (label, n))
+                for f in list_files(d):
+                    if f.endswith(".md"):
+                        lint_refs(kit, read_text(os.path.join(d, f)), "%s/skills/%s/%s" % (rl, name, f), errors, paths)
+        rdir = os.path.join(root, "roles")
+        if os.path.isdir(rdir):
+            for f in sorted(os.listdir(rdir)):
+                if not f.endswith(".md"):
+                    continue
+                label = "%s/roles/%s" % (rl, f)
+                text = read_text(os.path.join(rdir, f))
+                fm, _, errs = parse_frontmatter(text)
+                lint_frontmatter(fm, errs, label, ROLE_KEYS, errors)
+                if fm.get("name") != f[:-3]:
+                    errors.append("%s: name %r must equal file stem %r" % (label, fm.get("name"), f[:-3]))
+                if not isinstance(fm.get("description"), str) or not fm.get("description"):
+                    errors.append("%s: description required" % label)
+                if fm.get("access") not in ("read-only", "full"):
+                    errors.append("%s: access must be read-only or full" % label)
+                lint_refs(kit, text, label, errors, paths)
+    for e in errors:
+        print("ERROR " + e)
+    print("lint: %s" % ("%d error(s)" % len(errors) if errors else "ok"))
+    return (1 if errors else 0), None
+
+
+# ---------------------------------------------------------------- main
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="sdlc", description="Render the sdlc-kit into a project.")
+    p.add_argument("--kit", help="kit root (default: parent of bin/)")
+    sub = p.add_subparsers(dest="cmd", metavar="command")
+    sub.required = True
+
+    def add(name, fn, help_, dir_=True):
+        sp = sub.add_parser(name, help=help_, description=help_)
+        sp.add_argument("--kit", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        if dir_:
+            sp.add_argument("dir", help="project directory (must exist)")
+        sp.set_defaults(fn=fn)
+        return sp
+
+    sp = add("install", cmd_install, "Render the kit into a project (acts as update if already installed).")
+    sp.add_argument("--targets", help="comma list of: claude,copilot (default: both, or lock)")
+    sp.add_argument("--modules", help="comma list of kit modules, e.g. qa")
+    sp.add_argument("--force", action="store_true", help="overwrite conflicting or locally modified files")
+    sp = add("update", cmd_update, "Re-render using the targets and modules in the lock.")
+    sp.add_argument("--force", action="store_true", help="overwrite locally modified files")
+    add("check", cmd_check, "Report drift, duplicate specs and outdated installs.")
+    add("uninstall", cmd_uninstall, "Remove unmodified managed files and blocks; keep config.json.")
+    add("next-spec", cmd_next_spec, "Print the next free 3-digit spec prefix.")
+    add("lint", cmd_lint, "Validate the kit itself.", dir_=False)
+    return p
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
+    kit = os.path.abspath(a.kit) if a.kit else os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    try:
+        code, lines = a.fn(a, kit)
+    except SdlcError as e:
+        print("sdlc: error: %s" % e, file=sys.stderr)
+        return 1
+    for l in lines or []:
+        print(l)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

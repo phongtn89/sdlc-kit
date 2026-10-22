@@ -1,0 +1,20 @@
+{
+  "spec_dir": "specs",
+  "commands": {
+    "test": "",
+    "lint": "",
+    "typecheck": "",
+    "build": "",
+    "integration": ""
+  },
+  "tracker": "github",
+  "budget": {
+    "target_lines": 200,
+    "reassess_lines": 300,
+    "target_turns": 15,
+    "max_turns": 25
+  },
+  "models": { "claude": {}, "copilot": {} },
+  "extra_instructions": [],
+  "extra_principles": []
+}

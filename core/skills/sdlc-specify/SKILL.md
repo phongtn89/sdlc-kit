@@ -26,7 +26,7 @@ user-invocable: true
 1. **Find the owner.** Search existing specs for this capability (titles, FR text, glossary terms).
    - If one owns it, update that spec and bump its status back to `draft`.
    - If two specs overlap, report the overlap before writing anything.
-2. **Number it.** Run `sdlc next-spec .` if the kit CLI is available. Otherwise take the highest `NNN-` prefix in `spec_dir` and add 1. Never reuse a number. Slug: 2–4 kebab-case words. Create `spec_dir/NNN-slug/spec.md` from the template.
+2. **Number it.** Run `python3 <kit_path>/bin/sdlc next-spec <repo>`, taking `kit_path` from `.sdlc/lock.json`, if available. Otherwise take the highest `NNN-` prefix in `spec_dir` and add 1. Never reuse a number. Slug: 2–4 kebab-case words. Create `spec_dir/NNN-slug/spec.md` from the template.
 3. **If the intent is still fuzzy**, run `sdlc-grill` first. Don't paper over gaps with prose.
 4. **Write what and why only.** No frameworks, endpoints, tables or class names. Those belong in `plan.md`.
    - User scenarios: Given/When/Then, prioritised P1/P2/P3. Each one can be tested and shipped on its own, so P1 alone is a viable slice.

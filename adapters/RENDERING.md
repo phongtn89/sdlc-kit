@@ -70,7 +70,7 @@ target: github-copilot             # only when claude is also a target (VS Code 
 ## Lock (`.sdlc/lock.json`)
 
 ```json
-{ "kit_version": "0.1.0", "targets": ["claude","copilot"], "modules": [],
+{ "kit_version": "0.1.0", "kit_path": "/abs/path/to/sdlc-kit", "targets": ["claude","copilot"], "modules": [],
   "files":  { "<relpath>": "<sha256>" },
   "blocks": { "<relpath>": "<sha256 of block inner text>" } }
 ```
@@ -83,7 +83,7 @@ target: github-copilot             # only when claude is also a target (VS Code 
 | `update <dir> [--force]` | Re-render with the targets and modules in the lock. A file whose current hash ≠ its lock hash was edited locally: skip it and report it (`--force` overwrites). Files in the old lock that are no longer rendered are removed if unmodified. | 0, 2 if any skipped |
 | `check <dir>` | Compare the disk with the lock: `MODIFIED`, `MISSING`, block drift. Also report `DUPLICATE-SPEC <NNN>: <dirs>` for `config.spec_dir` (default `specs`), and `OUTDATED` when the lock version < the kit `VERSION`. Prints one finding per line. | 0 clean, 1 drift (duplicates and outdated alone are warnings → 0) |
 | `uninstall <dir>` | Remove locked files that are unmodified, managed blocks, empty dirs it created, and the lock. Keep `config.json`. Report modified files that were kept. | 0 |
-| `discover <dir> [--json]` | Read-only. For each git repo directly under `<dir>` (no symlinks, no recursion, `node_modules` skipped), report branch, HEAD, dirty count, origin URL with credentials stripped, `packageManager`, lockfiles, root `package.json` scripts matching test/lint/typecheck/build/integration, other manifests, CI workflow count, `specs/` count with duplicate prefixes, Spec Kit version (`.specify/*.json` → `speckit_version`), agent surfaces, `AGENTS.md`/`CLAUDE.md` line counts, and installed kit version. Git runs with `--no-optional-locks -c core.fsmonitor=false`. Nothing is executed from the repos and nothing is written. Default output is a markdown table; `--json` gives `{workspace, repos[]}`. | 0 |
+| `discover <dir> [--json]` | Read-only. For each git repo directly under `<dir>` (no symlinks, no recursion, `node_modules` skipped), report branch, HEAD, dirty count, origin URL with credentials stripped, `packageManager`, lockfiles, root `package.json` scripts matching test/lint/typecheck/build/integration/validate/check, other manifests, CI workflow count, `specs/` count with duplicate prefixes, Spec Kit version (`.specify/*.json` → `speckit_version`), agent surfaces, `AGENTS.md`/`CLAUDE.md` line counts, and installed kit version. Git runs with `--no-optional-locks -c core.fsmonitor=false`. Nothing is executed from the repos and nothing is written. Default output is a markdown table; `--json` gives `{workspace, repos[]}`. | 0 |
 | `next-spec <dir>` | Print the next free 3-digit prefix: max existing + 1, zero-padded. | 0 |
 | `lint` | Validate the kit itself: frontmatter keys and values; `name` = folder; required skill sections (`## When to use`, `## Process`, `## Rationalizations`, `## Red flags`, `## Verification`); SKILL.md ≤ 200 lines; every `.sdlc/<path>` mentioned in a skill or role exists in the kit under `core/` or `modules/` (the `.sdlc/config.json` path is allowed). | 0, 1 on errors |
 

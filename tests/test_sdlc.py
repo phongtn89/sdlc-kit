@@ -166,6 +166,7 @@ class InstallTests(Base):
         self.assertEqual(lock["kit_version"], "0.1.0")
         self.assertEqual(lock["targets"], ["claude", "copilot"])
         self.assertEqual(lock["modules"], ["qa"])
+        self.assertEqual(lock["kit_path"], os.path.realpath(FIXKIT))
         rel = ".claude/agents/sdlc-explorer.md"
         with open(self.p(rel), "rb") as f:
             self.assertEqual(lock["files"][rel], hashlib.sha256(f.read()).hexdigest())
@@ -506,7 +507,8 @@ class DiscoverTests(unittest.TestCase):
     def build(self):
         api = self.make_repo("api", {
             "package.json": json.dumps({"packageManager": "pnpm@11.5.1", "scripts": {
-                "test": "vitest run", "lint": "eslint .", "dev": "tsx watch", "test:integration": "vitest run -c i"}}),
+                "test": "vitest run", "lint": "eslint .", "dev": "tsx watch", "test:integration": "vitest run -c i",
+                "validate": "./scripts/validate.sh"}}),
             "pnpm-lock.yaml": "", "package-lock.json": "{}",
             ".github/workflows/ci.yml": "on: push\n",
             "specs/001-a/spec.md": "x", "specs/001-b/spec.md": "x", "specs/002-c/spec.md": "x",
@@ -540,7 +542,7 @@ class DiscoverTests(unittest.TestCase):
         self.assertEqual(api["package_manager"], "pnpm@11.5.1")
         self.assertEqual(api["lockfiles"], ["package-lock.json", "pnpm-lock.yaml"])
         self.assertEqual(api["scripts"], {"lint": "eslint .", "test": "vitest run",
-                                          "test:integration": "vitest run -c i"})
+                                          "test:integration": "vitest run -c i", "validate": "./scripts/validate.sh"})
         self.assertEqual(api["ci_workflows"], 1)
         self.assertEqual(api["specs"], {"dir": "specs", "count": 3, "duplicates": {"001": ["001-a", "001-b"]}})
         self.assertEqual(api["speckit_version"], "0.12.4")

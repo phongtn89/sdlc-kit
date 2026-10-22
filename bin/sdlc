@@ -443,7 +443,8 @@ def sync(target, kit, targets, modules, force, first):
         else:
             if drop_block(target, rel):
                 removed += 1
-    lock = {"kit_version": read_text(os.path.join(kit, "VERSION")).strip(), "targets": targets,
+    lock = {"kit_version": read_text(os.path.join(kit, "VERSION")).strip(), "kit_path": os.path.realpath(kit),
+            "targets": targets,
             "modules": modules, "files": new_lock_files, "blocks": new_lock_blocks}
     write_file(target, ".sdlc/lock.json", (json.dumps(lock, indent=2, sort_keys=True) + "\n").encode("utf-8"))
     out.append("sdlc: written %d, skipped %d, removed %d" % (written, skipped, removed))
@@ -585,7 +586,7 @@ def cmd_next_spec(a, kit):
 
 LOCKFILES = ["bun.lockb", "bun.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
 MANIFESTS = ["Makefile", "pyproject.toml", "go.mod", "Cargo.toml", "pom.xml", "build.gradle"]
-SCRIPT_RE = re.compile(r"^(test|lint|typecheck|build|integration)(:|$)|^test:integration")
+SCRIPT_RE = re.compile(r"^(test|lint|typecheck|build|integration|validate|check)(:|$)|^test:integration")
 SURFACES = [".specify", ".claude/skills", ".claude/agents", ".claude/commands", ".agents/skills",
             ".github/agents", ".github/prompts", ".codex", "skills-lock.json", "opencode.jsonc"]
 CRED_RE = re.compile(r"^([a-z][a-z0-9+.-]*://)[^/@]*@", re.I)
@@ -702,7 +703,7 @@ def lint_refs(kit, text, label, errors, kit_paths):
         if text[m.end():m.end() + 1] in ("*", "<"):
             continue  # glob or placeholder, not a concrete path
         ref = m.group(1).rstrip(".,;:").rstrip("/")
-        if not ref or ref in ("config.json", "workspace.md"):
+        if not ref or ref in ("config.json", "lock.json", "workspace.md"):
             continue
         if ref not in kit_paths:
             errors.append("%s: references missing .sdlc/%s" % (label, ref))

@@ -468,5 +468,115 @@ class LintTests(Base):
         self.assertIn("1024", self.lint(k)[1])
 
 
+
+def git(repo, *args):
+    subprocess.run(["git", "-C", repo] + list(args), check=True, capture_output=True, timeout=20)
+
+
+def snapshot(root):
+    out = {}
+    for d, dirs, files in os.walk(root):
+        for f in files:
+            p = os.path.join(d, f)
+            st = os.lstat(p)
+            out[os.path.relpath(p, root)] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+class DiscoverTests(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.ws = os.path.join(self._tmp.name, "ws")
+        os.mkdir(self.ws)
+
+    def make_repo(self, name, files):
+        repo = os.path.join(self.ws, name)
+        os.mkdir(repo)
+        for rel, text in files.items():
+            p = os.path.join(repo, *rel.split("/"))
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(text)
+        git(repo, "init", "-q", "-b", "main")
+        git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
+        git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
+        return repo
+
+    def build(self):
+        api = self.make_repo("api", {
+            "package.json": json.dumps({"packageManager": "pnpm@11.5.1", "scripts": {
+                "test": "vitest run", "lint": "eslint .", "dev": "tsx watch", "test:integration": "vitest run -c i"}}),
+            "pnpm-lock.yaml": "", "package-lock.json": "{}",
+            ".github/workflows/ci.yml": "on: push\n",
+            "specs/001-a/spec.md": "x", "specs/001-b/spec.md": "x", "specs/002-c/spec.md": "x",
+            ".specify/init-options.json": json.dumps({"speckit_version": "0.12.4"}),
+            ".claude/skills/speckit-plan/SKILL.md": "x",
+            "AGENTS.md": "a\nb\nc\n",
+        })
+        git(api, "remote", "add", "origin", "https://user:s3cret@example.com/org/api.git")
+        with open(os.path.join(api, "dirty.txt"), "w") as f:
+            f.write("x")
+        self.make_repo("lib", {"Makefile": "test:\n\ttrue\n"})
+        os.mkdir(os.path.join(self.ws, "notes"))  # plain folder, not a repo
+        os.symlink(api, os.path.join(self.ws, "link-to-api"))
+
+    def discover(self, *a):
+        return run("discover", self.ws, *a)
+
+    def test_json_shape_and_facts(self):
+        self.build()
+        code, out, err = self.discover("--json")
+        self.assertEqual(code, 0, err)
+        data = json.loads(out)
+        self.assertEqual(data["workspace"], os.path.realpath(self.ws))
+        names = [r["name"] for r in data["repos"]]
+        self.assertEqual(names, ["api", "lib"])  # no plain folder, no symlink
+        api = data["repos"][0]
+        self.assertEqual(api["branch"], "main")
+        self.assertEqual(api["dirty"], 1)
+        self.assertEqual(api["remote"], "https://example.com/org/api.git")
+        self.assertNotIn("s3cret", out)
+        self.assertEqual(api["package_manager"], "pnpm@11.5.1")
+        self.assertEqual(api["lockfiles"], ["package-lock.json", "pnpm-lock.yaml"])
+        self.assertEqual(api["scripts"], {"lint": "eslint .", "test": "vitest run",
+                                          "test:integration": "vitest run -c i"})
+        self.assertEqual(api["ci_workflows"], 1)
+        self.assertEqual(api["specs"], {"dir": "specs", "count": 3, "duplicates": {"001": ["001-a", "001-b"]}})
+        self.assertEqual(api["speckit_version"], "0.12.4")
+        self.assertIn(".specify", api["surfaces"])
+        self.assertIn(".claude/skills", api["surfaces"])
+        self.assertEqual(api["agents_md_lines"], 3)
+        self.assertIsNone(api["sdlc_version"])
+        lib = data["repos"][1]
+        self.assertEqual(lib["manifests"], ["Makefile"])
+        self.assertIsNone(lib["package_manager"])
+        self.assertEqual(lib["specs"]["count"], 0)
+
+    def test_markdown_table(self):
+        self.build()
+        code, out, _ = self.discover()
+        self.assertEqual(code, 0)
+        self.assertIn("| api |", out)
+        self.assertIn("| lib |", out)
+        self.assertIn("001", out)
+
+    def test_read_only(self):
+        self.build()
+        before = snapshot(self.ws)
+        self.assertEqual(self.discover("--json")[0], 0)
+        self.assertEqual(self.discover()[0], 0)
+        self.assertEqual(snapshot(self.ws), before)
+
+    def test_empty_workspace(self):
+        code, out, _ = self.discover()
+        self.assertEqual(code, 0)
+        self.assertIn("no repos found", out)
+
+    def test_not_a_directory(self):
+        code, _, err = run("discover", os.path.join(self.ws, "missing"))
+        self.assertNotEqual(code, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

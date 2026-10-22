@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 
 BEGIN = "<!-- BEGIN sdlc-kit (managed; edit .sdlc/config.json or the kit instead) -->"
@@ -580,6 +581,117 @@ def cmd_next_spec(a, kit):
     return 0, ["%03d" % (max(nums) + 1 if nums else 1)]
 
 
+# ---------------------------------------------------------------- discover
+
+LOCKFILES = ["bun.lockb", "bun.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
+MANIFESTS = ["Makefile", "pyproject.toml", "go.mod", "Cargo.toml", "pom.xml", "build.gradle"]
+SCRIPT_RE = re.compile(r"^(test|lint|typecheck|build|integration)(:|$)|^test:integration")
+SURFACES = [".specify", ".claude/skills", ".claude/agents", ".claude/commands", ".agents/skills",
+            ".github/agents", ".github/prompts", ".codex", "skills-lock.json", "opencode.jsonc"]
+CRED_RE = re.compile(r"^([a-z][a-z0-9+.-]*://)[^/@]*@", re.I)
+
+
+def git_read(repo, *args):
+    """Read-only git query: no index refresh writes, and fsmonitor off so no repo-configured program runs."""
+    try:
+        p = subprocess.run(["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", repo] + list(args),
+                           capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return p.stdout.strip() if p.returncode == 0 else None
+
+
+def line_count(path):
+    return len(read_text(path).splitlines()) if os.path.isfile(path) else None
+
+
+def speckit_version(repo):
+    d = os.path.join(repo, ".specify")
+    if not os.path.isdir(d):
+        return None
+    for n in sorted(os.listdir(d)):
+        f = os.path.join(d, n)
+        if n.endswith(".json") and os.path.isfile(f):
+            try:
+                v = json.loads(read_text(f)).get("speckit_version")
+            except (ValueError, AttributeError):
+                continue
+            if v:
+                return str(v)
+    return None
+
+
+def describe_repo(repo):
+    pkg = {}
+    if os.path.isfile(os.path.join(repo, "package.json")):
+        try:
+            pkg = json.loads(read_text(os.path.join(repo, "package.json")))
+        except ValueError:
+            pkg = {}
+    scripts = pkg.get("scripts") if isinstance(pkg.get("scripts"), dict) else {}
+    lockfiles = [f for f in LOCKFILES if os.path.isfile(os.path.join(repo, f))]
+    groups = {}
+    for n in spec_dirs(repo, {}):
+        groups.setdefault(n[:3], []).append(n)
+    status = git_read(repo, "status", "--porcelain")
+    remote = git_read(repo, "remote", "get-url", "origin")
+    lock_path = os.path.join(repo, ".sdlc", "lock.json")
+    sdlc_version = None
+    if os.path.isfile(lock_path):
+        try:
+            sdlc_version = json.loads(read_text(lock_path)).get("kit_version")
+        except ValueError:
+            pass
+    return {
+        "name": os.path.basename(repo),
+        "path": repo,
+        "branch": git_read(repo, "branch", "--show-current"),
+        "head": git_read(repo, "rev-parse", "--short", "HEAD"),
+        "dirty": len(status.splitlines()) if status else 0,
+        "remote": CRED_RE.sub(r"\1", remote) if remote else None,
+        "package_manager": pkg.get("packageManager") or None,
+        "lockfiles": lockfiles,
+        "scripts": {k: v for k, v in sorted(scripts.items()) if SCRIPT_RE.search(k)},
+        "manifests": [m for m in MANIFESTS if os.path.isfile(os.path.join(repo, m))],
+        "ci_workflows": len([f for f in os.listdir(os.path.join(repo, ".github", "workflows"))
+                             if f.endswith((".yml", ".yaml"))])
+        if os.path.isdir(os.path.join(repo, ".github", "workflows")) else 0,
+        "specs": {"dir": "specs", "count": sum(len(v) for v in groups.values()),
+                  "duplicates": {k: v for k, v in sorted(groups.items()) if len(v) > 1}},
+        "speckit_version": speckit_version(repo),
+        "surfaces": [s for s in SURFACES if os.path.exists(os.path.join(repo, *s.split("/")))],
+        "agents_md_lines": line_count(os.path.join(repo, "AGENTS.md")),
+        "claude_md_lines": line_count(os.path.join(repo, "CLAUDE.md")),
+        "sdlc_version": sdlc_version,
+    }
+
+
+def cmd_discover(a, kit):
+    ws = os.path.realpath(check_target(a.dir))
+    repos = []
+    for n in sorted(os.listdir(ws)):
+        full = os.path.join(ws, n)
+        if n == "node_modules" or os.path.islink(full) or not os.path.isdir(full):
+            continue
+        if os.path.exists(os.path.join(full, ".git")):
+            repos.append(describe_repo(full))
+    data = {"workspace": ws, "repos": repos}
+    if a.json:
+        return 0, [json.dumps(data, indent=2)]
+    if not repos:
+        return 0, ["no repos found under %s" % ws]
+    out = ["| Repo | Branch @ HEAD | Dirty | Package manager | Lockfiles | Scripts | CI | Specs (dup prefixes) | Spec Kit | Agent surfaces |",
+           "|---|---|---|---|---|---|---|---|---|---|"]
+    for r in repos:
+        dups = ", ".join(sorted(r["specs"]["duplicates"])) or "-"
+        out.append("| %s | %s @ %s | %d | %s | %s | %s | %d | %d (%s) | %s | %s |" % (
+            r["name"], r["branch"] or "-", r["head"] or "-", r["dirty"], r["package_manager"] or "-",
+            ", ".join(r["lockfiles"]) or "-", ", ".join(r["scripts"]) or ", ".join(r["manifests"]) or "-",
+            r["ci_workflows"], r["specs"]["count"], dups, r["speckit_version"] or "-",
+            ", ".join(r["surfaces"]) or "-"))
+    return 0, out
+
+
 # ---------------------------------------------------------------- lint
 
 REF_RE = re.compile(r"\.sdlc/([A-Za-z0-9_./-]*)")
@@ -590,7 +702,7 @@ def lint_refs(kit, text, label, errors, kit_paths):
         if text[m.end():m.end() + 1] in ("*", "<"):
             continue  # glob or placeholder, not a concrete path
         ref = m.group(1).rstrip(".,;:").rstrip("/")
-        if not ref or ref == "config.json":
+        if not ref or ref in ("config.json", "workspace.md"):
             continue
         if ref not in kit_paths:
             errors.append("%s: references missing .sdlc/%s" % (label, ref))
@@ -722,6 +834,8 @@ def build_parser():
     add("check", cmd_check, "Report drift, duplicate specs and outdated installs.")
     add("uninstall", cmd_uninstall, "Remove unmodified managed files and blocks; keep config.json.")
     add("next-spec", cmd_next_spec, "Print the next free 3-digit spec prefix.")
+    sp = add("discover", cmd_discover, "List the git repos directly under a workspace folder (read-only).")
+    sp.add_argument("--json", action="store_true", help="machine-readable output")
     add("lint", cmd_lint, "Validate the kit itself.", dir_=False)
     return p
 

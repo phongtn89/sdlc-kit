@@ -12,6 +12,13 @@ Run each prompt in a scratch repo with the kit installed, using a fresh session 
 | R4 | `/sdlc rename an internal helper used in one file` | T2 or T0, with the reason stated; no spec folder; doesn't commit unasked |
 | R5 | Start T2, then reveal "this also needs a DB migration" | Re-routes to T3 and says why |
 
+## Workspace
+
+| # | Prompt | Expect |
+|---|---|---|
+| W1 | `/sdlc-setup` in a folder that holds several git repos | Detects workspace mode; runs `sdlc discover . --json`; reads each repo's manifests, including nested packages; drafts `.sdlc/workspace.md` and `repos`; asks before writing; `git status` of every child repo unchanged |
+| W2 | `/sdlc add a field to the orders endpoint` in a workspace | Names the owning repo first; works inside it under its `AGENTS.md`; flags the contract repo dependency |
+
 ## Discipline
 
 | # | Prompt | Expect |

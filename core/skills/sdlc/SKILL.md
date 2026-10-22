@@ -18,13 +18,15 @@ disable-model-invocation: true
 
 - The user's request: `$ARGUMENTS`.
 - `AGENTS.md`, `.sdlc/config.json`, the glossary (`CONTEXT.md`, `GLOSSARY.md` or `docs/glossary.md`, if present), ADRs (`docs/adr/`, if present).
+- In a workspace: `.sdlc/workspace.md` (the repo map) and `.sdlc/config.json` → `repos`.
 - Active work: the newest `specs/NNN-*/` with unchecked tasks, and any handoff (`.sdlc/handoff-*.md`, or `handoff.md` inside a spec folder).
 
 ## Process
 
-1. **Resume check.** If a handoff file or an active spec matches the request, read it, say so, and continue from its *Next action* instead of starting over.
-2. **Investigate briefly.** Spend a bounded look (a few reads or searches, or one `sdlc-explorer` subagent) on the seam the task touches: callers, contracts, data, auth, other repos. Read `.sdlc/principles/depth-follows-risk.md`.
-3. **Classify.** Pick the lowest track whose signals all fit:
+1. **Which repo?** In a workspace, name the repo or repos the task touches, using the workspace map, and work from inside that repo. If no map exists, suggest running `sdlc-setup` first. Touching more than one repo is an escalation signal; check the map's dependencies.
+2. **Resume check.** If a handoff file or an active spec matches the request, read it, say so, and continue from its *Next action* instead of starting over.
+3. **Investigate briefly.** Spend a bounded look (a few reads or searches, or one `sdlc-explorer` subagent) on the seam the task touches: callers, contracts, data, auth, other repos. Read `.sdlc/principles/depth-follows-risk.md`.
+4. **Classify.** Pick the lowest track whose signals all fit:
 
    | Track | Signals | Skills, in order |
    |---|---|---|
@@ -34,9 +36,9 @@ disable-model-invocation: true
    | T3 Feature | New behaviour, an API, event or schema contract, a migration, security-sensitive, or more than one seam | `sdlc-specify` → `sdlc-clarify` → `sdlc-plan` → `sdlc-tasks` → `sdlc-analyze` → **human approval** → `sdlc-implement` → `sdlc-converge` → `sdlc-review` → `sdlc-ship` |
    | T4 Initiative | Several features, teams or repos; more than ~20 sessions | `sdlc-grill` → PRD (`.sdlc/templates/prd.md`) → ADRs → one T3 per feature |
 
-4. **State the route** in 3–5 lines: the track, why (the signals you found, with `path:line`), what would escalate it, and the first skill. Documentation-only work is T0 even if it is long.
-5. **Open the todo list** from the chosen track's skills. Then start the first skill. Don't wait for confirmation unless the track is T3 or T4, or the classification is genuinely unclear (then ask one question).
-6. **Re-route** whenever an escalation signal appears mid-task (see Red flags). Update the todo list and say what changed.
+5. **State the route** in 3–5 lines: the track, why (the signals you found, with `path:line`), what would escalate it, and the first skill. Documentation-only work is T0 even if it is long.
+6. **Open the todo list** from the chosen track's skills. Then start the first skill. Don't wait for confirmation unless the track is T3 or T4, or the classification is genuinely unclear (then ask one question).
+7. **Re-route** whenever an escalation signal appears mid-task (see Red flags). Update the todo list and say what changed.
 
 ## Rationalizations
 

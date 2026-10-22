@@ -27,6 +27,7 @@ Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.js
 | `sdlc check <dir>` | Report drift (`MODIFIED`, `MISSING`, `DRIFT`), duplicate spec numbers, and an outdated lock. Exits 1 on drift, so it can run in CI. |
 | `sdlc uninstall <dir>` | Remove everything the kit wrote; keeps `config.json` and local edits |
 | `sdlc next-spec <dir>` | Next free `NNN` spec prefix |
+| `sdlc discover <dir> [--json]` | Read-only inventory of the git repos in a workspace folder |
 | `sdlc lint` | Validate the kit itself |
 
 ### What lands in the project
@@ -41,6 +42,22 @@ Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.js
 | `specs/`, `docs/adr/`, glossary | project |
 
 Never edit kit-owned files in place. Change the kit and run `update`, or put project rules in `.sdlc/config.json` → `extra_instructions`.
+
+## Multi-repo workspace
+
+You can install the kit into a plain folder that holds several repos, for example `~/Projects/shop6`. The child repos are never written.
+
+```bash
+python3 ~/Projects/sdlc-kit/bin/sdlc install ~/Projects/shop6
+```
+
+To see the raw facts about every repo:
+
+```bash
+python3 ~/Projects/sdlc-kit/bin/sdlc discover ~/Projects/shop6
+```
+
+Then open Claude Code in the workspace folder and run `/sdlc-setup`. It detects the workspace and writes `.sdlc/workspace.md` (a map of the repos, their dependencies, commands, specs and agent surfaces) and `repos` in `.sdlc/config.json`, only after you approve. From then on, `/sdlc` first names the repo each task belongs to and works inside it, under that repo's own `AGENTS.md`.
 
 ## Use
 

@@ -723,7 +723,7 @@ def lint_refs(kit, text, label, errors, kit_paths):
         if text[m.end():m.end() + 1] in ("*", "<"):
             continue  # glob or placeholder, not a concrete path
         ref = m.group(1).rstrip(".,;:").rstrip("/")
-        if not ref or ref in ("config.json", "lock.json", "workspace.md") or ref.startswith("context"):
+        if not ref or ref in ("config.json", "lock.json", "workspace.md") or ref.startswith(("context", "decisions", "drafts", "bugs")):
             continue
         if ref not in kit_paths:
             errors.append("%s: references missing .sdlc/%s" % (label, ref))

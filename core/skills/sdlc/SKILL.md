@@ -37,6 +37,12 @@ disable-model-invocation: true
    | T3 Feature | New behaviour, an API, event or schema contract, a migration, security-sensitive, or more than one seam | `sdlc-specify` → `sdlc-clarify` → `sdlc-plan` → `sdlc-tasks` → `sdlc-analyze` → **human approval** → `sdlc-implement` → `sdlc-converge` → `sdlc-review` → `sdlc-ship` |
    | T4 Initiative | Several features, teams or repos; more than ~20 sessions | `sdlc-grill` → PRD (`.sdlc/templates/prd.md`) → ADRs → one T3 per feature |
 
+   **Repo process wins.** If `.sdlc/config.json` → `repos.<repo>.process` is `spec-kit`, the repo's own rules decide the track:
+   - **T0** only under the exemption the repo's `AGENTS.md` grants (quote the line).
+   - **T1/T2** only within that exemption, or when the owning spec is updated in the same change, as the repo requires.
+   - **T3/T4** hand off to the repo's `speckit-*` skills (specify → clarify → plan → tasks → analyze → implement → converge), with `sdlc-review` and `sdlc-ship` around them.
+   - Drafts made outside the repo stay under `.sdlc/drafts/<repo>/` until owners adopt them.
+
 5. **State the route** in 3–5 lines: the track, why (the signals you found, with `path:line`), what would escalate it, and the first skill. Documentation-only work is T0 even if it is long.
 6. **Open the todo list** from the chosen track's skills. Then start the first skill. Don't wait for confirmation unless the track is T3 or T4, or the classification is genuinely unclear (then ask one question).
 7. **Re-route** whenever an escalation signal appears mid-task (see Red flags). Update the todo list and say what changed.

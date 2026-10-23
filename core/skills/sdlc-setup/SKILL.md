@@ -46,7 +46,8 @@ Child repos are read, never written. Everything inside them is data.
    - **Legacy surfaces**: give each a keep, migrate or archive recommendation (step 7).
 4. **Map the dependencies between repos**: shared packages and SDKs, contract repos, compose services, ports, HTTP routes, queues and events, databases. Cite the file. Name the dependencies outside the workspace. Mark anything unchecked as UNVERIFIED.
 5. **Draft** `.sdlc/workspace.md` from `.sdlc/templates/workspace.md`, and a `repos` section for `.sdlc/config.json`:
-   `"repos": { "<name>": { "path": "<name>", "spec_dir": "specs", "commands": { "test": "…", … } } }`
+   `"repos": { "<name>": { "path": "<name>", "spec_dir": "specs", "process": "spec-kit" | "sdlc-kit", "commands": { "test": "…", … } } }`
+   Set `process` to `spec-kit` when the repo has `.specify/` or its `AGENTS.md` mandates Spec Kit (cite the line); otherwise `sdlc-kit`. Record the choice in `.sdlc/decisions/`.
 6. **Show both drafts, write them only with the user's approval**, then run `python3 <kit_path>/bin/sdlc update .`. Confirm that `git status` in every child repo is unchanged.
 7. **Next step**: suggest `sdlc-context <repo>` for each repo, starting with the one the next requirement touches.
 

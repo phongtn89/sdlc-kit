@@ -29,10 +29,11 @@ user-invocable: true
 3. **Delegate the wide reading.** Use `sdlc-explorer` subagents with bounded scopes, for example "routes and contracts", "data and migrations", "specs vs code". Each returns conclusions with `path:line`. Keep only their conclusions in context.
 4. **Trace 3–5 key flows** end to end, choosing the main reasons the repo exists. Verify each hop yourself at `path:line`; a subagent summary is a lead, not proof.
 5. **Check the specs against the code.** For each spec folder, decide implemented, partial, not started or superseded from code and tests, regardless of its `Status:` field. Cite one piece of evidence each. With many specs, cover the recent and active ones in full and sample the rest, and say which you did.
-6. **Contracts and ownership.** For every API, event, schema or SDK, name its owner. Anything owned elsewhere (a contracts repo, an SDK package) gets the note: changes start there.
-7. **Write** `.sdlc/context/<repo>.md` from the template **as soon as it's drafted, before the final checks**. If the write is denied, stop and report it, so the research isn't lost at the end of a headless run. Start the file with the `Built from:` line. Label every claim: cited `path:line`, INFERRED, or UNVERIFIED. Keep it under about 250 lines; link instead of copying.
-8. **Feed back to the workspace.** Add any new cross-repo facts or open questions to `.sdlc/workspace.md`, and keep the edits minimal. Don't touch the product repo.
-9. **Report**: the file path, the HEAD it was built from, the flows traced, the spec status counts, the top risks, the open questions, and what was sampled rather than read.
+6. **Open work.** If `gh` is available and logged in, list the open PRs read-only (`gh pr list --repo <owner/repo> --state open --json number,title,headRefName,createdAt,files`). Record in *Open work* the ones that change behaviour, contracts or specs, with the area each touches. Skip docs-only automation PRs. If `gh` isn't available, write "not checked" rather than leaving the section out.
+7. **Contracts and ownership.** For every API, event, schema or SDK, name its owner. Anything owned elsewhere (a contracts repo, an SDK package) gets the note: changes start there.
+8. **Write** `.sdlc/context/<repo>.md` from the template **as soon as it's drafted, before the final checks**. If the write is denied, stop and report it, so the research isn't lost at the end of a headless run. Start the file with the `Built from:` line. Label every claim: cited `path:line`, INFERRED, or UNVERIFIED. Keep it under about 250 lines; link instead of copying.
+9. **Feed back to the workspace.** Add any new cross-repo facts or open questions to `.sdlc/workspace.md`, and keep the edits minimal. Don't touch the product repo.
+10. **Report**: the file path, the HEAD it was built from, the flows traced, the spec status counts, the top risks, the open questions, and what was sampled rather than read.
 
 ## Rationalizations
 

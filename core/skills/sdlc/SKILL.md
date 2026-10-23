@@ -25,7 +25,11 @@ disable-model-invocation: true
 ## Process
 
 1. **Which repo?** In a workspace, name the repo or repos the task touches, using the workspace map, and work from inside that repo. If no map exists, suggest running `sdlc-setup` first. If the repo has no context file, suggest `sdlc-context` before a T3 or T4 task. Touching more than one repo is an escalation signal; check the map's dependencies.
-2. **Resume check.** If a handoff file or an active spec matches the request, read it, say so, and continue from its *Next action* instead of starting over.
+   **Check freshness.** Run `python3 <kit_path>/bin/sdlc discover . --json` once, with `kit_path` from `.sdlc/lock.json`, and read the repo's `context` and `head`:
+   - `stale: true`: say how many commits behind it is, treat the context as leads only, and offer `sdlc-context <repo> --refresh` before a T3 or T4 task.
+   - `context: null`: suggest `sdlc-context <repo>`.
+   Never assume a context file is current from its date.
+2. **Resume check and open work.** If a handoff file or an active spec matches the request, read it, say so, and continue from its *Next action* instead of starting over. Also look for **open work in the same area**: the context file's *Open work* section and, if `gh` is available and logged in, a read-only `gh pr list --repo <owner/repo> --state open --search "<key terms>"`. Name any matching PR or branch, and ask whether to build on it before starting parallel work.
 3. **Investigate briefly.** Spend a bounded look (a few reads or searches, or one `sdlc-explorer` subagent) on the seam the task touches: callers, contracts, data, auth, other repos. Read `.sdlc/principles/depth-follows-risk.md`.
 4. **Classify.** Pick the lowest track whose signals all fit:
 

@@ -83,6 +83,14 @@ ADRs: [list with one line each; flag superseded or conflicting ones]
 
 -
 
+## Open work (at build time)
+
+<!-- Open PRs and active branches that change this repo's behaviour or contracts, read-only via `gh pr list --state open` if available. Number, title, the area it touches, and age. This is a snapshot; the router re-checks it per request. -->
+
+| PR | Title | Area | Opened |
+|---|---|---|---|
+| | | | |
+
 ## How to start a new requirement here
 
 <!-- Steps for the next person: which spec to extend, which tests to run first, which owners or repos to involve. -->

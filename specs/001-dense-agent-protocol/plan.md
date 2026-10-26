@@ -110,9 +110,9 @@ modules/dense/
 
 - **Checklists loaded:** security, performance, compatibility-migration. Observability and accessibility don't apply: no service and no UI.
 - **Security:**
-  - Secrets can't enter the index (`validate` rule 6). Pointers reference, never copy, sensitive sections.
+  - Secrets and e-mail addresses can't enter the index (`validate` rule 6). Other personal data relies on the skill's derive-only rule and 10-entry self-check (residual risk). Pointers reference, never copy, sensitive sections.
   - `dap.py` only reads paths under `.sdlc/` and rejects `..` and absolute paths (reusing the `safe_path` idea, `bin/sdlc:113`).
-  - It writes only `.sdlc/context/index.dap*`.
+  - It writes only `.sdlc/context/index.dap`: `commit` refuses any other `dest`, and any `tmp` other than `.sdlc/context/index.dap.<id>.tmp`, after resolving symlinks.
   - No network and no subprocesses.
 - **Performance:** NFR-003 is checked by a test on a generated workspace of shop6 size (10 sources, 300 KB) under 10 s.
 - **Compatibility:**

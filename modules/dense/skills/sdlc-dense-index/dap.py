@@ -28,6 +28,7 @@ SECRET_RES = [re.compile(p) for p in (
     r"\bgh[pousr]_[A-Za-z0-9]{20,}", r"\bgithub_pat_[A-Za-z0-9_]{20,}",
     r"\bAKIA[0-9A-Z]{16}\b", r"\bxox[abprs]-[A-Za-z0-9-]{10,}", r"\bsk-[A-Za-z0-9]{20,}",
 )]
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b(?!:)")  # not git@host:repo
 SIZE_RATIO, SIZE_FLOOR = 0.05, 20 * 1024
 
 
@@ -70,6 +71,15 @@ def slugs(text):
         seen[s] = n + 1
         out.add(s if n == 0 else "%s-%d" % (s, n))
     return out
+
+
+def commit_paths_ok(root, tmp, dest):
+    """commit may only read .sdlc/context/index.dap.*.tmp and replace .sdlc/context/index.dap (symlinks resolved)."""
+    ctx = os.path.realpath(os.path.join(root, ".sdlc", "context"))
+    t, d = os.path.realpath(tmp), os.path.realpath(dest)
+    name = os.path.basename(t)
+    return (d == os.path.join(ctx, "index.dap") and os.path.dirname(t) == ctx
+            and name.startswith("index.dap.") and name.endswith(".tmp"))
 
 
 def load_keys():
@@ -160,8 +170,11 @@ def check(index, root, fresh_mode=False):
             errors.append("ERROR %d: repeated key %s in this section" % (n, key))
         used.add(key)
         at = line.rfind(" @")
-        if any(r.search(line[:at] if at >= 0 else line) for r in SECRET_RES):
+        value = line[:at] if at >= 0 else line
+        if any(r.search(value) for r in SECRET_RES):
             errors.append("ERROR %d: value looks like a secret; point to its source section instead" % n)
+        if EMAIL_RE.search(value):
+            errors.append("ERROR %d: value holds an e-mail address (personal data); point to its source section instead" % n)
         if at < 0:
             errors.append("ERROR %d: entry has no @ref" % n)
             continue
@@ -192,6 +205,10 @@ def main(argv=None):
     if (a.command == "commit") != (a.dest is not None):
         ap.error("dest is required for commit and only allowed there")
     root = os.path.abspath(a.root) if a.root else find_root(a.index)
+    if a.command == "commit" and not commit_paths_ok(root, a.index, a.dest):
+        print("ERROR 0: commit only writes .sdlc/context/index.dap from .sdlc/context/index.dap.<id>.tmp "
+              "(got %s -> %s)\nnot committed: %s unchanged" % (a.index, a.dest, a.dest))
+        return 1
     errors, stale, idx, warnings = check(a.index, root, fresh_mode=a.command == "fresh")
     if a.command == "validate":
         print("\n".join(warnings + (errors or ["valid"])))

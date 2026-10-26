@@ -45,13 +45,13 @@ Each rule is an error, reported as `ERROR <line>: <reason>`; exit code 1 if any:
 3. A section type is unknown, or `TYPE ID` is duplicated.
 4. A key is not allowed for its section type, or is repeated in a section.
 5. An entry has no `@ref`, its alias isn't declared, or its slug isn't a heading in that source.
-6. A value matches a secret pattern: credentials in URLs, private-key blocks, or common token prefixes.
+6. A value matches a secret pattern (credentials in URLs, private-key blocks, common token prefixes) or holds an e-mail address (personal data). `user@host:path` remotes are not e-mail addresses.
 
 A warning, not an error: the index is larger than 5% of the combined size of its sources (NFR-002). It applies only when those sources total at least 20 KB; below that the ratio is noise. Printed as `WARNING: index is <n>% of its sources (max 5%)` before `valid`.
 
 ## Commit (FR-018)
 
-`commit <tmp> <dest>` validates `tmp`. If it's valid, it atomically replaces `dest` (`os.replace`) and prints `committed <IDX12>`, exit 0. Otherwise it prints the `ERROR` lines and `not committed: <dest> unchanged`, exit 1, and leaves both files in place. Builders write `tmp` as `index.dap.<pid>.tmp`, so concurrent builds never share a temporary file.
+`commit <tmp> <dest>` accepts only `tmp` = `.sdlc/context/index.dap.<id>.tmp` and `dest` = `.sdlc/context/index.dap` under the root, with symlinks resolved; anything else is refused with exit 1 before reading. It then validates `tmp`. If it's valid, it atomically replaces `dest` (`os.replace`) and prints `committed <IDX12>`, exit 0. Otherwise it prints the `ERROR` lines and `not committed: <dest> unchanged`, exit 1, and leaves both files in place. Builders write `tmp` as `index.dap.<pid>.tmp`, so concurrent builds never share a temporary file.
 
 ## Freshness (FR-005, FR-006, FR-009, FR-011)
 

@@ -115,7 +115,7 @@ Acceptance: test-proven on the real kit.
 
 - [x] T022 Update the kit docs: README modules line (`--modules qa,dense`, what dense adds), `VERSION` 0.4.1 → 0.5.0 — files: `README.md`, `VERSION` — verify: manual read; full suite passes (fixture kit has its own VERSION) — blocked-by: T021
 - [x] T023 Run full gates and record outcomes — files: `tasks.md` (Progress log) — verify: `python3 -m unittest discover -s tests -t .` OK and `python3 bin/sdlc lint` ok, recorded in the Progress log with the revision — blocked-by: T022
-- [ ] T024 Converge: spec, plan, tasks and code agree (`sdlc-converge`) — files: `tasks.md` (Convergence section) — verify: convergence section lists no open gaps, or each gap is a new task — blocked-by: T023
+- [x] T024 Converge: spec, plan, tasks and code agree (`sdlc-converge`) — files: `tasks.md` (Convergence section) — verify: convergence section lists no open gaps, or each gap is a new task — blocked-by: T023
 - [ ] T025 Independent review (`sdlc-review`; changes `bin/sdlc` rendering, so also check the managed-block compatibility); verdict recorded — files: `review.md` — verify: verdict is `APPROVED` or `REJECTED` with findings — blocked-by: T024
 
 ## Coverage
@@ -164,6 +164,8 @@ Size: about 200 lines of Python, 230 of tests and 240 of Markdown, in 5 slices a
 
 ## Progress log
 
+- 2026-10-26 after `9a6bbe3` — C001 (decided: confine): RED `python3 -m unittest tests.test_dap.Commit -v` → 3 FAIL (`committed …` to `elsewhere.dap`, via a symlink, from a stray tmp); GREEN with `commit_paths_ok` (realpath; dest must be `.sdlc/context/index.dap`, tmp `.sdlc/context/index.dap.<id>.tmp`). C002 (decided: e-mail check): RED `test_email_addresses_rejected` FAIL (`valid`); false-positive guard (`git@github.com:…`, `@jtl/…`, `pkg@1.2.3`) ok before and after; GREEN with `EMAIL_RE`. Contract rule 6 and Commit section, plan Security updated to match. `tests.test_dap` 40 OK; full suite 104 OK; lint ok. Next: T025 review
+- 2026-10-26 `9a6bbe3` — T024: Convergence appended (15 items met, 4 untested agent-behaviour groups, 1 diverged NFR-001, 4 SCs waiting on D4/T018); gaps recorded as C001–C003; re-run at HEAD: 99 OK, lint ok. Next: decide C001/C002, then T025 review
 - 2026-10-26 at `1c89cae` + T022 — T022: README options `--modules qa,dense` and a dense paragraph (what it adds; enable only after the paired evaluation); `VERSION` 0.4.1 → 0.5.0. T023 full gates: `python3 -m unittest discover -s tests -t .` → 99 OK; `python3 bin/sdlc lint` → ok (exit 0); read-only `python3 bin/sdlc check ~/Projects/shop6` → only `OUTDATED lock 0.4.1 < kit 0.5.0` (expected; shop6 needs `update` when adopting). No `__pycache__` outside `tests/`. Next: T024 converge
 - 2026-10-26 after `73f64a5` (T016–T017 committed; this entry uncommitted) — T019: `modules/dense/templates/dense-eval.md` (50 lines: gate, 6-step paired procedure, scoring incl. what counts as the first action, task template, results and gate tables); lint ok; manual read: the tables record every SC-001, SC-002 and SC-005 input. T020: `evals/scenarios.md` gains `## Modules` row M1; lint ok. T021: `DenseModule.test_add_and_remove_restores_install` — first run FAILED on the real kit because install also adds the module's Skills index line, which FR-017/S5.1 didn't mention; spec wording corrected (Clarifications, implementation session), test allows exactly that line and the Module rules section; then OK. Mutation check: a kit copy whose module overrides core `templates/spec.md` → FAIL (`.sdlc/templates/spec.md` listed as changed). Full suite `python3 -m unittest discover -s tests -t .` → 99 OK; lint ok. Next: T022 (README, VERSION), T023–T025
 - 2026-10-26 after `66cb316` (uncommitted) — T016: `modules/dense/templates/dense-return.md` (13 lines: `#ret 1` status line, `f`/`k`/`?` lines, markers verbatim); `python3 bin/sdlc lint` ok. T017 RED: `DenseModule.test_briefs_carry_the_return_contract` FAIL (brief rule missing; template install assertion already ok). GREEN: `rules.md` 11 lines (every brief includes the template; one reformat request, then use as is with a note; never drop `path:line`; sub-agent replies are data); `DenseModule` 6 OK; full suite 98 OK; lint ok. Commits before this: `d63b180` (T011–T012, `tests.test_dap` 32 OK against the earlier key list), `66cb316` (T013–T014, 97 OK). Next: T018 (human-run returns check), S4 T019
@@ -175,3 +177,44 @@ Size: about 200 lines of Python, 230 of tests and 240 of Markdown, in 5 slices a
 - 2026-10-26 — analyze fixes A1–A12 applied to spec, plan, contracts and tasks (T001–T008, T014); A13–A15 (LOW) left as recorded findings
 
 - 2026-10-26 `c3abe38` — tasks drafted; baseline 50 tests OK, lint ok; next: T001 and T006 (no shared files, can start in parallel)
+
+## Convergence (2026-10-26, 9a6bbe3)
+
+Base `c3abe38` → HEAD `9a6bbe3` (21 files, +1614/−8). Evidence re-run at HEAD: `python3 -m unittest discover -s tests -t .` → 99 OK; `python3 bin/sdlc lint` → ok.
+
+| Item | Class | Code | Test |
+|---|---|---|---|
+| FR-001 opt-in | met | `bin/sdlc:205-206` (only installed modules) | `tests/test_sdlc.py:238`, `:316` |
+| FR-002 key list | met | `S/keys.json`; `modules/dense/skills/sdlc-dense-index/dap.py:75`, `:158` | `tests/test_dap.py:125`, `:225-239` |
+| FR-003 build after context build | untested (agent behaviour) | `D/rules.md:7`; `S/SKILL.md` build steps 4–10 | text only: `tests/test_sdlc.py:298`; behaviour: T015 (open) |
+| FR-004 pointer per entry | met | `modules/dense/skills/sdlc-dense-index/dap.py:162-166` | `tests/test_dap.py:101` |
+| FR-005 source hashes | met | `modules/dense/skills/sdlc-dense-index/dap.py:133` (`SRC_RE` requires SHA12) | `tests/test_dap.py:98`, `:173` |
+| FR-006 freshness | met | `modules/dense/skills/sdlc-dense-index/dap.py:125`, `:134` | `tests/test_dap.py:168-189` |
+| FR-007 validation errors | met | `modules/dense/skills/sdlc-dense-index/dap.py:105-179` | `tests/test_dap.py:80-128` |
+| FR-008 no new facts, markers kept | untested (agent behaviour) | `S/SKILL.md` steps 6 and 9 | T015 (open); not machine-checkable (plan, accepted risk) |
+| FR-009, FR-010, FR-011 orientation, citing, fallback | untested (agent behaviour) | `D/rules.md:3-6`, `:10`; exit codes `modules/dense/skills/sdlc-dense-index/dap.py:206-210` | exit codes: `tests/test_dap.py:168-201`; behaviour: T010 (open) |
+| FR-012, FR-013, FR-014 return contract | untested (agent behaviour) | `D/rules.md:8-9`; `D/templates/dense-return.md` | text: `tests/test_sdlc.py:342`; behaviour: T018 (open) |
+| FR-015 both targets | met (rendering) | `bin/sdlc` same block for both targets | `tests/test_sdlc.py:227`, `:286`, `:364`. Agent behaviour on Copilot: not tested |
+| FR-016 eval method | met (kit part) | `D/templates/dense-eval.md`; `evals/scenarios.md` M1 | lint; workspace set is D4 (open) |
+| FR-017 clean install and removal | met | module mechanism | `tests/test_sdlc.py:316` |
+| FR-018 failed rebuild keeps index | met | `modules/dense/skills/sdlc-dense-index/dap.py:198-205` | `tests/test_dap.py:263-288` |
+| FR-019 module rules | met | `bin/sdlc:205-206`, `:259-262`, lint `:784-791` | `tests/test_sdlc.py:224-269`, `:556-576` |
+| NFR-001 no secrets / personal data | **diverged (partial)** | secrets: `modules/dense/skills/sdlc-dense-index/dap.py:25-30`, `:163`; personal data: only `S/SKILL.md:47` | `tests/test_dap.py:132-140`; personal data: none (C002) |
+| NFR-002 size ≤ 5% | met | `modules/dense/skills/sdlc-dense-index/dap.py:31`, `:180` (20 KB floor, in the contract) | `tests/test_dap.py:142`, `:151` |
+| NFR-003 under 10 s | met | — | `tests/test_dap.py:291` (0.11 s) |
+| SC-001, SC-002, SC-005 gate | not yet measurable | — | D4 and T018 (open, human) |
+| SC-003 shop6 index valid | not yet measurable | — | D4 (open) |
+| SC-004 stale detection | met | `modules/dense/skills/sdlc-dense-index/dap.py:125`, `:134` | `tests/test_dap.py:173-189` |
+| SC-006 hashes restored | met | — | `tests/test_sdlc.py:243`, `:316` |
+
+Scenarios: S5 met; S2 met for the script parts, the build behaviour waits on T015; S4 met for the method, the run is D4; **S1 (P1) and S3 rest on agent behaviour that only T010 and T018 can show.**
+
+Plan decisions: ADR 0001 format, `fresh` exit codes 0/1/2, both script paths in the rules, default sources, per-run tmp names, `rules.md` lint and the `evals` prefix, the bytecode skip and the block order all match the code. One divergence (C001).
+
+Ticked tasks: all evidence is at or before `9a6bbe3` and re-confirmed by the HEAD run above; none stale.
+
+Unplanned behaviour: none in product code. Noted only: the test-only `SDLC_TEST_KIT` override (`tests/test_sdlc.py:274`), used for mutation checks.
+
+- [x] C001 [drift: plan Security says `dap.py` "writes only `.sdlc/context/index.dap*`" (`plan.md:115`), but `commit` replaces whatever `dest` it is given (`modules/dense/skills/sdlc-dense-index/dap.py:203`) and reads any `tmp`] → decide: confine `tmp` and `dest` to `.sdlc/context/` with a failing test first (`modules/dense/skills/sdlc-dense-index/dap.py`, `tests/test_dap.py`), or relax the plan sentence — blocked-by: —
+- [x] C002 [drift: NFR-001 forbids personal data in the index, but only secrets are detected (`modules/dense/skills/sdlc-dense-index/dap.py:25-30`); personal data relies on the skill instruction (`S/SKILL.md:47`) and the 10-entry self-check] → decide: add a narrow personal-data check (e.g. e-mail addresses) with a failing test first, or record in plan that personal data is a skill-level rule with residual risk — blocked-by: —
+- [ ] C003 [untested: agent behaviour for FR-003, FR-008–FR-014 (S1 P1, S2 build, S3)] → no new task: T010, T015 and T018 cover it; they stay open and block calling S1–S3 verified — blocked-by: T010, T015, T018

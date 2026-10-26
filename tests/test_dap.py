@@ -135,6 +135,16 @@ class Validate(Base):
                       "xoxb-1234-5678-abcdefgh", "sk-abcdefghijklmnopqrstuvwx"):
             self.assertError(self.validate(self.index(body="[repo admin]\ndesc: %s @a#data" % value)), 4, "secret")
 
+    def test_email_addresses_rejected(self):
+        for value in ("owner bob.smith@example.com", "Phong <p.ngo@jtl-software.com>", "x@y.de, done"):
+            self.assertError(self.validate(self.index(body="[repo admin]\nowner: %s @a#data" % value)), 4, "e-mail")
+
+    def test_at_signs_that_are_not_email_accepted(self):
+        for value in ("git@github.com:jtl-software/x.git", "@jtl/shop-component", "pkg@1.2.3", "user @ host"):
+            idx = self.index(body="[repo admin]\ndesc: %s @a#data" % value)
+            code, out = self.validate(idx)
+            self.assertEqual(code, 0, (value, out))
+
     def test_plain_url_is_not_a_secret(self):
         idx = self.index(body="[repo admin]\ndesc: https://github.com/jtl-software/x.git @a#data")
         self.assertEqual(self.validate(idx)[0], 0)
@@ -279,6 +289,40 @@ class Commit(Base):
             self.assertEqual(f.read(), new)
         self.assertFalse(os.path.exists(tmp))
         self.assertEqual(out.strip(), "committed %s" % sha12(new))
+
+    def assertRefused(self, tmp, dest):
+        code, out = run("commit", tmp, dest, "--root", self.root)
+        self.assertEqual(code, 1, out)
+        self.assertIn("commit only writes .sdlc/context/index.dap", out)
+        self.assertIn("not committed", out)
+
+    def test_dest_outside_context_refused(self):
+        tmp, _ = self.tmp("[repo admin]\ndesc: x @a#data")
+        for dest in (os.path.join(self.root, "elsewhere.dap"), self.path("other.dap"), self.path("context/a.md")):
+            self.assertRefused(tmp, dest)
+            self.assertTrue(os.path.exists(tmp))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "elsewhere.dap")))
+        with open(self.path("context/a.md"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), SOURCE)
+
+    def test_tmp_outside_context_refused(self):
+        self.tmp("[repo admin]\ndesc: x @a#data")
+        stray = os.path.join(self.root, "stray.tmp")
+        with open(self.path("context/index.dap.123.tmp"), encoding="utf-8") as f, open(stray, "w") as g:
+            g.write(f.read())
+        self.assertRefused(stray, self.path("context/index.dap"))
+        self.assertTrue(os.path.exists(stray))
+
+    def test_dest_symlink_out_of_context_refused(self):
+        tmp, dest = self.tmp("[repo admin]\ndesc: x @a#data")
+        target = os.path.join(self.root, "outside.dap")
+        with open(target, "w") as f:
+            f.write("keep\n")
+        os.remove(dest)
+        os.symlink(target, dest)
+        self.assertRefused(tmp, dest)
+        with open(target) as f:
+            self.assertEqual(f.read(), "keep\n")
 
     def test_commit_into_missing_index(self):
         tmp, dest = self.tmp("[repo admin]\ndesc: First @a#data")

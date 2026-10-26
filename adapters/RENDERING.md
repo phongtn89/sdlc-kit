@@ -10,6 +10,9 @@ How `bin/sdlc` turns kit sources into files inside a project. This file is the s
 | `core/roles/<role>.md` | Frontmatter: `name` (= file stem), `description`, `access` (`read-only` or `full`); body = instructions |
 | `core/constitution.md`, `core/principles/*.md`, `core/checklists/*.md`, `core/templates/*.md` | Plain markdown, copied |
 | `modules/<module>/{skills,roles,checklists,templates}/` | Same formats as core; installed only with `--modules <module>` |
+| `modules/<module>/rules.md` (optional) | Plain markdown, ≤ 30 lines: the module's rules for the managed block (see Managed blocks) |
+
+`__pycache__/` folders and `*.pyc` files in any source folder are never copied.
 | `adapters/models.json` | Default model per role per target |
 
 Frontmatter is a strict YAML subset: `key: value` lines; values are bare words, `true`/`false`, or double-quoted strings. Lists aren't allowed in sources.
@@ -64,7 +67,7 @@ target: github-copilot             # only when claude is also a target (VS Code 
 <!-- END sdlc-kit -->
 ```
 
-- The block content is generated from `core/constitution.md` (everything below its first heading), followed by a generated index of tracks, skills and roles, and then `config.json` → `extra_instructions` (a list of strings, rendered as bullets).
+- The block content is generated from `core/constitution.md` (everything below its first heading), followed by a generated index of tracks, skills and roles, then `## Module rules` with one `### <module>` subsection per installed module that has a `rules.md` (in module order; the section is omitted when none has one), and then `config.json` → `extra_instructions` (a list of strings, rendered as bullets under `## Project rules`).
 - If the file has no block, append one, preceded by a blank line. Create the file if it doesn't exist. Text outside the block is never modified.
 - `CLAUDE.md`: if the file is missing, create it with the single line `@AGENTS.md`. If it exists but contains no `@AGENTS.md` line, add a managed block that contains `@AGENTS.md`.
 
@@ -86,6 +89,6 @@ target: github-copilot             # only when claude is also a target (VS Code 
 | `uninstall <dir>` | Remove locked files that are unmodified, managed blocks, empty dirs it created, and the lock. Keep `config.json`. Report modified files that were kept. | 0 |
 | `discover <dir> [--json]` | Read-only. For each git repo directly under `<dir>` (no symlinks, no recursion, `node_modules` skipped), report branch, HEAD, dirty count, origin URL with credentials stripped, `packageManager`, lockfiles, root `package.json` scripts matching test/lint/typecheck/build/integration/validate/check, other manifests, CI workflow count, `specs/` count with duplicate prefixes, Spec Kit version (`.specify/*.json` → `speckit_version`), agent surfaces, `AGENTS.md`/`CLAUDE.md` line counts, and installed kit version. Git runs with `--no-optional-locks -c core.fsmonitor=false`. Nothing is executed from the repos and nothing is written. Default output is a markdown table; `--json` gives `{workspace, repos[]}`. | 0 |
 | `next-spec <dir>` | Print the next free 3-digit prefix: max existing + 1, zero-padded. | 0 |
-| `lint` | Validate the kit itself: frontmatter keys and values; `name` = folder; required skill sections (`## When to use`, `## Process`, `## Rationalizations`, `## Red flags`, `## Verification`); SKILL.md ≤ 200 lines; every `.sdlc/<path>` mentioned in a skill or role exists in the kit under `core/` or `modules/` (the `.sdlc/config.json` path is allowed). | 0, 1 on errors |
+| `lint` | Validate the kit itself: frontmatter keys and values; `name` = folder; required skill sections (`## When to use`, `## Process`, `## Rationalizations`, `## Red flags`, `## Verification`); SKILL.md ≤ 200 lines; module `rules.md` ≤ 30 lines; every `.sdlc/<path>` mentioned in a skill, role or module `rules.md` exists in the kit under `core/` or `modules/` (the `.sdlc/config.json` path and project-owned paths under `.sdlc/context`, `decisions`, `drafts`, `bugs` and `evals` are allowed). | 0, 1 on errors |
 
 Python 3.9 standard library only. No network.

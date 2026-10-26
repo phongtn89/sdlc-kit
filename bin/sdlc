@@ -152,8 +152,10 @@ def check_target(path):
 def list_files(root):
     out = []
     for dp, dn, fn in os.walk(root):
-        dn.sort()
+        dn[:] = sorted(d for d in dn if d != "__pycache__")  # bytecode is never kit content
         for f in sorted(fn):
+            if f.endswith(".pyc"):
+                continue
             full = os.path.join(dp, f)
             out.append(os.path.relpath(full, root).replace(os.sep, "/"))
     return sorted(out)
@@ -200,6 +202,8 @@ def load_kit(kit, modules):
         if not os.path.isdir(os.path.join(kit, "modules", m)):
             raise SdlcError("unknown module: %s" % m)
     skills, roles, shared = {}, {}, {}
+    rules = [(m, read_text(os.path.join(kit, "modules", m, "rules.md")).strip("\n")) for m in modules
+             if os.path.isfile(os.path.join(kit, "modules", m, "rules.md"))]
     cpath = os.path.join(kit, "core", "constitution.md")
     if not os.path.isfile(cpath):
         raise SdlcError("kit has no core/constitution.md")
@@ -232,7 +236,8 @@ def load_kit(kit, modules):
             if os.path.isdir(d):
                 for f in list_files(d):
                     shared[".sdlc/%s/%s" % (kind, f)] = read_bytes(os.path.join(d, f))
-    return {"skills": skills, "roles": roles, "shared": shared, "constitution": constitution.decode("utf-8")}
+    return {"skills": skills, "roles": roles, "shared": shared, "rules": rules,
+            "constitution": constitution.decode("utf-8")}
 
 
 def first_sentence(desc):
@@ -251,6 +256,10 @@ def block_inner(data, config):
     out += ["- **%s** — %s" % (n, first_sentence(data["skills"][n]["description"])) for n in sorted(data["skills"])]
     out += ["", "### Roles", ""]
     out += ["- **sdlc-%s** — %s" % (r, data["roles"][r]["fm"].get("description", "")) for r in sorted(data["roles"])]
+    if data["rules"]:
+        out += ["", "## Module rules"]
+        for m, text in data["rules"]:
+            out += ["", "### %s" % m, "", text]
     extra = [str(x) for x in config.get("extra_instructions", []) or []]
     if extra:
         out += ["", "## Project rules", ""] + ["- " + x for x in extra]
@@ -723,7 +732,7 @@ def lint_refs(kit, text, label, errors, kit_paths):
         if text[m.end():m.end() + 1] in ("*", "<"):
             continue  # glob or placeholder, not a concrete path
         ref = m.group(1).rstrip(".,;:").rstrip("/")
-        if not ref or ref in ("config.json", "lock.json", "workspace.md") or ref.startswith(("context", "decisions", "drafts", "bugs")):
+        if not ref or ref in ("config.json", "lock.json", "workspace.md") or ref.startswith(("context", "decisions", "drafts", "bugs", "evals")):
             continue
         if ref not in kit_paths:
             errors.append("%s: references missing .sdlc/%s" % (label, ref))
@@ -772,6 +781,14 @@ def cmd_lint(a, kit):
         errors.append("VERSION: missing")
     for root in roots:
         rl = os.path.relpath(root, kit)
+        rules = os.path.join(root, "rules.md")
+        if rl != "core" and os.path.isfile(rules):
+            label = "%s/rules.md" % rl
+            text = read_text(rules)
+            n = len(text.split("\n")) - (1 if text.endswith("\n") else 0)
+            if n > 30:
+                errors.append("%s: %d lines (max 30)" % (label, n))
+            lint_refs(kit, text, label, errors, paths)
         sdir = os.path.join(root, "skills")
         if os.path.isdir(sdir):
             for name in sorted(os.listdir(sdir)):

@@ -217,6 +217,59 @@ class InstallTests(Base):
         self.assertIn("unsafe path", err)
 
 
+def managed_block(text):
+    return text[text.index(BEGIN):text.index(END) + len(END)]
+
+
+class ModuleRules(Base):
+    RULES = "## Module rules\n\n### rul\n\n- Fixture module rule one.\n- Read `.sdlc/templates/rul.md` first."
+
+    def test_rules_rendered_in_both_blocks_between_roles_and_project_rules(self):
+        self.write(".sdlc/config.json", json.dumps({"extra_instructions": ["Use tabs"]}))
+        code, out, _ = self.install("--modules", "rul")
+        self.assertEqual(code, 0, out)
+        agents = managed_block(self.read("AGENTS.md"))
+        self.assertIn(self.RULES, agents)
+        self.assertLess(agents.index("### Roles"), agents.index("## Module rules"))
+        self.assertLess(agents.index("## Module rules"), agents.index("## Project rules"))
+        self.assertEqual(agents, managed_block(self.read(".github/copilot-instructions.md")))
+        self.assertEqual(run("check", self.d)[0], 0)
+
+    def test_no_module_rules_section_without_rules(self):
+        self.install("--modules", "qa")
+        self.assertNotIn("## Module rules", self.read("AGENTS.md"))
+        self.assertNotIn("## Module rules", self.read(".github/copilot-instructions.md"))
+
+    def test_add_then_remove_restores_module_free_install(self):
+        self.install()
+        before = {r: self.read(r) for r in ("AGENTS.md", ".github/copilot-instructions.md")}
+        lock_before = self.lock()
+        self.install("--modules", "rul")
+        self.assertNotEqual(self.read("AGENTS.md"), before["AGENTS.md"])
+        code, out, _ = self.install("--modules", "")
+        self.assertEqual(code, 0, out)
+        self.assertEqual({r: self.read(r) for r in before}, before)
+        self.assertEqual(self.lock(), lock_before)
+        self.assertFalse(self.exists(".sdlc/templates/rul.md"))
+
+    def test_bytecode_in_skill_folder_not_installed(self):
+        kit = os.path.join(self._tmp.name, "kit2")
+        shutil.copytree(FIXKIT, kit)
+        cache = os.path.join(kit, "core", "skills", "debug", "__pycache__")
+        os.makedirs(cache)
+        with open(os.path.join(cache, "x.cpython-39.pyc"), "wb") as f:
+            f.write(b"\0")
+        with open(os.path.join(kit, "core", "skills", "debug", "stray.pyc"), "wb") as f:
+            f.write(b"\0")
+        code, out, _ = run("install", self.d, kit=kit)
+        self.assertEqual(code, 0, out)
+        self.assertTrue(self.exists(".claude/skills/debug/SKILL.md"))
+        self.assertFalse(self.exists(".claude/skills/debug/__pycache__"))
+        self.assertFalse(self.exists(".claude/skills/debug/stray.pyc"))
+        self.assertFalse(any("pyc" in r for r in self.lock()["files"]))
+
+
+
 class CheckUpdateTests(Base):
     def setUp(self):
         super().setUp()
@@ -397,6 +450,31 @@ class LintTests(Base):
 
     def test_fixture_passes(self):
         code, out = self.lint(FIXKIT)
+        self.assertEqual(code, 0, out)
+
+    def rules(self, k):
+        return os.path.join(k, "modules", "rul", "rules.md")
+
+    def test_module_rules_too_long(self):
+        k = self.kit()
+        with open(self.rules(k), "a") as f:
+            f.write("".join("- rule %d\n" % i for i in range(30)))
+        code, out = self.lint(k)
+        self.assertEqual(code, 1)
+        self.assertIn("modules/rul/rules.md: 32 lines (max 30)", out)
+
+    def test_module_rules_missing_reference(self):
+        k = self.kit()
+        self.sub(self.rules(k), "`.sdlc/templates/rul.md`", "`.sdlc/templates/ghost.md`")
+        code, out = self.lint(k)
+        self.assertEqual(code, 1)
+        self.assertIn("modules/rul/rules.md: references missing .sdlc/templates/ghost.md", out)
+
+    def test_evals_reference_is_project_owned(self):
+        k = self.kit()
+        with open(self.rules(k), "a") as f:
+            f.write("- Record results in `.sdlc/evals/dense/results.md`.\n")
+        code, out = self.lint(k)
         self.assertEqual(code, 0, out)
 
     def test_missing_section(self):

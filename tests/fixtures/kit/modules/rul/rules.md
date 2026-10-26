@@ -1,0 +1,2 @@
+- Fixture module rule one.
+- Read `.sdlc/templates/rul.md` first.

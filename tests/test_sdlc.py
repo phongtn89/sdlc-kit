@@ -304,6 +304,15 @@ class DenseModule(Base):
                      ".sdlc/workspace.md", ".sdlc/context/*.md"):
             self.assertIn(step, skill)
 
+    def test_briefs_carry_the_return_contract(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        self.assertIn("#ret 1 <done|partial|blocked>", self.read(".sdlc/templates/dense-return.md"))
+        agents = managed_block(self.read("AGENTS.md"))
+        self.assertIn("Every delegation brief includes the text of `.sdlc/templates/dense-return.md`", agents)
+        self.assertIn("ask once for a reformat", agents)
+        self.assertIn("never drop a `path:line`", agents)
+        self.assertIn("sub-agent replies", agents)
+
     def test_installed_script_runs(self):
         run("install", self.d, "--modules", "dense", kit=self.KIT)
         self.write(".sdlc/context/repo.md", "# Repo\n\n## Purpose\n\nA thing.\n")

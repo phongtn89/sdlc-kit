@@ -1,6 +1,6 @@
 # Skill evals (manual)
 
-Run each prompt in a scratch repo with the kit installed, using a fresh session per prompt. A run passes when every **Expect** item is observable in the transcript or on disk. Record results in `evals/results/<kit-version>.md`. Without a Claude Code CLI, each prompt can run as a fresh subagent told to load `.claude/skills/<name>/SKILL.md` on a slash command. That tests skill behaviour, but not auto-triggering.
+Run each prompt in a scratch repo with the kit installed, using a fresh session per prompt: `python3 evals/run.py <prompt-file> <scratch-repo> --out <transcript.jsonl>` runs one `claude -p` per prompt, refuses when the prompt is readable from the repo, and prints the session, the tool calls, the answer's first line and any file the run changed. Keep prompt files and expectations outside the scratch repo, and score only runs that exit 0. A run passes when every **Expect** item is observable in the transcript or on disk. Record results in `evals/results/<kit-version>.md`. Without a Claude Code CLI, each prompt can run as a fresh subagent told to load `.claude/skills/<name>/SKILL.md` on a slash command. That tests skill behaviour, but not auto-triggering.
 
 ## Router
 

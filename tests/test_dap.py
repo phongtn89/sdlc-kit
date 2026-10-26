@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -198,6 +199,53 @@ class Fresh(Base):
         self.assertTrue(out.startswith("INVALID"), out)
         self.assertIn("ERROR 4:", out)
 
+
+class KeyList(unittest.TestCase):
+    KEYS = os.path.join(os.path.dirname(DAP), "keys.json")
+    CONTRACT = os.path.join(ROOT, "specs", "001-dense-agent-protocol", "contracts", "index-format.md")
+    # Every key the shop6 prototype (.sdlc/manifest.yaml, 2026-10-26) needs, by DAP section type.
+    # Merged on purpose: ops/op/msgs → msg, fail → note, planned → status, blocked_by → blocked,
+    # adr_conflicts → conflicts; prototype list ids (id) become section ids.
+    PROTOTYPE = {
+        "meta": ["prod", "kind", "erp", "prd", "gate", "mvp", "ga"],
+        "ux": ["personas", "a11y", "figma", "tokens", "themes", "sf_pages", "adm_screens", "builder"],
+        "repo": ["desc", "stack", "run", "db", "specs", "owns", "scope", "runtime", "consumers", "envs", "owner"],
+        "link": ["from", "to", "via", "auth", "msg", "mode", "hdr", "note", "status", "topic", "payload", "local",
+                 "pattern", "normative", "consumer", "blocked", "pkg", "skew", "spec"],
+        "infra": ["bus", "cache", "blob", "secrets", "edge", "obs"],
+        "entity": ["parts", "owner", "states", "scope", "note"],
+        "decision": ["what", "state", "owner", "conflicts", "rejected"],
+        "risk": ["what", "sev"],
+    }
+
+    def types(self):
+        with open(self.KEYS, encoding="utf-8") as f:
+            return json.load(f)["types"]
+
+    def test_covers_prototype(self):
+        types = self.types()
+        missing = ["%s.%s" % (t, k) for t, ks in self.PROTOTYPE.items() for k in ks if k not in types.get(t, {})]
+        self.assertEqual(missing, [])
+
+    def test_every_key_has_meaning_and_value_form(self):
+        for t, keys in self.types().items():
+            for k, spec in keys.items():
+                self.assertRegex(k, r"^[a-z][a-z0-9_.-]*$", "%s.%s" % (t, k))
+                self.assertTrue(spec.get("meaning"), "%s.%s has no meaning" % (t, k))
+                v = spec.get("value", "")
+                self.assertTrue(v in ("text", "list", "integer", "date") or v.startswith("one of: "),
+                                "%s.%s has value form %r" % (t, k, v))
+
+    def test_contract_example_keys_exist(self):
+        with open(self.CONTRACT, encoding="utf-8") as f:
+            text = f.read()
+        example = text.split("Example (abridged from the shop6 prototype):")[1].split("```")[1]
+        types, current = self.types(), None
+        for line in example.splitlines():
+            if line.startswith("["):
+                current = line[1:].split()[0]
+            elif current and ": " in line:
+                self.assertIn(line.split(": ")[0], types[current], line)
 
 
 class Commit(Base):

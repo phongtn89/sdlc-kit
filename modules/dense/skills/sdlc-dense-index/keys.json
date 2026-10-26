@@ -1,35 +1,84 @@
 {
   "version": 1,
   "types": {
+    "meta": {
+      "prod": {"meaning": "product name and version", "value": "text"},
+      "kind": {"meaning": "what kind of product it is", "value": "text"},
+      "erp": {"meaning": "system of record behind the product", "value": "text"},
+      "prd": {"meaning": "state of the product requirements document", "value": "text"},
+      "gate": {"meaning": "next delivery gate", "value": "date"},
+      "mvp": {"meaning": "minimum viable product date or milestone", "value": "text"},
+      "ga": {"meaning": "general availability date or milestone", "value": "text"}
+    },
+    "ux": {
+      "personas": {"meaning": "user types the product serves", "value": "list"},
+      "a11y": {"meaning": "accessibility target and known gaps", "value": "text"},
+      "figma": {"meaning": "design files and whether they are confirmed as the source", "value": "list"},
+      "tokens": {"meaning": "design token model: counts, editable set, naming", "value": "text"},
+      "themes": {"meaning": "shipped themes", "value": "list"},
+      "sf_pages": {"meaning": "storefront page kinds", "value": "list"},
+      "adm_screens": {"meaning": "admin screens", "value": "list"},
+      "builder": {"meaning": "page builder and layout model", "value": "text"}
+    },
     "repo": {
       "desc": {"meaning": "what the repository is for, in one line", "value": "text"},
       "stack": {"meaning": "main languages, frameworks and stores", "value": "list"},
       "run": {"meaning": "where it runs (cluster, namespace, host)", "value": "text"},
+      "runtime": {"meaning": "runtime kind when it is not a service (library, none)", "value": "text"},
       "db": {"meaning": "databases it owns", "value": "list"},
       "owns": {"meaning": "data or capabilities it is the system of record for", "value": "list"},
+      "scope": {"meaning": "tenancy or data scope it keys by", "value": "text"},
+      "consumers": {"meaning": "units that consume what it publishes", "value": "list"},
+      "envs": {"meaning": "environments and their state", "value": "list"},
       "specs": {"meaning": "number of spec folders", "value": "integer"},
       "owner": {"meaning": "owning person or team, or unknown", "value": "text"}
     },
     "link": {
       "from": {"meaning": "calling or publishing unit", "value": "text"},
       "to": {"meaning": "called or consuming unit(s)", "value": "list"},
-      "via": {"meaning": "protocol, topic or package channel", "value": "text"},
+      "via": {"meaning": "protocol, API surface or package channel", "value": "text"},
+      "topic": {"meaning": "message topic or queue", "value": "text"},
+      "spec": {"meaning": "contract or event specification that defines it", "value": "text"},
+      "msg": {"meaning": "operations, messages or events carried", "value": "list"},
+      "payload": {"meaning": "what a message carries (for example a claim-check)", "value": "text"},
+      "pattern": {"meaning": "interaction pattern (request/report, pub/sub)", "value": "text"},
+      "hdr": {"meaning": "headers the link relies on", "value": "list"},
       "auth": {"meaning": "how the call is authenticated, and whether it is enforced", "value": "text"},
-      "msg": {"meaning": "message, operation or event names carried", "value": "list"}
+      "mode": {"meaning": "access mode (read-only, write)", "value": "text"},
+      "local": {"meaning": "how the link runs in local development", "value": "text"},
+      "pkg": {"meaning": "package that carries the contract", "value": "text"},
+      "skew": {"meaning": "whether consumers pin different versions", "value": "one of: yes, no"},
+      "status": {"meaning": "built, partial or planned", "value": "one of: built, partial, planned"},
+      "blocked": {"meaning": "what blocks a planned link", "value": "text"},
+      "normative": {"meaning": "whether the specification is binding, or open", "value": "text"},
+      "consumer": {"meaning": "verified consumer, or unverified", "value": "text"},
+      "note": {"meaning": "one fact that fits no other key (failure behaviour, caveat)", "value": "text"}
     },
-    "risk": {
-      "what": {"meaning": "the risk in one sentence", "value": "text"},
-      "sev": {"meaning": "severity", "value": "one of: low, med, high"}
-    },
-    "decision": {
-      "what": {"meaning": "the decision or open question in one sentence", "value": "text"},
-      "state": {"meaning": "decision state", "value": "one of: open, closed"},
-      "owner": {"meaning": "who closes or ratified it", "value": "text"}
+    "infra": {
+      "bus": {"meaning": "message bus", "value": "text"},
+      "cache": {"meaning": "cache store and its governing decision", "value": "text"},
+      "blob": {"meaning": "blob containers", "value": "list"},
+      "secrets": {"meaning": "secret store and delivery", "value": "text"},
+      "edge": {"meaning": "edge and ingress path", "value": "text"},
+      "obs": {"meaning": "observability pipeline", "value": "text"}
     },
     "entity": {
       "parts": {"meaning": "main sub-types or fields", "value": "list"},
       "owner": {"meaning": "repository or service that owns it", "value": "text"},
-      "states": {"meaning": "lifecycle states in order", "value": "text"}
+      "states": {"meaning": "lifecycle states in order", "value": "text"},
+      "scope": {"meaning": "tenant, shop or other key it is scoped by", "value": "text"},
+      "note": {"meaning": "one fact that fits no other key", "value": "text"}
+    },
+    "decision": {
+      "what": {"meaning": "the decision or open question in one sentence", "value": "text"},
+      "state": {"meaning": "decision state", "value": "one of: open, closed"},
+      "owner": {"meaning": "who closes or ratified it", "value": "text"},
+      "conflicts": {"meaning": "accepted decisions it conflicts with", "value": "list"},
+      "rejected": {"meaning": "options rejected, with the reason", "value": "text"}
+    },
+    "risk": {
+      "what": {"meaning": "the risk in one sentence", "value": "text"},
+      "sev": {"meaning": "severity", "value": "one of: low, med, high"}
     }
   }
 }

@@ -295,6 +295,15 @@ class DenseModule(Base):
         json.loads(self.read(".claude/%s/keys.json" % self.SKILL))
         self.assertIn("**sdlc-dense-index**", agents)
 
+    def test_rules_and_skill_cover_building(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        agents = managed_block(self.read("AGENTS.md"))
+        self.assertIn("After any context build (`sdlc-context`), run `sdlc-dense-index build`", agents)
+        skill = self.read(".claude/%s/SKILL.md" % self.SKILL)
+        for step in ("dap.py commit .sdlc/context/index.dap.", "UNVERIFIED", "INFERRED", "10 entries",
+                     ".sdlc/workspace.md", ".sdlc/context/*.md"):
+            self.assertIn(step, skill)
+
     def test_installed_script_runs(self):
         run("install", self.d, "--modules", "dense", kit=self.KIT)
         self.write(".sdlc/context/repo.md", "# Repo\n\n## Purpose\n\nA thing.\n")

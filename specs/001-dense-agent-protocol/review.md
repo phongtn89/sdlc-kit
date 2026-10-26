@@ -1,4 +1,24 @@
-VERDICT: REJECTED
+VERDICT: APPROVED
+
+# Re-review at 0801055 (supersedes the verdict below)
+
+- Revision: `aac72f1..0801055` (fixes for F1, F2 and A1); agent: same `sdlc-reviewer` subagent, finding IDs kept; re-verified by the main session.
+- **F1: fixed.** `dap.py` enforces `src+`, `section+`, `entry+` (errors `no src lines`, `no sections`, `section has no entries`); contract rule 7; tests `test_header_only_invalid`, `test_no_sections_invalid`, `test_empty_section_invalid`, `Commit.test_truncated_tmp_keeps_last_valid_index`. Re-run: header-only tmp → `not committed`, exit 1, index sha256 unchanged.
+- **F2: fixed.** `sk-[A-Za-z0-9_-]{20,}` and `[sr]k_(live|test)_…`; contract rule 6. Re-run: `sk-proj-…`, `sk-ant-api03-…`, `sk_live_…` → `ERROR 4: value looks like a secret`.
+- **New blocking findings:** none. Checked: entries outside sections, comment and blank handling, fresh mode with stale sources, empty file, `ssh://git@host:22/repo` (re-run: `valid`).
+- **Advisories:** A1 addressed (empty user part, any scheme case; re-run: `redis://:s3cret@cache:6379` rejected); placeholders like `postgres://app:<password>@db` still flagged (fails safe). A2–A8 still open. **New advisory A9:** a build cut exactly between two complete entries still validates (re-run: valid); a cut mid-line is caught (`entry has no @ref`). A line format can't tell that from a smaller index; the skill's 10-entry self-check and `fresh` after `commit` are the mitigation.
+
+| Command / check | Revision | Outcome |
+|---|---|---|
+| `python3 -m unittest discover -s tests -t .` (Python 3.9.6) | `0801055` | 108 OK |
+| `python3 bin/sdlc lint` | `0801055` | ok |
+| F1 / F2 / A1 / ssh probe / A9 reproductions | `0801055` | as above |
+
+Not covered by this verdict: agent behaviour (Convergence C003: T010, T015, T018) and the shop6 evaluation (D4).
+
+---
+
+Previous verdict (aac72f1): VERDICT: REJECTED
 
 # Review: Dense Agent Protocol module (spec 001)
 

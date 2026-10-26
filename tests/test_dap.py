@@ -68,7 +68,7 @@ class Validate(Base):
         self.assertEqual(out.strip(), "valid")
 
     def test_value_may_contain_at_sign(self):
-        idx = self.index(body="[repo components]\npkg: @jtl/shop-component @a#data\nnote: see @a#data docs @a#purpose-and-boundaries")
+        idx = self.index(body="[repo components]\ndesc: @jtl/shop-component @a#data\nowns: see @a#data docs @a#purpose-and-boundaries")
         code, out = self.validate(idx)
         self.assertEqual(code, 0, out)
 
@@ -113,6 +113,43 @@ class Validate(Base):
         code, out = self.validate(self.path("context/index.dap"))
         self.assertEqual(code, 1, out)
         self.assertIn("ERROR", out)
+
+    def test_unknown_section_type(self):
+        self.assertError(self.validate(self.index(body="[service admin]\ndesc: x @a#data")), 3, "section type service")
+
+    def test_duplicate_section(self):
+        idx = self.index(body="[repo admin]\ndesc: x @a#data\n[repo admin]\ndb: y @a#data")
+        self.assertError(self.validate(idx), 5, "duplicate section [repo admin]")
+
+    def test_key_not_allowed_for_type(self):
+        self.assertError(self.validate(self.index(body="[risk r1]\ndesc: x @a#data")), 4, "key desc")
+
+    def test_key_repeated_in_section(self):
+        idx = self.index(body="[repo admin]\ndesc: x @a#data\ndesc: y @a#data")
+        self.assertError(self.validate(idx), 5, "repeated key desc")
+
+    def test_secrets_rejected(self):
+        for value in ("https://bob:hunter2@db.example.com/x", "-----BEGIN RSA PRIVATE KEY-----",
+                      "token ghp_abcdefghijklmnopqrstuvwxyz0123456789", "AKIAABCDEFGHIJKLMNOP",
+                      "xoxb-1234-5678-abcdefgh", "sk-abcdefghijklmnopqrstuvwx"):
+            self.assertError(self.validate(self.index(body="[repo admin]\ndesc: %s @a#data" % value)), 4, "secret")
+
+    def test_plain_url_is_not_a_secret(self):
+        idx = self.index(body="[repo admin]\ndesc: https://github.com/jtl-software/x.git @a#data")
+        self.assertEqual(self.validate(idx)[0], 0)
+
+    def test_size_warning_is_not_an_error(self):
+        self.write("context/a.md", SOURCE + "words " * 5000)  # ~30 KB, above the 20 KB floor
+        body = "[repo admin]\n" + "desc: %s @a#data" % ("x" * 2000)
+        code, out = self.validate(self.index(body=body))
+        self.assertEqual(code, 0, out)
+        self.assertIn("WARNING: index is", out)
+        self.assertIn("of its sources (max 5%)", out)
+        self.assertTrue(out.strip().endswith("valid"), out)
+
+    def test_no_size_warning_for_small_sources(self):
+        code, out = self.validate(self.index(body="[repo admin]\ndesc: %s @a#data" % ("x" * 2000)))
+        self.assertEqual((code, out.strip()), (0, "valid"))
 
     def test_root_defaults_to_nearest_folder_with_sdlc(self):
         self.index()
@@ -160,6 +197,63 @@ class Fresh(Base):
         self.assertEqual(code, 2, out)
         self.assertTrue(out.startswith("INVALID"), out)
         self.assertIn("ERROR 4:", out)
+
+
+
+class Commit(Base):
+    def digest(self, rel):
+        with open(self.path(rel), "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+
+    def tmp(self, body):
+        good = self.index()
+        with open(good, encoding="utf-8") as f:
+            text = f.read()
+        self.write("context/index.dap.123.tmp", text.split("[repo")[0] + body + "\n")
+        return self.path("context/index.dap.123.tmp"), good
+
+    def test_invalid_tmp_keeps_last_valid_index(self):
+        tmp, dest = self.tmp("[repo admin]\ndesc: no ref")
+        before = self.digest("context/index.dap")
+        code, out = run("commit", tmp, dest, "--root", self.root)
+        self.assertEqual(code, 1, out)
+        self.assertIn("ERROR", out)
+        self.assertIn("not committed", out)
+        self.assertEqual(self.digest("context/index.dap"), before)
+
+    def test_valid_tmp_replaces_index(self):
+        tmp, dest = self.tmp("[repo admin]\ndesc: Replaced @a#data")
+        with open(tmp, "rb") as f:
+            new = f.read()
+        code, out = run("commit", tmp, dest, "--root", self.root)
+        self.assertEqual(code, 0, out)
+        with open(dest, "rb") as f:
+            self.assertEqual(f.read(), new)
+        self.assertFalse(os.path.exists(tmp))
+        self.assertEqual(out.strip(), "committed %s" % sha12(new))
+
+    def test_commit_into_missing_index(self):
+        tmp, dest = self.tmp("[repo admin]\ndesc: First @a#data")
+        os.remove(dest)
+        self.assertEqual(run("commit", tmp, dest, "--root", self.root)[0], 0)
+        self.assertTrue(os.path.exists(dest))
+
+
+class Perf(Base):
+    def test_shop6_sized_workspace_under_10s(self):
+        import time
+        headings = "".join("\n## Section %d\n\n%s\n" % (i, "word " * 600) for i in range(10))
+        srcs = []
+        for i in range(10):
+            self.write("context/r%d.md" % i, "# Repo %d\n%s" % (i, headings))  # 10 × ~30 KB = ~300 KB
+            srcs.append("src r%d context/r%d.md %s" % (i, i, self.src_hash("context/r%d.md" % i)))
+        body = "\n".join("[repo r%d-%d]\ndesc: entry %d @r%d#section-%d\nowns: a, b @r%d#section-%d"
+                         % (i, j, j, i, j % 10, i, (j + 1) % 10) for i in range(10) for j in range(20))
+        idx = self.index(body=body, src="\n".join(srcs))
+        start = time.monotonic()
+        self.assertEqual(self.validate(idx)[0], 0)
+        self.assertEqual(self.fresh(idx)[0], 0)
+        self.assertLess(time.monotonic() - start, 10)
 
 
 if __name__ == "__main__":

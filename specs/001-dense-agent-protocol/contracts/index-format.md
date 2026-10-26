@@ -47,7 +47,11 @@ Each rule is an error, reported as `ERROR <line>: <reason>`; exit code 1 if any:
 5. An entry has no `@ref`, its alias isn't declared, or its slug isn't a heading in that source.
 6. A value matches a secret pattern: credentials in URLs, private-key blocks, or common token prefixes.
 
-A warning, not an error: the index is larger than 5% of the combined size of its sources (NFR-002).
+A warning, not an error: the index is larger than 5% of the combined size of its sources (NFR-002). It applies only when those sources total at least 20 KB; below that the ratio is noise. Printed as `WARNING: index is <n>% of its sources (max 5%)` before `valid`.
+
+## Commit (FR-018)
+
+`commit <tmp> <dest>` validates `tmp`. If it's valid, it atomically replaces `dest` (`os.replace`) and prints `committed <IDX12>`, exit 0. Otherwise it prints the `ERROR` lines and `not committed: <dest> unchanged`, exit 1, and leaves both files in place. Builders write `tmp` as `index.dap.<pid>.tmp`, so concurrent builds never share a temporary file.
 
 ## Freshness (FR-005, FR-006, FR-009, FR-011)
 

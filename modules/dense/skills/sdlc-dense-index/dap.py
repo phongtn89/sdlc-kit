@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Dense index (DAP v1) validator and freshness check. Standard library only.
 
-  dap.py validate <index> [--root DIR]   exit 0 valid, 1 invalid
-  dap.py fresh <index> [--root DIR]      exit 0 fresh, 1 stale, 2 invalid or missing
+  dap.py validate <index> [--root DIR]      exit 0 valid, 1 invalid
+  dap.py fresh <index> [--root DIR]         exit 0 fresh, 1 stale, 2 invalid or missing
+  dap.py commit <tmp> <dest> [--root DIR]   exit 0 replaced, 1 invalid (dest unchanged)
 
 The grammar is specs/001-dense-agent-protocol/contracts/index-format.md in sdlc-kit.
 """
 import argparse
 import hashlib
+import json
 import os
 import re
 import sys
@@ -19,6 +21,14 @@ ENTRY_RE = re.compile(r"^([a-z][a-z0-9_.-]*): (.*)$")
 REF_RE = re.compile(r"^([a-z0-9]{1,8})#([a-z0-9_-]+)$")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 VERSION = "1"
+KEYS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.json")
+SECRET_RES = [re.compile(p) for p in (
+    r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@",          # credentials in a URL
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    r"\bgh[pousr]_[A-Za-z0-9]{20,}", r"\bgithub_pat_[A-Za-z0-9_]{20,}",
+    r"\bAKIA[0-9A-Z]{16}\b", r"\bxox[abprs]-[A-Za-z0-9-]{10,}", r"\bsk-[A-Za-z0-9]{20,}",
+)]
+SIZE_RATIO, SIZE_FLOOR = 0.05, 20 * 1024
 
 
 def sha12(data):
@@ -62,14 +72,27 @@ def slugs(text):
     return out
 
 
+def load_keys():
+    try:
+        with open(KEYS, encoding="utf-8") as f:
+            return {t: set(keys) for t, keys in json.load(f)["types"].items()}
+    except (OSError, ValueError, KeyError, AttributeError):
+        return None
+
+
 def check(index, root, fresh_mode=False):
-    """Return (errors, stale, idx12). errors: ["ERROR <line>: <reason>"]; stale: ["STALE <alias> <path>"]."""
+    """Return (errors, stale, idx12, warnings). errors: ["ERROR <line>: <reason>"]; stale: ["STALE <alias> <path>"]."""
     if not os.path.isfile(index):
-        return ["ERROR 0: index not found: %s" % index], [], None
+        return ["ERROR 0: index not found: %s" % index], [], None, []
+    keys = load_keys()
+    if keys is None:
+        return ["ERROR 0: key list missing or unreadable: %s" % KEYS], [], None, []
     with open(index, "rb") as f:
         raw = f.read()
-    errors, stale, srcs, sections = [], [], {}, set()
+    errors, stale, srcs, sections, warnings = [], [], {}, set(), []
     header_seen = section = False
+    src_bytes = 0
+    stype, used = None, set()  # current section type (None if unknown) and keys used in it
     refs = []  # (line, alias, slug)
     for n, line in enumerate(raw.decode("utf-8", "replace").split("\n"), 1):
         line = line.rstrip("\r")
@@ -106,6 +129,7 @@ def check(index, root, fresh_mode=False):
             else:
                 with open(full, "rb") as f:
                     data = f.read()
+                src_bytes += len(data)
                 if fresh_mode and sha12(data) != h:
                     stale.append("STALE %s %s" % (alias, rel))
                     srcs[alias] = (rel, None)
@@ -114,7 +138,12 @@ def check(index, root, fresh_mode=False):
             continue
         m = SECTION_RE.match(line)
         if m:
-            section = True
+            section, used = True, set()
+            stype = m.group(1) if m.group(1) in keys else None
+            if stype is None:
+                errors.append("ERROR %d: unknown section type %s" % (n, m.group(1)))
+            if m.groups() in sections:
+                errors.append("ERROR %d: duplicate section [%s %s]" % ((n,) + m.groups()))
             sections.add(m.groups())
             continue
         m = ENTRY_RE.match(line)
@@ -124,7 +153,15 @@ def check(index, root, fresh_mode=False):
         if not section:
             errors.append("ERROR %d: entry outside a section" % n)
             continue
+        key = m.group(1)
+        if stype is not None and key not in keys[stype]:
+            errors.append("ERROR %d: key %s not allowed in a %s section" % (n, key, stype))
+        elif key in used:
+            errors.append("ERROR %d: repeated key %s in this section" % (n, key))
+        used.add(key)
         at = line.rfind(" @")
+        if any(r.search(line[:at] if at >= 0 else line) for r in SECRET_RES):
+            errors.append("ERROR %d: value looks like a secret; point to its source section instead" % n)
         if at < 0:
             errors.append("ERROR %d: entry has no @ref" % n)
             continue
@@ -140,20 +177,32 @@ def check(index, root, fresh_mode=False):
             errors.append("ERROR %d: unknown alias %s" % (n, alias))
         elif srcs[alias][1] is not None and slug not in srcs[alias][1]:
             errors.append("ERROR %d: no heading %s in %s" % (n, slug, srcs[alias][0]))
-    return sorted(errors, key=lambda e: int(e.split()[1].rstrip(":"))), stale, sha12(raw)
+    if src_bytes >= SIZE_FLOOR and len(raw) > SIZE_RATIO * src_bytes:
+        warnings.append("WARNING: index is %.1f%% of its sources (max 5%%)" % (100.0 * len(raw) / src_bytes))
+    return sorted(errors, key=lambda e: int(e.split()[1].rstrip(":"))), stale, sha12(raw), warnings
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Validate a dense index or check its freshness.")
-    ap.add_argument("command", choices=["validate", "fresh"])
-    ap.add_argument("index")
+    ap.add_argument("command", choices=["validate", "fresh", "commit"])
+    ap.add_argument("index", help="the index (for commit: the temporary index to validate)")
+    ap.add_argument("dest", nargs="?", help="commit only: the index to replace")
     ap.add_argument("--root", help="folder that holds .sdlc/ (default: nearest one above the index)")
     a = ap.parse_args(argv)
+    if (a.command == "commit") != (a.dest is not None):
+        ap.error("dest is required for commit and only allowed there")
     root = os.path.abspath(a.root) if a.root else find_root(a.index)
-    errors, stale, idx = check(a.index, root, fresh_mode=a.command == "fresh")
+    errors, stale, idx, warnings = check(a.index, root, fresh_mode=a.command == "fresh")
     if a.command == "validate":
-        print("\n".join(errors) if errors else "valid")
+        print("\n".join(warnings + (errors or ["valid"])))
         return 1 if errors else 0
+    if a.command == "commit":
+        if errors:
+            print("\n".join(errors + ["not committed: %s unchanged" % a.dest]))
+            return 1
+        os.replace(a.index, a.dest)
+        print("\n".join(warnings + ["committed %s" % idx]))
+        return 0
     if errors:
         print("\n".join(["INVALID"] + errors))
         return 2

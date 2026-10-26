@@ -84,7 +84,7 @@ modules/dense/
 | FR-009, FR-010, FR-011 | `rules.md` (run `fresh` from whichever skill path exists; on exit 0 load the index first and quote its revision (`fresh <IDX12>`); cite sources; on 1 use full sources for the stale aliases; on 2 use full sources throughout) |
 | FR-012, FR-013, FR-014 | `rules.md` + `dense-return.md`; `k` lines may use any key in the key list, of any section type |
 | FR-015 | One rules text in both instruction blocks; skill bodies are identical across targets (`RENDERING.md`) |
-| FR-016 | `dense-eval.md` in the kit; the concrete tasks live in shop6 `.sdlc/evals/dense/` |
+| FR-016 | `dense-eval.md` in the kit (with a leak-check step); the concrete tasks live outside the shop6 workspace in `~/Projects/shop6-evals/dense/` |
 | FR-018 | `dap.py commit tmp dest`: validates `tmp`, then atomically replaces `dest` (`os.replace`); on failure leaves `dest` untouched, exit 1 |
 | FR-019 | `load_kit` + `block_inner` + lint |
 | NFR-001 | `validate` rule 6 (secret patterns) |

@@ -1,6 +1,6 @@
 # Dense module evaluation: [workspace]
 
-<!-- Paired runs that decide whether to keep the dense module enabled in this workspace. The kit ships this method; the tasks and results are the workspace's own. Copy this file to `.sdlc/evals/dense/tasks.md` and fill it in, and record runs in `.sdlc/evals/dense/results.md` using the Results section's table. -->
+<!-- Paired runs that decide whether to keep the dense module enabled in this workspace. The kit ships this method; the tasks and results are the workspace's own. Copy this file to `tasks.md` in an evaluation folder **outside the workspace's working tree** (for example a sibling `<workspace>-evals/dense/`), fill it in, and record runs in `results.md` next to it using the Results section's table. Agents under test work in the workspace and search it, so a task file inside it hands them the Expect items. Never link to the evaluation folder from the workspace. -->
 
 Gate (spec 001 SC-001, SC-002): the module passes only if, on this task set,
 - its success rate is **at least** the baseline's, **and**
@@ -11,6 +11,7 @@ Also reported (SC-005): the share of sub-agent returns that follow `.sdlc/templa
 
 1. **Write the tasks first** (at least 6: 2 routing, 2 cross-repo impact, 2 review), each from real work in this workspace, with a verbatim prompt and Expect items that are observable in the transcript or on disk. Freeze them before any run; never edit a task after seeing a result.
 2. **Baseline arm, before installing the module.** For each task: a fresh session, the same model and settings for every run, the prompt pasted verbatim. Record the row.
+2a. **Leak check, before the first run of each arm.** From the workspace root, search for a distinctive phrase of each prompt (for example `grep -rn "<phrase>" .`). It must find nothing. A run whose transcript shows the task file being read is invalid: record it as such, fix the leak, and re-run.
 3. **Install and build.** Install the kit with `dense` added to its modules, run `sdlc-dense-index build`, and record the `committed <rev>` revision. Don't change any source until the module arm is done.
 4. **Module arm.** Repeat step 2 for every task. Every run must use the same index revision (check the `fresh <rev>` line in each transcript).
 5. **Score each run** without looking at the other arm's transcript:

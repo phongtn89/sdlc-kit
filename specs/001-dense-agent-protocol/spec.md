@@ -113,7 +113,7 @@ As a maintainer, I want to switch the module on and off without touching core ki
 - **FR-013**: The return contract MUST require each finding to be a source location plus a one-sentence claim, using only keys from the key list. (S3)
 - **FR-014**: On a non-conforming return, the parent MUST flag it, ask for a reformat at most once, and MUST NOT drop evidence from the reply. (S3)
 - **FR-015**: The module MUST behave the same on every target the kit supports (today `claude` and `copilot`). (S1, S3)
-- **FR-016**: The module MUST ship an evaluation method: the paired run procedure, the result record format, and a task template with Expect items. The concrete evaluation set (at least 6 tasks covering routing, cross-repo impact and review) and its results MUST live in the target workspace, not in the kit. (S4)
+- **FR-016**: The module MUST ship an evaluation method: the paired run procedure, the result record format, and a task template with Expect items. The concrete evaluation set (at least 6 tasks covering routing, cross-repo impact and review) and its results MUST be kept by the target workspace's owner, outside the working tree of the agents under test, and not in the kit. The method MUST include a leak check before each arm. (S4)
 - **FR-017**: Installing or removing the module MUST NOT modify any core-managed file. The only exception is the always-loaded instructions, which change only by gaining or losing the module-rules section and the module's own Skills index entries. Removing it MUST remove only the module's files and rules. (S5)
 - **FR-019**: The kit MUST let any installed module contribute module rules to the always-loaded instructions on every target. Without modules that contribute rules, the always-loaded instructions MUST be identical to today's. (S1, S3, S5)
 
@@ -138,7 +138,7 @@ As a maintainer, I want to switch the module on and off without touching core ki
 - Assumption: context documents keep their `Built from` revision line, and sources keep stable headings that section pointers can target.
 - Assumption: one workspace index summarises the workspace-level documents (PRD, architecture view, workspace map) and all per-repo context documents; the shop6 prototype has this shape.
 - Assumption: "context used before the first action" can be read from session usage figures on both targets. The method is chosen in the plan.
-- Assumption: the v1 gate is judged on a shop6 evaluation set, kept in the shop6 workspace and drawn from real shop6 work. A run counts as passed when every Expect item is observable, as in the existing kit evals.
+- Assumption: the v1 gate is judged on a shop6 evaluation set, kept outside the shop6 workspace (`~/Projects/shop6-evals/dense/`) and drawn from real shop6 work. A run counts as passed when every Expect item is observable, as in the existing kit evals.
 - Dependency: the kit's freshness check (`discover`) and drift check (`check`).
 - Dependency: the shop6 workspace as the first target and evaluation ground; the existing prototype index is the reference fixture.
 - Dependency: the module mechanism. Today modules add skills, roles, templates and checklists, and their skills are listed in the always-loaded index, but they can't add rules (kit `bin/sdlc:27,212-235,245-260`). FR-019 is the one generic kit change this feature needs.
@@ -165,6 +165,10 @@ As a maintainer, I want to switch the module on and off without touching core ki
 ### Session 2026-10-26 (implementation, T021)
 
 - Q: Installing the module also adds its skill to the always-loaded Skills index (existing kit behaviour for every module, e.g. `qa`). FR-017 and S5.1 said the instructions change only by the module-rules section. → A: Wording corrected to include the module's own Skills index entries. No behaviour change; SC-006 (exact restore on removal) is unchanged. Found by `DenseModule.test_add_and_remove_restores_install`.
+
+### Session 2026-10-26 (D4 baseline, finding)
+
+- Q: The first shop6 baseline run (E1) found the task set at `.sdlc/evals/dense/tasks.md` with a workspace-wide grep and read its Expect items. Where must the evaluation set live? → A: **Outside the working tree of the agents under test** (shop6: a sibling `~/Projects/shop6-evals/dense/`, not linked from the workspace), plus a leak check before each arm. That run is invalid. Rejected: splitting prompts and answers (two places to keep consistent); moving the folder aside during runs (one slip contaminates a run). Changed: FR-016, assumptions, `dense-eval.md`, eval row M1.
 
 ## Open questions
 

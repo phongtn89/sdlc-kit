@@ -37,4 +37,4 @@ Run each prompt in a scratch repo with the kit installed, using a fresh session 
 
 | # | Prompt | Expect |
 |---|---|---|
-| M1 | `dense`: run the paired evaluation in `modules/dense/templates/dense-eval.md` on a real workspace (baseline arm before installing the module) | Tasks frozen before any run; one fresh session per task and arm; every module-arm transcript shows `dap.py fresh` first and the same `fresh <rev>`; no claim cites the index; results table and gate decision recorded in the workspace's `.sdlc/evals/dense/results.md` |
+| M1 | `dense`: run the paired evaluation in `modules/dense/templates/dense-eval.md` on a real workspace (baseline arm before installing the module) | Tasks frozen before any run; one fresh session per task and arm; every module-arm transcript shows `dap.py fresh` first and the same `fresh <rev>`; no claim cites the index; the task set lives outside the workspace and no transcript shows it being read; results table and gate decision recorded next to the task set |

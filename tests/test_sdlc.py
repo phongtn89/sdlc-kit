@@ -279,6 +279,10 @@ class RealKitRules(Base):
         for needle in ["`sdlc-review`", "`VERDICT: APPROVED`", "`VERDICT: REJECTED`", "not under `.sdlc/`"]:
             self.assertIn(needle, rule[0])
 
+    def test_real_kit_lints_clean(self):
+        code, out, _ = run("lint", kit=ROOT)
+        self.assertEqual(code, 0, out)
+
     def test_value_gate_in_plan_template_and_analyze(self):
         self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
         plan = self.read(".sdlc/templates/plan.md")
@@ -494,6 +498,35 @@ class LintTests(Base):
         k = self.kit()
         with open(self.rules(k), "a") as f:
             f.write("- Record results in `.sdlc/evals/sample/results.md`.\n")
+        code, out = self.lint(k)
+        self.assertEqual(code, 0, out)
+
+    def trigger_kit(self, row=None):
+        k = self.kit()
+        with open(os.path.join(k, "core", "constitution.md"), "a") as f:
+            f.write("\n- A failing behaviour goes through the `debug` skill.\n")
+        if row is not None:
+            os.makedirs(os.path.join(k, "evals"))
+            with open(os.path.join(k, "evals", "scenarios.md"), "w") as f:
+                f.write("| # | Prompt | Expect |\n|---|---|---|\n" + row + "\n")
+        return k
+
+    def test_constitution_skill_without_unnamed_eval_row(self):
+        code, out = self.lint(self.trigger_kit())
+        self.assertEqual(code, 1, out)
+        self.assertIn("core/constitution.md: `debug` has no eval row", out)
+
+    def test_eval_row_that_names_the_skill_does_not_count(self):
+        code, out = self.lint(self.trigger_kit("| X1 | `/debug` the login 500 | Loads `debug` first |"))
+        self.assertEqual(code, 1, out)
+        self.assertIn("`debug` has no eval row", out)
+
+    def test_unnamed_eval_row_satisfies_the_rule(self):
+        code, out = self.lint(self.trigger_kit("| X1 | Login returns 500, fix it | Loads `debug` with the skill tool first |"))
+        self.assertEqual(code, 0, out)
+
+    def test_hyphenated_skill_name_does_not_name_its_prefix(self):
+        k = self.trigger_kit("| X1 | Run debug-extra on the login 500 | Loads `debug` first |")
         code, out = self.lint(k)
         self.assertEqual(code, 0, out)
 

@@ -761,6 +761,24 @@ def kit_sdlc_paths(kit):
     return paths
 
 
+def lint_trigger_evals(kit, errors):
+    # A constitution rule that names a skill is only proven by an eval whose prompt doesn't name it.
+    sdir = os.path.join(kit, "core", "skills")
+    skills = set(os.listdir(sdir)) if os.path.isdir(sdir) else set()
+    named = sorted({n for n in re.findall(r"`([a-z0-9-]+)`", read_text(os.path.join(kit, "core", "constitution.md"))) if n in skills})
+    path = os.path.join(kit, "evals", "scenarios.md")
+    rows = []
+    if os.path.isfile(path):
+        for line in read_text(path).split("\n"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if line.startswith("|") and len(cells) >= 3:
+                rows.append((cells[1], cells[-1]))
+    for n in named:
+        word = re.compile(r"(?<![\w-])%s(?![\w-])" % re.escape(n))
+        if not any("Loads `%s`" % n in expect and not word.search(prompt) for prompt, expect in rows):
+            errors.append("core/constitution.md: `%s` has no eval row whose prompt doesn't name it and whose Expect says Loads `%s` (evals/scenarios.md)" % (n, n))
+
+
 def lint_frontmatter(fm, errs, label, allowed, errors):
     errors += ["%s: %s" % (label, e) for e in errs]
     for k in fm:
@@ -777,6 +795,8 @@ def cmd_lint(a, kit):
         roots += [os.path.join(mods, m) for m in sorted(os.listdir(mods)) if os.path.isdir(os.path.join(mods, m))]
     if not os.path.isfile(os.path.join(kit, "core", "constitution.md")):
         errors.append("core/constitution.md: missing")
+    else:
+        lint_trigger_evals(kit, errors)
     if not os.path.isfile(os.path.join(kit, "VERSION")):
         errors.append("VERSION: missing")
     for root in roots:

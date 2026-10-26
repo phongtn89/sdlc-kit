@@ -1,6 +1,6 @@
 # ADR 0001: Dense index uses a sectioned line format, not YAML or JSON
 
-- **Status**: Accepted (phong.ngo.vn, 2026-10-26)
+- **Status**: Accepted (phong.ngo.vn, 2026-10-26); **not adopted** with spec 001 (rejected 2026-10-26, failed evaluation gate). The format lives on only at tag `exp/dense-v1`
 - **Date**: 2026-10-26
 - **Spec**: [specs/001-dense-agent-protocol](../../specs/001-dense-agent-protocol/spec.md)
 

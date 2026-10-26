@@ -2,11 +2,13 @@
 
 Feature: dense-agent-protocol
 Number: 001
-Status: approved <!-- draft | approved | implemented | superseded by NNN. sdlc-analyze sets approved; sdlc-ship sets implemented. -->
+Status: rejected (2026-10-26: failed the shop6 paired-evaluation gate, SC-002 median context -17% vs -50% required; see tasks.md "D4 result") <!-- draft | approved | implemented | superseded by NNN. sdlc-analyze sets approved; sdlc-ship sets implemented. -->
 Approved: phong.ngo.vn, 2026-10-26
 Owner: phong.ngo.vn
 Created: 2026-10-26
 Track: T3
+
+> **Not adopted.** This spec is kept as a record. The implementation (`modules/dense`, its tests) is preserved at tag `exp/dense-v1` and is **not** on `main`. The generic parts it needed (module rules in the always-loaded instructions, FR-019; the `__pycache__` skip; lint for module `rules.md`) are on `main`.
 
 <!-- Source of the decisions: shop6 workspace, .sdlc/decisions/2026-10-26-dense-agent-protocol.md (grill, play-back confirmed 2026-10-26). The prototype index is shop6 .sdlc/manifest.yaml (hand-written reference). -->
 

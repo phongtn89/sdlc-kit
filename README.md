@@ -16,7 +16,7 @@ On top of these it keeps the Shop 6 fleet's own engineering rules. See [DESIGN.m
 python3 ~/Projects/sdlc-kit/bin/sdlc install /path/to/repo
 ```
 
-Options: `--targets claude,copilot` (default: both), `--modules qa,dense`, `--force` (overwrite conflicting unmanaged files). It needs only Python 3.9+ and no network.
+Options: `--targets claude,copilot` (default: both), `--modules qa`, `--force` (overwrite conflicting unmanaged files). It needs only Python 3.9+ and no network.
 
 Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.json` with the real build and test commands.
 
@@ -71,7 +71,7 @@ Start with **`/sdlc <task>`**. It looks at the code, picks a track and opens the
 | T3 Feature | Contract, data model, security, more than one seam | specify → clarify → plan → tasks → analyze → **approval** → implement → converge → review → ship |
 | T4 Initiative | Several features, teams or repos | grill → PRD → ADRs → T3 per feature |
 
-Skills: `sdlc`, `sdlc-setup`, `sdlc-context`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`. The `dense` module (Dense Agent Protocol, spec 001) adds `sdlc-dense-index`, which builds and checks `.sdlc/context/index.dap`, a compact source-pointed index of the context documents. Its module rules make agents check the index at track start, cite sources instead of the index, and ask sub-agents for the return format in `.sdlc/templates/dense-return.md`. Enable it in a workspace only after the paired evaluation in `.sdlc/templates/dense-eval.md` passes there.
+Skills: `sdlc`, `sdlc-setup`, `sdlc-context`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`. A module may also ship a `rules.md`, rendered into the instructions under "Module rules" (`adapters/RENDERING.md`).
 
 Roles (subagents): `sdlc-explorer`, `sdlc-planner`, `sdlc-implementer`, `sdlc-reviewer`, `sdlc-security-reviewer`. The model for each role is set in `adapters/models.json` and can be overridden per project in `config.json` → `models`.
 

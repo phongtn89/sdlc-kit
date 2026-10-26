@@ -279,6 +279,16 @@ class RealKitRules(Base):
         for needle in ["`sdlc-review`", "`VERDICT: APPROVED`", "`VERDICT: REJECTED`", "not under `.sdlc/`"]:
             self.assertIn(needle, rule[0])
 
+    def test_value_gate_in_plan_template_and_analyze(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        plan = self.read(".sdlc/templates/plan.md")
+        rollout = plan[plan.index("## Rollout & rollback"):plan.index("## Complexity justifications")]
+        self.assertIn("Value gate", rollout)
+        analyze = self.read(".claude/skills/sdlc-analyze/SKILL.md")
+        line = [l for l in analyze.split("\n") if "Value gate" in l]
+        self.assertEqual(len(line), 1, line)
+        self.assertIn("threshold", line[0])
+
 
 class CheckUpdateTests(Base):
     def setUp(self):

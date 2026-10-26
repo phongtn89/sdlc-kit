@@ -83,6 +83,7 @@ Spec: [spec.md](spec.md) · Status: draft · Created: [YYYY-MM-DD]
 
 - Rollout order / flags:
 - Rollback steps:
+- Value gate (only when an SC is a measured threshold; else delete): the cheapest measurement that can run before implementing (for example a baseline run and the mix of task types), the kill threshold, and its result.
 
 ## Complexity justifications (only if a principle is violated)
 

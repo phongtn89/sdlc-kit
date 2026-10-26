@@ -26,7 +26,7 @@ user-invocable: true
    - **Consistency**: the spec, plan and tasks disagree (names, counts, behaviour, data shapes); terms are used differently from the glossary.
    - **Quality**: run the requirements-quality checklist over the spec (vague, unmeasurable, untestable or missing failure cases).
    - **Constitution**: a principle is violated without a justification (layer-phased tasks, tests deferred, speculative abstraction, unverified steps).
-   - **Feasibility**: a verify step that can't run; a blocked-by cycle; `[P]` tasks with overlapping files; unresolved research.
+   - **Feasibility**: a verify step that can't run; a blocked-by cycle; `[P]` tasks with overlapping files; unresolved research; an SC that is a measured threshold while plan.md's Value gate is missing or has no result (HIGH: the value is untested before building).
    - **Conflicts**: contradiction with an accepted ADR, `AGENTS.md`, or another spec that owns the same capability (search `spec_dir`).
 3. **Severity**:
    - CRITICAL: a constitution violation, a missing P1 coverage, or a contradiction that blocks implementation.

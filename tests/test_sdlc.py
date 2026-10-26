@@ -269,6 +269,51 @@ class ModuleRules(Base):
         self.assertFalse(any("pyc" in r for r in self.lock()["files"]))
 
 
+class DenseModule(Base):
+    """The real modules/dense, rendered with the real kit."""
+    KIT = os.environ.get("SDLC_TEST_KIT", ROOT)  # override only to check that this class catches breakage
+    SKILL = "skills/sdlc-dense-index"
+
+    def dap(self, script, *args):
+        p = subprocess.run([sys.executable, self.p(script)] + list(args), capture_output=True, text=True,
+                           timeout=20, cwd=self.d)
+        return p.returncode, p.stdout
+
+    def test_real_kit_lints(self):
+        code, out, _ = run("lint", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+
+    def test_install_renders_rules_skill_and_script(self):
+        code, out, _ = run("install", self.d, "--modules", "dense", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        agents = managed_block(self.read("AGENTS.md"))
+        self.assertIn("## Module rules\n\n### dense\n\n", agents)
+        self.assertIn("dap.py fresh .sdlc/context/index.dap", agents)
+        self.assertEqual(agents, managed_block(self.read(".github/copilot-instructions.md")))
+        for f in ("SKILL.md", "dap.py", "keys.json"):
+            self.assertTrue(self.exists(".claude/%s/%s" % (self.SKILL, f)), f)
+        json.loads(self.read(".claude/%s/keys.json" % self.SKILL))
+        self.assertIn("**sdlc-dense-index**", agents)
+
+    def test_installed_script_runs(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        self.write(".sdlc/context/repo.md", "# Repo\n\n## Purpose\n\nA thing.\n")
+        with open(self.p(".sdlc/context/repo.md"), "rb") as f:
+            h = hashlib.sha256(f.read()).hexdigest()[:12]
+        self.write(".sdlc/context/index.dap", "#dap 1 built 2026-10-26\nsrc r context/repo.md %s\n"
+                                             "[repo thing]\ndesc: A thing. @r#purpose\n" % h)
+        script = ".claude/%s/dap.py" % self.SKILL
+        self.assertEqual(self.dap(script, "validate", ".sdlc/context/index.dap"), (0, "valid\n"))
+        code, out = self.dap(script, "fresh", ".sdlc/context/index.dap")
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out.startswith("fresh "), out)
+
+    def test_copilot_only_install_uses_github_skills(self):
+        code, out, _ = run("install", self.d, "--targets", "copilot", "--modules", "dense", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        self.assertTrue(self.exists(".github/%s/dap.py" % self.SKILL))
+        self.assertIn(".github/skills/sdlc-dense-index/dap.py", self.read(".github/copilot-instructions.md"))
+
 
 class CheckUpdateTests(Base):
     def setUp(self):

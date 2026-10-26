@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "types": {
+    "repo": {
+      "desc": {"meaning": "what the repository is for, in one line", "value": "text"},
+      "stack": {"meaning": "main languages, frameworks and stores", "value": "list"},
+      "run": {"meaning": "where it runs (cluster, namespace, host)", "value": "text"},
+      "db": {"meaning": "databases it owns", "value": "list"},
+      "owns": {"meaning": "data or capabilities it is the system of record for", "value": "list"},
+      "specs": {"meaning": "number of spec folders", "value": "integer"},
+      "owner": {"meaning": "owning person or team, or unknown", "value": "text"}
+    },
+    "link": {
+      "from": {"meaning": "calling or publishing unit", "value": "text"},
+      "to": {"meaning": "called or consuming unit(s)", "value": "list"},
+      "via": {"meaning": "protocol, topic or package channel", "value": "text"},
+      "auth": {"meaning": "how the call is authenticated, and whether it is enforced", "value": "text"},
+      "msg": {"meaning": "message, operation or event names carried", "value": "list"}
+    },
+    "risk": {
+      "what": {"meaning": "the risk in one sentence", "value": "text"},
+      "sev": {"meaning": "severity", "value": "one of: low, med, high"}
+    },
+    "decision": {
+      "what": {"meaning": "the decision or open question in one sentence", "value": "text"},
+      "state": {"meaning": "decision state", "value": "one of: open, closed"},
+      "owner": {"meaning": "who closes or ratified it", "value": "text"}
+    },
+    "entity": {
+      "parts": {"meaning": "main sub-types or fields", "value": "list"},
+      "owner": {"meaning": "repository or service that owns it", "value": "text"},
+      "states": {"meaning": "lifecycle states in order", "value": "text"}
+    }
+  }
+}

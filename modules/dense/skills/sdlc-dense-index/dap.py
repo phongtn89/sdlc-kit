@@ -23,10 +23,11 @@ HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
 VERSION = "1"
 KEYS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.json")
 SECRET_RES = [re.compile(p) for p in (
-    r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@",          # credentials in a URL
+    r"(?i)[a-z][a-z0-9+.-]*://[^/\s:@]*:[^/\s@]+@",      # credentials in a URL, user part may be empty
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     r"\bgh[pousr]_[A-Za-z0-9]{20,}", r"\bgithub_pat_[A-Za-z0-9_]{20,}",
-    r"\bAKIA[0-9A-Z]{16}\b", r"\bxox[abprs]-[A-Za-z0-9-]{10,}", r"\bsk-[A-Za-z0-9]{20,}",
+    r"\bAKIA[0-9A-Z]{16}\b", r"\bxox[abprs]-[A-Za-z0-9-]{10,}",
+    r"\bsk-[A-Za-z0-9_-]{20,}", r"\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}",  # incl. sk-proj-, sk-ant-, Stripe
 )]
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b(?!:)")  # not git@host:repo
 SIZE_RATIO, SIZE_FLOOR = 0.05, 20 * 1024
@@ -104,10 +105,12 @@ def check(index, root, fresh_mode=False):
     src_bytes = 0
     stype, used = None, set()  # current section type (None if unknown) and keys used in it
     refs = []  # (line, alias, slug)
+    src_lines, last, open_section = 0, 1, None  # open_section: [line of the section header, entries so far]
     for n, line in enumerate(raw.decode("utf-8", "replace").split("\n"), 1):
         line = line.rstrip("\r")
         if not line.strip() or line.startswith(";"):
             continue
+        last = n
         if not header_seen:
             header_seen = True
             m = HEADER_RE.match(line)
@@ -118,6 +121,7 @@ def check(index, root, fresh_mode=False):
             if m:
                 continue
         if line.startswith("src "):
+            src_lines += 1
             m = SRC_RE.match(line)
             if not m:
                 errors.append("ERROR %d: malformed src line (want 'src ALIAS PATH SHA12')" % n)
@@ -148,7 +152,9 @@ def check(index, root, fresh_mode=False):
             continue
         m = SECTION_RE.match(line)
         if m:
-            section, used = True, set()
+            if open_section and open_section[1] == 0:
+                errors.append("ERROR %d: section has no entries" % open_section[0])
+            section, used, open_section = True, set(), [n, 0]
             stype = m.group(1) if m.group(1) in keys else None
             if stype is None:
                 errors.append("ERROR %d: unknown section type %s" % (n, m.group(1)))
@@ -163,6 +169,7 @@ def check(index, root, fresh_mode=False):
         if not section:
             errors.append("ERROR %d: entry outside a section" % n)
             continue
+        open_section[1] += 1
         key = m.group(1)
         if stype is not None and key not in keys[stype]:
             errors.append("ERROR %d: key %s not allowed in a %s section" % (n, key, stype))
@@ -185,6 +192,12 @@ def check(index, root, fresh_mode=False):
         refs.append((n, r.group(1), r.group(2)))
     if not header_seen:
         errors.append("ERROR 1: missing header '#dap 1 built YYYY-MM-DD'")
+    if not src_lines:
+        errors.append("ERROR 1: no src lines")
+    if open_section is None:
+        errors.append("ERROR %d: no sections" % last)
+    elif open_section[1] == 0:
+        errors.append("ERROR %d: section has no entries" % open_section[0])
     for n, alias, slug in refs:
         if alias not in srcs:
             errors.append("ERROR %d: unknown alias %s" % (n, alias))

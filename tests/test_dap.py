@@ -132,8 +132,21 @@ class Validate(Base):
     def test_secrets_rejected(self):
         for value in ("https://bob:hunter2@db.example.com/x", "-----BEGIN RSA PRIVATE KEY-----",
                       "token ghp_abcdefghijklmnopqrstuvwxyz0123456789", "AKIAABCDEFGHIJKLMNOP",
-                      "xoxb-1234-5678-abcdefgh", "sk-abcdefghijklmnopqrstuvwx"):
+                      "xoxb-1234-5678-abcdefgh", "sk-abcdefghijklmnopqrstuvwx",
+                      "sk-proj-abcdefghijklmnopqrstuvwxyz0123", "sk-ant-api03-abcdefghijklmnopqrstuv",
+                      "sk_live_abcdefghijklmnop1234", "rk_test_abcdefghijklmnop1234",
+                      "redis://:s3cret@cache:6379", "HTTPS://bob:pw@host/x"):
             self.assertError(self.validate(self.index(body="[repo admin]\ndesc: %s @a#data" % value)), 4, "secret")
+
+    def test_header_only_invalid(self):
+        self.assertError(self.validate(self.index(src="", body="")), 1, "no src lines")
+
+    def test_no_sections_invalid(self):
+        self.assertError(self.validate(self.index(body="")), 2, "no sections")
+
+    def test_empty_section_invalid(self):
+        self.assertError(self.validate(self.index(body="[repo admin]\n[repo b]\ndesc: x @a#data")), 3, "no entries")
+        self.assertError(self.validate(self.index(body="[repo admin]\ndesc: x @a#data\n[repo b]")), 5, "no entries")
 
     def test_email_addresses_rejected(self):
         for value in ("owner bob.smith@example.com", "Phong <p.ngo@jtl-software.com>", "x@y.de, done"):
@@ -323,6 +336,14 @@ class Commit(Base):
         self.assertRefused(tmp, dest)
         with open(target) as f:
             self.assertEqual(f.read(), "keep\n")
+
+    def test_truncated_tmp_keeps_last_valid_index(self):
+        tmp, dest = self.tmp("")  # header and src lines only: a build cut off before its sections
+        before = self.digest("context/index.dap")
+        code, out = run("commit", tmp, dest, "--root", self.root)
+        self.assertEqual(code, 1, out)
+        self.assertIn("no sections", out)
+        self.assertEqual(self.digest("context/index.dap"), before)
 
     def test_commit_into_missing_index(self):
         tmp, dest = self.tmp("[repo admin]\ndesc: First @a#data")

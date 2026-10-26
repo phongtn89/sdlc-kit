@@ -71,7 +71,7 @@ Start with **`/sdlc <task>`**. It looks at the code, picks a track and opens the
 | T3 Feature | Contract, data model, security, more than one seam | specify → clarify → plan → tasks → analyze → **approval** → implement → converge → review → ship |
 | T4 Initiative | Several features, teams or repos | grill → PRD → ADRs → T3 per feature |
 
-Skills: `sdlc`, `sdlc-setup`, `sdlc-context`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`.
+Skills: `sdlc`, `sdlc-setup`, `sdlc-context`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`. A module may also ship a `rules.md`, rendered into the instructions under "Module rules" (`adapters/RENDERING.md`).
 
 Roles (subagents): `sdlc-explorer`, `sdlc-planner`, `sdlc-implementer`, `sdlc-reviewer`, `sdlc-security-reviewer`. The model for each role is set in `adapters/models.json` and can be overridden per project in `config.json` → `models`.
 

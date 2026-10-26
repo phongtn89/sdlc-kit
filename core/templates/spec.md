@@ -2,7 +2,7 @@
 
 Feature: [short name]
 Number: [NNN — from `sdlc next-spec`]
-Status: draft <!-- draft | approved | implemented | superseded by NNN. sdlc-analyze sets approved; sdlc-ship sets implemented. -->
+Status: draft <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
 Approved: <!-- name, YYYY-MM-DD; filled when approved -->
 Owner: [name]
 Created: [YYYY-MM-DD]

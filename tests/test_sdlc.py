@@ -270,6 +270,16 @@ class ModuleRules(Base):
 
 
 
+class RealKitRules(Base):
+    def test_review_rule_names_skill_and_verdict_line(self):
+        code, out, _ = run("install", self.d, kit=ROOT)
+        self.assertEqual(code, 0, out)
+        rule = [l for l in managed_block(self.read("AGENTS.md")).split("\n") if "Review" in l and "verdict" in l]
+        self.assertEqual(len(rule), 1, rule)
+        for needle in ["`sdlc-review`", "`VERDICT: APPROVED`", "`VERDICT: REJECTED`", "not under `.sdlc/`"]:
+            self.assertIn(needle, rule[0])
+
+
 class CheckUpdateTests(Base):
     def setUp(self):
         super().setUp()

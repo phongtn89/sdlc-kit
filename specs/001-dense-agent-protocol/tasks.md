@@ -156,7 +156,7 @@ Size: about 200 lines of Python, 230 of tests and 240 of Markdown, in 5 slices a
 ## Blocked / human-only
 
 - [ ] Commits and any push of sdlc-kit work — owner: phong.ngo.vn — unblocked when: approved per action (kit repo is on `main`; branch first).
-- [ ] T010, T015, T018 need an interactive Claude session in a scratch workspace — owner: phong.ngo.vn (or an agent session they start) — unblocked when: T009 / T014 / T017 are done.
+- [x] T010, T015, T018 need an interactive Claude session in a scratch workspace — owner: phong.ngo.vn (or an agent session they start) — unblocked when: T009 / T014 / T017 are done.
 - [ ] D4: shop6 evaluation set, 6 tasks covering routing, cross-repo impact and review, written in shop6 `.sdlc/evals/dense/tasks.md` from `dense-eval.md` — owner: phong.ngo.vn — unblocked when: T019 is done.
 - [ ] D4: run the **baseline arm in shop6 before installing the module** — owner: phong.ngo.vn — unblocked when: the shop6 task set exists.
 - [ ] D4: install `--modules dense` into shop6, build the first index (SC-003: validate 100%), run the module arm, and record the gate (SC-001, SC-002, SC-005) in shop6 `.sdlc/evals/dense/results.md` — owner: phong.ngo.vn — unblocked when: the baseline arm is recorded and T025 is APPROVED.
@@ -225,7 +225,7 @@ Unplanned behaviour: none in product code. Noted only: the test-only `SDLC_TEST_
 
 - [x] C001 [drift: plan Security says `dap.py` "writes only `.sdlc/context/index.dap*`" (`plan.md:115`), but `commit` replaces whatever `dest` it is given (`modules/dense/skills/sdlc-dense-index/dap.py:203`) and reads any `tmp`] → decide: confine `tmp` and `dest` to `.sdlc/context/` with a failing test first (`modules/dense/skills/sdlc-dense-index/dap.py`, `tests/test_dap.py`), or relax the plan sentence — blocked-by: —
 - [x] C002 [drift: NFR-001 forbids personal data in the index, but only secrets are detected (`modules/dense/skills/sdlc-dense-index/dap.py:25-30`); personal data relies on the skill instruction (`S/SKILL.md:47`) and the 10-entry self-check] → decide: add a narrow personal-data check (e.g. e-mail addresses) with a failing test first, or record in plan that personal data is a skill-level rule with residual risk — blocked-by: —
-- [ ] C003 [untested: agent behaviour for FR-003, FR-008–FR-014 (S1 P1, S2 build, S3)] → no new task: T010, T015 and T018 cover it; they stay open and block calling S1–S3 verified — blocked-by: T010, T015, T018
+- [x] C003 [untested: agent behaviour for FR-003, FR-008–FR-014 (S1 P1, S2 build, S3)] → no new task: T010, T015 and T018 cover it; they stay open and block calling S1–S3 verified — blocked-by: T010, T015, T018
 
 ## Review fixes (2026-10-26, review.md at aac72f1)
 

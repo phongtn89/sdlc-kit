@@ -157,13 +157,32 @@ Size: about 200 lines of Python, 230 of tests and 240 of Markdown, in 5 slices a
 
 - [ ] Commits and any push of sdlc-kit work — owner: phong.ngo.vn — unblocked when: approved per action (kit repo is on `main`; branch first).
 - [x] T010, T015, T018 need an interactive Claude session in a scratch workspace — owner: phong.ngo.vn (or an agent session they start) — unblocked when: T009 / T014 / T017 are done.
-- [ ] D4: shop6 evaluation set, 6 tasks covering routing, cross-repo impact and review, written in `~/Projects/shop6-evals/dense/tasks.md` (outside the workspace) from `dense-eval.md` — owner: phong.ngo.vn — unblocked when: T019 is done.
-- [ ] D4: run the **baseline arm in shop6 before installing the module** — owner: phong.ngo.vn — unblocked when: the shop6 task set exists.
-- [ ] D4: install `--modules dense` into shop6, build the first index (SC-003: validate 100%), run the module arm, and record the gate (SC-001, SC-002, SC-005) in `~/Projects/shop6-evals/dense/results.md` — owner: phong.ngo.vn — unblocked when: the baseline arm is recorded and T025 is APPROVED.
-- [ ] D4: retire the shop6 `.sdlc/manifest.yaml` prototype only if the gate passes; otherwise uninstall the module and revisit step hooks — owner: phong.ngo.vn — unblocked when: the gate result is recorded.
+- [x] D4: shop6 evaluation set, 6 tasks covering routing, cross-repo impact and review, written in `~/Projects/shop6-evals/dense/tasks.md` (outside the workspace) from `dense-eval.md` — owner: phong.ngo.vn — unblocked when: T019 is done.
+- [x] D4: run the **baseline arm in shop6 before installing the module** — owner: phong.ngo.vn — unblocked when: the shop6 task set exists.
+- [x] D4: install `--modules dense` into shop6, build the first index (SC-003: validate 100%), run the module arm, and record the gate (SC-001, SC-002, SC-005) in `~/Projects/shop6-evals/dense/results.md` — owner: phong.ngo.vn — unblocked when: the baseline arm is recorded and T025 is APPROVED.
+- [x] D4: retire the shop6 `.sdlc/manifest.yaml` prototype only if the gate passes; otherwise uninstall the module and revisit step hooks — owner: phong.ngo.vn — unblocked when: the gate result is recorded.
+
+## D4 result (2026-10-26)
+
+The paired evaluation in shop6 (task set and results: `~/Projects/shop6-evals/dense/`, outside the workspace) **failed the gate**:
+
+| Measure | Baseline | Dense | Rule | Met |
+|---|---|---|---|---|
+| SC-001 success rate | 5/6 | 5/6 | dense ≥ baseline | yes |
+| SC-002 median context before first action | 28,594 chars | 23,868 chars (−17%) | ≤ 50% of baseline | **no** |
+| SC-003 shop6 index valid | — | `140baaa726f6`: 180/180 entries valid | 100% | yes |
+| SC-005 conforming returns | — | 0/0 | ≥ 90% | not measurable (no delegations) |
+
+- **Per task:** E1 +3%, E2 −30%, E3 −13%, E4 −24%, E5 +26%, E6 +30%. Only E2 used the index as designed. E3 and E4 skipped it (code-literal search). E1, E5 and E6 needed code or whole documents, so the index added a step.
+- **Protocol violations:** FR-010 (index cited, M2); FR-009 (index not read after `fresh` exit 0, M3 and M4); `show` without `@alias#slug` (M5).
+- **Method finding:** FR-016 amended after the task set leaked inside the workspace (commit `1830e62`).
+- **Kit finding, not module-specific:** in both arms, E6 failed the exact `VERDICT:` line because the review method was not loaded.
+
+**Decision (phong.ngo.vn, 2026-10-26): uninstall.** shop6 `b83e1bf`; every rendered file is byte-identical to the pre-install `020d75d`; the index is kept as inert data; `.sdlc/manifest.yaml` stays. The module is not enabled anywhere. Any further attempt needs a spec revision targeting the task types above and a fresh paired evaluation.
 
 ## Progress log
 
+- 2026-10-26 D4 complete: baseline 5/6 (median 28,594), module 5/6 (median 23,868, −17%) → **gate FAIL** on SC-002; SC-003 pass; SC-005 not measurable. Decision: uninstall (shop6 `b83e1bf`, rendered files identical to `020d75d`, index kept inert). D4 items closed; see “D4 result”
 - 2026-10-26 D4: shop6 task set frozen (shop6 `578301a`, sha256 `e5b6a338…`). The first baseline run (E1, `37603299…`) found the task set inside the workspace with a grep and read it → **invalid**. The set moved to `~/Projects/shop6-evals/dense/` (own repo `418a172`), removed from shop6 (`966d51e`). FR-016, `dense-eval.md` (new leak-check step 2a) and M1 amended. Next: leak check, then re-run baseline E1–E6
 - 2026-10-26 R008 Run H (kit `d88cbd9`, synthetic marked-fact source): `committed e737dd93b359 (5 sources, 16 sections, 37 entries)` quoted and exact; UNVERIFIED and INFERRED carried verbatim; a first commit was refused and the old index kept; self-check via `show`. S2.5 PASS → **T015 ticked** → `evidence/s2-build.md`. All hand-runs (T010, T015, T018) pass. Remaining: D4 shop6 adoption; advisories A2–A9; ship
 - 2026-10-26 R007 Run A2 (kit `d88cbd9`): `fresh` → index → `dap.py show` ×3 pointed sections, no grep or whole reads; citations inside the shown sections; about 9.4K chars (Run A 16.3K). S1.2 PASS → **T010 ticked** (S1.1–S1.5) → `evidence/s1-tracer.md`. Next: R008 Run H

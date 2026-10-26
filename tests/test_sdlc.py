@@ -304,6 +304,41 @@ class DenseModule(Base):
                      ".sdlc/workspace.md", ".sdlc/context/*.md"):
             self.assertIn(step, skill)
 
+    def snapshot(self):
+        out = {}
+        for dp, _, fn in os.walk(self.d):
+            for f in fn:
+                full = os.path.join(dp, f)
+                with open(full, "rb") as fh:
+                    out[os.path.relpath(full, self.d).replace(os.sep, "/")] = hashlib.sha256(fh.read()).hexdigest()
+        return out
+
+    def test_add_and_remove_restores_install(self):
+        self.write(".sdlc/context/index.dap", "#dap 1 built 2026-10-26\n")  # project-owned, never touched
+        code, out, _ = run("install", self.d, kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        before = self.snapshot()
+        block_before = managed_block(self.read("AGENTS.md"))
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        during = self.snapshot()
+        self.assertEqual([r for r in before if r not in during], [])
+        changed = sorted(r for r in before if during[r] != before[r])
+        self.assertEqual(changed, [".github/copilot-instructions.md", ".sdlc/lock.json", "AGENTS.md"])
+        added = [r for r in during if r not in before]
+        self.assertTrue(added)
+        for r in added:
+            self.assertTrue(r.startswith((".claude/skills/sdlc-dense-index/", ".sdlc/templates/dense-")), r)
+        # Allowed: the Module rules section and the module's own Skills index line (module skills are indexed).
+        block = managed_block(self.read("AGENTS.md"))
+        start = block.index("\n\n## Module rules")
+        end = block.find("\n\n## Project rules", start)
+        block = block[:start] + (block[end:] if end >= 0 else block[-len("\n" + END):])
+        block = "\n".join(l for l in block.split("\n") if not l.startswith("- **sdlc-dense-index** — "))
+        self.assertEqual(block, block_before)
+        code, out, _ = run("install", self.d, "--modules", "", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.snapshot(), before)
+
     def test_briefs_carry_the_return_contract(self):
         run("install", self.d, "--modules", "dense", kit=self.KIT)
         self.assertIn("#ret 1 <done|partial|blocked>", self.read(".sdlc/templates/dense-return.md"))

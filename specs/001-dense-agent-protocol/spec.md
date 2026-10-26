@@ -92,7 +92,7 @@ As a maintainer, I want to switch the module on and off without touching core ki
 
 **Independent test:** Install the kit with and without the module; compare the core file hashes; uninstall the module.
 
-1. **Given** a kit install, **When** the module is added, **Then** no core-managed file changes except that the always-loaded instructions gain the module-rules section (FR-017), and the lock records the module.
+1. **Given** a kit install, **When** the module is added, **Then** no core-managed file changes except that the always-loaded instructions gain the module-rules section and the module's Skills index entry (FR-017), and the lock records the module.
 2. **Given** the module is installed, **When** it is removed, **Then** only the module's files are removed, and agents behave as without the module (S1.5).
 
 ## Requirements
@@ -114,7 +114,7 @@ As a maintainer, I want to switch the module on and off without touching core ki
 - **FR-014**: On a non-conforming return, the parent MUST flag it, ask for a reformat at most once, and MUST NOT drop evidence from the reply. (S3)
 - **FR-015**: The module MUST behave the same on every target the kit supports (today `claude` and `copilot`). (S1, S3)
 - **FR-016**: The module MUST ship an evaluation method: the paired run procedure, the result record format, and a task template with Expect items. The concrete evaluation set (at least 6 tasks covering routing, cross-repo impact and review) and its results MUST live in the target workspace, not in the kit. (S4)
-- **FR-017**: Installing or removing the module MUST NOT modify any core-managed file. The only exception is the always-loaded instructions, which change only by gaining or losing the module-rules section. Removing it MUST remove only the module's files and rules. (S5)
+- **FR-017**: Installing or removing the module MUST NOT modify any core-managed file. The only exception is the always-loaded instructions, which change only by gaining or losing the module-rules section and the module's own Skills index entries. Removing it MUST remove only the module's files and rules. (S5)
 - **FR-019**: The kit MUST let any installed module contribute module rules to the always-loaded instructions on every target. Without modules that contribute rules, the always-loaded instructions MUST be identical to today's. (S1, S3, S5)
 
 ## Non-functional
@@ -161,6 +161,10 @@ As a maintainer, I want to switch the module on and off without touching core ki
 - Q: Modules can't change core behaviour. How does the module make the context build produce the index and briefs carry the return contract? → A: **Module rules in the always-loaded instructions.** A small, generic kit change lets any module contribute rules in their own section (FR-019). The dense module ships its own index-building step and return-contract template, and its rules require: build the index after a context build, load it at track start, include the contract in every brief. Core skills and roles stay untouched. Rejected: step hooks in core skills (edits core skills, against grill decision 6); explicit module skills only (weakens FR-009 and FR-012); workspace-only rules (not reusable or lock-tracked, against grill decision 3). Changed: glossary, FR-003, FR-009, FR-012, FR-017, new FR-019, SC-006, assumptions and dependencies.
 
 - Q: The module ships the evaluation set, but the tasks come from shop6. Where does it live? → A: **The kit ships the method** (procedure, record format, task template); **the 6 concrete tasks and their results live in the shop6 workspace**, and the gate is judged there. Rejected: all in the kit (JTL-specific content in a generic kit); synthetic fixture tasks only (they don't prove the gain at real scale). Changed: FR-016, SC-001, assumptions.
+
+### Session 2026-10-26 (implementation, T021)
+
+- Q: Installing the module also adds its skill to the always-loaded Skills index (existing kit behaviour for every module, e.g. `qa`). FR-017 and S5.1 said the instructions change only by the module-rules section. → A: Wording corrected to include the module's own Skills index entries. No behaviour change; SC-006 (exact restore on removal) is unchanged. Found by `DenseModule.test_add_and_remove_restores_install`.
 
 ## Open questions
 

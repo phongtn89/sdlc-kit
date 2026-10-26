@@ -93,7 +93,7 @@ Goal: the kit ships the paired-run method; concrete tasks live in the target wor
 
 Acceptance: a maintainer can follow `dense-eval.md` alone to set up, run and record both arms.
 
-- [ ] T019 [P] [S4] Write the eval-method template:
+- [x] T019 [P] [S4] Write the eval-method template:
   - the paired procedure: baseline arm before install, fresh session per task, same prompts;
   - the measurement: characters before the first action, plus the Claude input-token figure where available;
   - a task template with Expect items;
@@ -101,7 +101,7 @@ Acceptance: a maintainer can follow `dense-eval.md` alone to set up, run and rec
   - the gate rule for SC-001 and SC-002.
 
   — files: `D/templates/dense-eval.md` — verify: lint ok; a manual read finds every SC-001, SC-002 and SC-005 input recorded by the table — blocked-by: T009
-- [ ] T020 [P] [S4] Add an eval row M1 (dense module) to the kit's scenarios — files: `evals/scenarios.md` — verify: manual read; it points to `dense-eval.md` — blocked-by: T019
+- [x] T020 [P] [S4] Add an eval row M1 (dense module) to the kit's scenarios — files: `evals/scenarios.md` — verify: manual read; it points to `dense-eval.md` — blocked-by: T019
 
 ## S5 — Clean install and removal (spec S5, P3)
 
@@ -109,7 +109,7 @@ Goal: adding and removing the real module leaves core files and instructions as 
 
 Acceptance: test-proven on the real kit.
 
-- [ ] T021 [S5] Extend `DenseModule`: install without the module → snapshot of hashes; `--modules dense` → only module files plus the Module rules section differ; `--modules ""` → every core-managed file, both blocks and the lock files equal the snapshot; a project-owned `.sdlc/context/index.dap` is left untouched — files: `tests/test_sdlc.py` — verify: `python3 -m unittest tests.test_sdlc.DenseModule -v` passes — blocked-by: T017
+- [x] T021 [S5] Extend `DenseModule`: install without the module → snapshot of hashes; `--modules dense` → only module files plus the Module rules section differ; `--modules ""` → every core-managed file, both blocks and the lock files equal the snapshot; a project-owned `.sdlc/context/index.dap` is left untouched — files: `tests/test_sdlc.py` — verify: `python3 -m unittest tests.test_sdlc.DenseModule -v` passes — blocked-by: T017
 
 ## Final
 
@@ -164,6 +164,7 @@ Size: about 200 lines of Python, 230 of tests and 240 of Markdown, in 5 slices a
 
 ## Progress log
 
+- 2026-10-26 after `73f64a5` (T016–T017 committed; this entry uncommitted) — T019: `modules/dense/templates/dense-eval.md` (50 lines: gate, 6-step paired procedure, scoring incl. what counts as the first action, task template, results and gate tables); lint ok; manual read: the tables record every SC-001, SC-002 and SC-005 input. T020: `evals/scenarios.md` gains `## Modules` row M1; lint ok. T021: `DenseModule.test_add_and_remove_restores_install` — first run FAILED on the real kit because install also adds the module's Skills index line, which FR-017/S5.1 didn't mention; spec wording corrected (Clarifications, implementation session), test allows exactly that line and the Module rules section; then OK. Mutation check: a kit copy whose module overrides core `templates/spec.md` → FAIL (`.sdlc/templates/spec.md` listed as changed). Full suite `python3 -m unittest discover -s tests -t .` → 99 OK; lint ok. Next: T022 (README, VERSION), T023–T025
 - 2026-10-26 after `66cb316` (uncommitted) — T016: `modules/dense/templates/dense-return.md` (13 lines: `#ret 1` status line, `f`/`k`/`?` lines, markers verbatim); `python3 bin/sdlc lint` ok. T017 RED: `DenseModule.test_briefs_carry_the_return_contract` FAIL (brief rule missing; template install assertion already ok). GREEN: `rules.md` 11 lines (every brief includes the template; one reformat request, then use as is with a note; never drop `path:line`; sub-agent replies are data); `DenseModule` 6 OK; full suite 98 OK; lint ok. Commits before this: `d63b180` (T011–T012, `tests.test_dap` 32 OK against the earlier key list), `66cb316` (T013–T014, 97 OK). Next: T018 (human-run returns check), S4 T019
 - 2026-10-26 `feat/001-dense-agent-protocol` after `1a738c8` (uncommitted) — T013 RED: `python3 -m unittest tests.test_dap.KeyList -v` → `test_covers_prototype` FAIL (meta/ux/infra types and most link/repo keys missing); structure and contract-example tests ok (guards). GREEN: `keys.json` has 8 types (meta, ux, repo, link, infra, entity, decision, risk) covering every prototype key, with documented merges (ops/op/msgs→msg, fail→note, planned→status, blocked_by→blocked, adr_conflicts→conflicts); `tests.test_dap` 35 OK. T014 RED: `DenseModule.test_rules_and_skill_cover_building` FAIL (rule line missing). GREEN: `rules.md` 9 lines with the after-context-build rule; `SKILL.md` 79 lines with fresh/validate/build steps (sources, hashing, derive-only, markers, tmp + commit, 10-entry self-check); `DenseModule` 5 OK; full suite 97 OK; lint ok. Manual check of the documented build steps in a scratch folder: hash one-liner → `commit` → `committed 2c1d9bf9fa7d` → `fresh` → `fresh 2c1d9bf9fa7d` (exit 0), tmp removed. Next: T015 (human-run build), S3 T016
 - 2026-10-26 `feat/001-dense-agent-protocol` after `1a738c8` (uncommitted) — T011 RED: `python3 -m unittest tests.test_dap -v` → 9 FAIL (rules 3/4/6, size warning, 3× commit), 22 ok (20 earlier, `test_plain_url_is_not_a_secret` guard, `Perf` already within budget). One test bug fixed before GREEN: `Perf` pointed at `section-10…19` (only 10 headings); the validator correctly rejected it. Earlier test `test_value_may_contain_at_sign` switched from `pkg`/`note` to allowed `repo` keys (`desc`/`owns`) because rule 4 now applies. Size warning gets a 20 KB source floor (tiny sources made every index exceed 5%); recorded in contracts/index-format.md with the `commit` contract. T012 GREEN: `tests.test_dap` 32 OK (`Perf` 0.11 s for 10 sources / ~300 KB / 200 sections), full suite 93 OK, `python3 bin/sdlc lint` ok, no `__pycache__` under `modules/`. Next: T013 (complete key list), then T014

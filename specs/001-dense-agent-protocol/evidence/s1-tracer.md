@@ -72,14 +72,34 @@ Observation, not scored: without the index, the answer named JTL-WaWi (through t
 
 The index was restored afterwards (`git checkout -- .`).
 
+## Run A2: re-run after `dap.py show` (`2eed25ee-81a1-4e22-bff5-343e2078ee69.jsonl`)
+
+Kit `d88cbd9` installed into the scratch workspace (`sdlc update`: 4 files; `check` ok; scratch baseline 2). Same hand-written index `7e2a10ca8399`, same model, same prompt (sent once).
+
+Tool calls, in order:
+
+1. `Bash` `dap.py fresh …` → `fresh 7e2a10ca8399 | exit 0`
+2. `Bash` `cat .sdlc/context/index.dap | head -80`
+3. `Bash` `for a in @e#data @e#purpose-and-boundaries @s#guest-checkout-identify--delivery--draft-order-partial; do python3 .claude/skills/sdlc-dense-index/dap.py show .sdlc/context/index.dap $a | head -25; …; done` → `.sdlc/context/jtl-platform-shop-erp-connector.md:88-100 | 88	## Data | …`
+
+Answer excerpts: "(`.sdlc/context/jtl-platform-shop-erp-connector.md:12,92`)", "(`.sdlc/context/jtl-platform-shop-storefront.md:135`)" … ":139", "Which caller invokes handover is unverified (`…erp-connector.md:19`)", "I read the dense index first (fresh, rev `7e2a10ca8399`) and cited the context documents it points to, not the index."
+
+| Check | Result | Note |
+|---|---|---|
+| S1.1 | **pass** | Freshness first, revision quoted, index read first |
+| S1.2: only pointed sections opened | **pass** | Only `dap.py show` for three pointed sections; no grep, no whole-document read |
+| S1.3 | **pass** | Every citation lies inside a section `show` printed |
+
+Context loaded: about 9.4K chars of tool output (Run A: about 16.3K).
+
 ## T010 result
 
 | Scenario | Result |
 |---|---|
 | S1.1 freshness first, revision quoted, index read first | pass (Run A) |
-| S1.2 only pointed sections opened | **fail** (Run A: keyword grep over whole documents). Partly shown in Run B (call 4 targeted the pointed section) |
+| S1.2 only pointed sections opened | Run A **fail** (keyword grep); **pass in Run A2** after `dap.py show` (R004/R006) |
 | S1.3 sources cited, never the index | pass (runs A, B, C) |
 | S1.4 stale source named and read in full | pass (Run B) |
 | S1.5 missing index handled | pass (Run C) |
 
-**T010 is not ticked:** S1.2 failed in its defining run. Finding F-S1.2 (above) needs a decision: make section access concrete (for example `dap.py show <alias#slug>`, with the rule pointing to it) and re-run Run A, or relax S1.2.
+**T010 passes** (S1.1–S1.5 all observed; S1.2 in Run A2). Finding F-S1.2 was closed by `dap.py show` (kit `d88cbd9`).

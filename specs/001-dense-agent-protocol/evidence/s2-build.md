@@ -55,11 +55,36 @@ fresh 4bb293220edb
 |---|---|
 | S2.6: an invalid rebuild doesn't replace the last valid index | **pass** |
 
+## Run H: marker check after `dap.py show` and counts (`120845de-32c0-4772-b2ed-0512a6e5882c.jsonl`)
+
+Kit `d88cbd9` (scratch baseline 2), starting from the hand-written index `7e2a10ca8399`. Setup (main session): added a **synthetic** fixture `.sdlc/context/jtl-platform-shop-payments.md` with two marked facts. One is in *Purpose and boundaries* ("UNVERIFIED: no signed agreement or sandbox access exists yet"), the other in *Data* ("INFERRED from the admin connection-status design; no Terraform for it exists yet"). First message: `/sdlc-dense-index build`.
+
+Tool calls: 7 `Bash`. Calls 1–4 read the sources and hash them; call 5 wrote `index.dap.1.tmp` and ran `commit` → `not committed: .sdlc/context/index.dap unchanged` (one entry without a `@ref`); call 6 fixed the tmp and ran `commit` → `committed e737dd93b359 (5 sources, 16 sections, 37 entries)`, then `fresh`; call 7 ran a 10-section self-check with `dap.py show`. There were no `Write` or `Edit` calls on `index.dap`.
+
+Report excerpts: "The index is rebuilt: `committed e737dd93b359 (5 sources, 16 sections, 37 entries)`."; "A separate payments risk entry for the unsigned JTL Pay agreement, carrying `UNVERIFIED` verbatim."; "The Key Vault secrets entry, carrying `INFERRED` verbatim."; "`show` output was cut to the first lines of each section, so for the long ones … I did not re-read every line."
+
+Independent checks by the main session:
+
+| Check | Result |
+|---|---|
+| `fresh` / `validate` | `fresh e737dd93b359` / `valid` |
+| Counts in the file | 5 `src`, 16 sections, 37 entries: exactly as reported |
+| Marked facts in the index | `secrets: Azure Key Vault, one secret per shop for JTL Pay credentials; INFERRED from the admin connection-status design, no Terraform for it exists yet @p#data` and `what: the first PSP adapter is JTL Pay; UNVERIFIED: no signed agreement or sandbox access exists yet @p#purpose-and-boundaries` |
+
+| Check | Result | Note |
+|---|---|---|
+| S2.5: markers kept | **pass** | Both markers carried verbatim, pointing at the sections that hold them |
+| Counts quoted from `commit` | **pass** | Matches the file exactly (Run F's estimate was wrong) |
+| S2.6 in a real build | **pass** | The first commit was refused, the old index stayed, and the fix was committed afterwards |
+| tmp + commit only; self-check with `show` | **pass** | Calls 5–7 |
+
+Advisory: the tmp was named `index.dap.1.tmp` rather than a per-run id. That's harmless for one build; concurrent builds would share the name.
+
 ## T015 result
 
 The T015 acceptance holds: the build wrote a valid index whose hashes match its sources, and an injected bad entry failed `commit` and left the old index in place.
 
-**T015 is not ticked yet**, for two reasons:
+**Update:** both reasons below were closed by kit `d88cbd9` and Run H, and **T015 passes** (S2.1, S2.2, S2.5, S2.6 and the skill steps). The original reasons it was held back:
 
 - S2.5 (markers kept), which T015 names explicitly, wasn't exercised.
 - The report-accuracy issue is new.

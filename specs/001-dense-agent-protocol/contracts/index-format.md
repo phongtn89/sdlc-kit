@@ -52,7 +52,7 @@ A warning, not an error: the index is larger than 5% of the combined size of its
 
 ## Commit (FR-018)
 
-`commit <tmp> <dest>` accepts only `tmp` = `.sdlc/context/index.dap.<id>.tmp` and `dest` = `.sdlc/context/index.dap` under the root, with symlinks resolved; anything else is refused with exit 1 before reading. It then validates `tmp`. If it's valid, it atomically replaces `dest` (`os.replace`) and prints `committed <IDX12>`, exit 0. Otherwise it prints the `ERROR` lines and `not committed: <dest> unchanged`, exit 1, and leaves both files in place. Builders write `tmp` as `index.dap.<pid>.tmp`, so concurrent builds never share a temporary file.
+`commit <tmp> <dest>` accepts only `tmp` = `.sdlc/context/index.dap.<id>.tmp` and `dest` = `.sdlc/context/index.dap` under the root, with symlinks resolved; anything else is refused with exit 1 before reading. It then validates `tmp`. If it's valid, it atomically replaces `dest` (`os.replace`) and prints `committed <IDX12> (<n> sources, <s> sections, <e> entries)`, exit 0. Builders quote these counts rather than estimating them. Otherwise it prints the `ERROR` lines and `not committed: <dest> unchanged`, exit 1, and leaves both files in place. Builders write `tmp` as `index.dap.<pid>.tmp`, so concurrent builds never share a temporary file.
 
 ## Freshness (FR-005, FR-006, FR-009, FR-011)
 
@@ -65,6 +65,18 @@ A warning, not an error: the index is larger than 5% of the combined size of its
 | Valid and every source unchanged | `fresh <IDX12>` | 0 |
 
 `IDX12` is the first 12 hex characters of the sha256 of the index file itself: the **index revision**. Agents quote it when they use the index (spec S1.1).
+
+## Show (FR-009)
+
+`show <index> <@alias#slug>` (the `@` is optional) runs the freshness check's validation, then prints exactly one section of the aliased source:
+
+```
+.sdlc/<path>:<first>-<last>
+<line>\t<text>
+…
+```
+
+The section runs from its heading to the line before the next heading of the same or higher level, or to the end of the file. Headings inside fenced code don't count. If the source changed since the index was built, a `WARNING: <path> changed since this index was built…` line comes first and the section is still printed. Exit codes: 0 shown; 1 unknown alias, missing source, unknown heading or malformed reference; 2 missing or invalid index. Agents cite the `path:line` it prints.
 
 ## Running the script
 

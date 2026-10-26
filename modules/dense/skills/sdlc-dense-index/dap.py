@@ -4,6 +4,8 @@
   dap.py validate <index> [--root DIR]      exit 0 valid, 1 invalid
   dap.py fresh <index> [--root DIR]         exit 0 fresh, 1 stale, 2 invalid or missing
   dap.py commit <tmp> <dest> [--root DIR]   exit 0 replaced, 1 invalid (dest unchanged)
+  dap.py show <index> <alias#slug> [--root DIR]   print one pointed section with line numbers;
+                                           exit 0 shown, 1 unknown alias/heading, 2 invalid or missing index
 
 The grammar is specs/001-dense-agent-protocol/contracts/index-format.md in sdlc-kit.
 """
@@ -57,10 +59,10 @@ def source_path(root, rel):
     return full if os.path.commonpath([base, full]) == base else None
 
 
-def slugs(text):
-    """GitHub-style heading anchors, with -1, -2 … for repeats; fenced code is skipped."""
-    out, seen, fenced = set(), {}, False
-    for line in text.split("\n"):
+def headings(text):
+    """[(line, level, slug)]: GitHub-style anchors, with -1, -2 … for repeats; fenced code is skipped."""
+    out, seen, fenced = [], {}, False
+    for n, line in enumerate(text.split("\n"), 1):
         if line.lstrip().startswith("```"):
             fenced = not fenced
             continue
@@ -68,10 +70,25 @@ def slugs(text):
         if not m:
             continue
         s = re.sub(r"[^\w\- ]", "", m.group(1).strip().lower()).replace(" ", "-")
-        n = seen.get(s, 0)
-        seen[s] = n + 1
-        out.add(s if n == 0 else "%s-%d" % (s, n))
+        k = seen.get(s, 0)
+        seen[s] = k + 1
+        out.append((n, len(line) - len(line.lstrip("#")), s if k == 0 else "%s-%d" % (s, k)))
     return out
+
+
+def slugs(text):
+    return {s for _, _, s in headings(text)}
+
+
+def section(text, slug):
+    """(first, last) line of the section under the heading with this slug, or None."""
+    hs = headings(text)
+    for i, (n, level, s) in enumerate(hs):
+        if s == slug:
+            nxt = next((m for m, lv, _ in hs[i + 1:] if lv <= level), None)
+            last = (nxt - 1) if nxt else len(text.rstrip("\n").split("\n"))
+            return n, last
+    return None
 
 
 def commit_paths_ok(root, tmp, dest):
@@ -92,12 +109,12 @@ def load_keys():
 
 
 def check(index, root, fresh_mode=False):
-    """Return (errors, stale, idx12, warnings). errors: ["ERROR <line>: <reason>"]; stale: ["STALE <alias> <path>"]."""
+    """Return (errors, stale, idx12, warnings, counts). errors: ["ERROR <line>: <reason>"]; stale: ["STALE <alias> <path>"]."""
     if not os.path.isfile(index):
-        return ["ERROR 0: index not found: %s" % index], [], None, []
+        return ["ERROR 0: index not found: %s" % index], [], None, [], None
     keys = load_keys()
     if keys is None:
-        return ["ERROR 0: key list missing or unreadable: %s" % KEYS], [], None, []
+        return ["ERROR 0: key list missing or unreadable: %s" % KEYS], [], None, [], None
     with open(index, "rb") as f:
         raw = f.read()
     errors, stale, srcs, sections, warnings = [], [], {}, set(), []
@@ -105,7 +122,7 @@ def check(index, root, fresh_mode=False):
     src_bytes = 0
     stype, used = None, set()  # current section type (None if unknown) and keys used in it
     refs = []  # (line, alias, slug)
-    src_lines, last, open_section = 0, 1, None  # open_section: [line of the section header, entries so far]
+    src_lines, last, open_section, entries = 0, 1, None, 0  # open_section: [line of the section header, entries so far]
     for n, line in enumerate(raw.decode("utf-8", "replace").split("\n"), 1):
         line = line.rstrip("\r")
         if not line.strip() or line.startswith(";"):
@@ -170,6 +187,7 @@ def check(index, root, fresh_mode=False):
             errors.append("ERROR %d: entry outside a section" % n)
             continue
         open_section[1] += 1
+        entries += 1
         key = m.group(1)
         if stype is not None and key not in keys[stype]:
             errors.append("ERROR %d: key %s not allowed in a %s section" % (n, key, stype))
@@ -205,24 +223,58 @@ def check(index, root, fresh_mode=False):
             errors.append("ERROR %d: no heading %s in %s" % (n, slug, srcs[alias][0]))
     if src_bytes >= SIZE_FLOOR and len(raw) > SIZE_RATIO * src_bytes:
         warnings.append("WARNING: index is %.1f%% of its sources (max 5%%)" % (100.0 * len(raw) / src_bytes))
-    return sorted(errors, key=lambda e: int(e.split()[1].rstrip(":"))), stale, sha12(raw), warnings
+    counts = "(%d sources, %d sections, %d entries)" % (src_lines, len(sections), entries)
+    return sorted(errors, key=lambda e: int(e.split()[1].rstrip(":"))), stale, sha12(raw), warnings, counts
+
+
+def show(index, root, ref):
+    m = REF_RE.match(ref[1:] if ref.startswith("@") else ref)
+    if not m:
+        print("ERROR: malformed reference %r (want @alias#slug)" % ref)
+        return 1
+    alias, slug = m.groups()
+    with open(index, encoding="utf-8", errors="replace") as f:
+        srcs = {s.group(1): s.groups()[1:] for s in (SRC_RE.match(l.rstrip("\r\n")) for l in f) if s}
+    if alias not in srcs:
+        print("ERROR: unknown alias %s" % alias)
+        return 1
+    rel, h = srcs[alias]
+    full = source_path(root, rel)
+    if not full or not os.path.isfile(full):
+        print("ERROR: source not found: %s" % rel)
+        return 1
+    with open(full, "rb") as f:
+        data = f.read()
+    text = data.decode("utf-8", "replace")
+    span = section(text, slug)
+    if span is None:
+        print("ERROR: no heading %s in %s" % (slug, rel))
+        return 1
+    out = []
+    if sha12(data) != h:
+        out.append("WARNING: %s changed since this index was built; check the section still says this" % rel)
+    lines = text.split("\n")
+    out.append(".sdlc/%s:%d-%d" % (rel, span[0], span[1]))
+    out += ["%d\t%s" % (n, lines[n - 1]) for n in range(span[0], span[1] + 1)]
+    print("\n".join(out))
+    return 0
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Validate a dense index or check its freshness.")
-    ap.add_argument("command", choices=["validate", "fresh", "commit"])
+    ap.add_argument("command", choices=["validate", "fresh", "commit", "show"])
     ap.add_argument("index", help="the index (for commit: the temporary index to validate)")
-    ap.add_argument("dest", nargs="?", help="commit only: the index to replace")
+    ap.add_argument("dest", nargs="?", help="commit: the index to replace; show: the @alias#slug to print")
     ap.add_argument("--root", help="folder that holds .sdlc/ (default: nearest one above the index)")
     a = ap.parse_args(argv)
-    if (a.command == "commit") != (a.dest is not None):
-        ap.error("dest is required for commit and only allowed there")
+    if (a.command in ("commit", "show")) != (a.dest is not None):
+        ap.error("a second argument is required for commit and show, and only allowed there")
     root = os.path.abspath(a.root) if a.root else find_root(a.index)
     if a.command == "commit" and not commit_paths_ok(root, a.index, a.dest):
         print("ERROR 0: commit only writes .sdlc/context/index.dap from .sdlc/context/index.dap.<id>.tmp "
               "(got %s -> %s)\nnot committed: %s unchanged" % (a.index, a.dest, a.dest))
         return 1
-    errors, stale, idx, warnings = check(a.index, root, fresh_mode=a.command == "fresh")
+    errors, stale, idx, warnings, counts = check(a.index, root, fresh_mode=a.command in ("fresh", "show"))
     if a.command == "validate":
         print("\n".join(warnings + (errors or ["valid"])))
         return 1 if errors else 0
@@ -231,11 +283,13 @@ def main(argv=None):
             print("\n".join(errors + ["not committed: %s unchanged" % a.dest]))
             return 1
         os.replace(a.index, a.dest)
-        print("\n".join(warnings + ["committed %s" % idx]))
+        print("\n".join(warnings + ["committed %s %s" % (idx, counts)]))
         return 0
     if errors:
         print("\n".join(["INVALID"] + errors))
         return 2
+    if a.command == "show":
+        return show(a.index, root, a.dest)
     print("\n".join(["%s %s" % ("stale" if stale else "fresh", idx)] + stale))
     return 1 if stale else 0
 

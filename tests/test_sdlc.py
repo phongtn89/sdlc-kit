@@ -301,8 +301,15 @@ class DenseModule(Base):
         self.assertIn("After any context build (`sdlc-context`), run `sdlc-dense-index build`", agents)
         skill = self.read(".claude/%s/SKILL.md" % self.SKILL)
         for step in ("dap.py commit .sdlc/context/index.dap.", "UNVERIFIED", "INFERRED", "10 entries",
-                     ".sdlc/workspace.md", ".sdlc/context/*.md"):
+                     ".sdlc/workspace.md", ".sdlc/context/*.md", "dap.py show .sdlc/context/index.dap @",
+                     "quote the counts"):
             self.assertIn(step, skill)
+
+    def test_rules_point_at_show(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        agents = managed_block(self.read("AGENTS.md"))
+        self.assertIn("dap.py show .sdlc/context/index.dap @<alias>#<slug>", agents)
+        self.assertIn("instead of searching or reading whole sources", agents)
 
     def snapshot(self):
         out = {}

@@ -27,7 +27,7 @@ user-invocable: true
 
 1. From the project root: `python3 <skill folder>/dap.py fresh .sdlc/context/index.dap`.
 2. Act on the exit code:
-   - `0`, output `fresh <rev>`: read the index first and quote `<rev>`. Follow an entry's `@alias#slug` to the file on the matching `src` line and that heading, and read only those sections.
+   - `0`, output `fresh <rev>`: read the index first and quote `<rev>`. For each entry you need, run `python3 <skill folder>/dap.py show .sdlc/context/index.dap @<alias>#<slug>`. It prints exactly that section, with line numbers, under a `.sdlc/<path>:<first>-<last>` line; cite those lines. Don't grep or read whole sources for facts the index covers.
    - `1`, output `stale <rev>` and `STALE <alias> <path>` lines: say which sources are stale. Use the other entries; read the stale sources in full instead of their entries. Suggest **build**.
    - `2`, output `INVALID` and `ERROR` lines, or no index: say so and use the full sources, as if this module weren't installed.
 
@@ -47,8 +47,8 @@ user-invocable: true
    - never copy secrets, credentials or personal data; point to the section instead.
 7. **Write a temporary file** `.sdlc/context/index.dap.<pid>.tmp` (any number unique to this run): header with today's date, the `src` lines, then the sections. Never edit `.sdlc/context/index.dap` directly.
 8. **Commit**: `python3 <skill folder>/dap.py commit .sdlc/context/index.dap.<pid>.tmp .sdlc/context/index.dap`. On `ERROR` lines, fix the temporary file and commit again. If you can't fix it, stop: the last valid index stays in place, and you report the errors.
-9. **Self-check 10 entries** chosen across sections: open each pointed section and confirm it supports the entry and that markers survived. Fix any that don't, then commit again.
-10. **Report**: the `committed <rev>` line, the number of sources and entries, any size warning, and which entries the self-check corrected.
+9. **Self-check 10 entries** chosen across sections: print each pointed section with `python3 <skill folder>/dap.py show .sdlc/context/index.dap @<alias>#<slug>` and confirm it supports the entry and that markers survived. Fix any that don't, then commit again.
+10. **Report**: the full `committed <rev> (<n> sources, <s> sections, <e> entries)` line (quote the counts from it; don't estimate them), any size warning, and which entries the self-check corrected.
 
 ## Rationalizations
 

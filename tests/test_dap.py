@@ -301,7 +301,13 @@ class Commit(Base):
         with open(dest, "rb") as f:
             self.assertEqual(f.read(), new)
         self.assertFalse(os.path.exists(tmp))
-        self.assertEqual(out.strip(), "committed %s" % sha12(new))
+        self.assertEqual(out.strip(), "committed %s (1 sources, 1 sections, 1 entries)" % sha12(new))
+
+    def test_commit_reports_counts(self):
+        tmp, dest = self.tmp("[repo admin]\ndesc: x @a#data\ndb: y @a#data\n; note\n[risk r1]\nwhat: z @a#data")
+        code, out = run("commit", tmp, dest, "--root", self.root)
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out.strip().endswith("(1 sources, 2 sections, 3 entries)"), out)
 
     def assertRefused(self, tmp, dest):
         code, out = run("commit", tmp, dest, "--root", self.root)
@@ -350,6 +356,60 @@ class Commit(Base):
         os.remove(dest)
         self.assertEqual(run("commit", tmp, dest, "--root", self.root)[0], 0)
         self.assertTrue(os.path.exists(dest))
+
+
+SECTIONED = ("# B\n\n## Data\n\ndb: x.\n\n### Tables\n\n- orders\n```text\n## not a heading\n```\n\n"
+             "## Key flows\n\nflow.\n")  # Data = lines 3-13, Tables = 7-13, Key flows = 14-16
+
+
+class Show(Base):
+    def setUp(self):
+        super().setUp()
+        self.write("context/b.md", SECTIONED)
+        src = "src a context/a.md %s\nsrc b context/b.md %s" % (self.src_hash("context/a.md"), self.src_hash("context/b.md"))
+        self.idx = self.index(src=src, body="[repo admin]\ndesc: x @b#data\ndb: y @a#data")
+
+    def show(self, ref):
+        return run("show", self.idx, ref, "--root", self.root)
+
+    def test_prints_one_section_with_line_numbers(self):
+        code, out = self.show("@b#data")
+        self.assertEqual(code, 0, out)
+        lines = out.split("\n")
+        self.assertEqual(lines[0], ".sdlc/context/b.md:3-13")
+        self.assertEqual(lines[1], "3\t## Data")
+        self.assertIn("7\t### Tables", out)
+        self.assertIn("11\t## not a heading", out)  # fenced, so it doesn't end the section
+        self.assertNotIn("Key flows", out)
+
+    def test_subsection_and_last_section(self):
+        code, out = self.show("b#tables")  # the leading @ is optional
+        self.assertEqual((code, out.split("\n")[0]), (0, ".sdlc/context/b.md:7-13"))
+        code, out = self.show("@b#key-flows")
+        self.assertEqual((code, out.split("\n")[0]), (0, ".sdlc/context/b.md:14-16"))
+        self.assertIn("16\tflow.", out)
+
+    def test_unknown_alias_or_slug(self):
+        code, out = self.show("@z#data")
+        self.assertEqual(code, 1, out)
+        self.assertIn("unknown alias z", out)
+        code, out = self.show("@b#nope")
+        self.assertEqual(code, 1, out)
+        self.assertIn("no heading nope", out)
+
+    def test_missing_or_invalid_index(self):
+        self.assertEqual(run("show", self.path("context/none.dap"), "@b#data", "--root", self.root)[0], 2)
+        self.write("context/index.dap", "#dap 1 built 2026-10-26\n")
+        code, out = self.show("@b#data")
+        self.assertEqual(code, 2, out)
+        self.assertTrue(out.startswith("INVALID"), out)
+
+    def test_changed_source_warns_but_shows(self):
+        self.write("context/b.md", SECTIONED + "\nmore.\n")
+        code, out = self.show("@b#data")
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out.startswith("WARNING: context/b.md changed since this index was built"), out)
+        self.assertIn("3\t## Data", out)
 
 
 class Perf(Base):

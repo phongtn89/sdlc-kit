@@ -8,7 +8,39 @@ One portable folder that sets up a lean, evidence-driven SDLC for AI coding agen
 - **Addy Osmani**: lifecycle skills with anti-rationalization tables and required evidence.
 - **pstack**: a router, principles, and pause/pickup.
 
-On top of these it keeps the Shop 6 fleet's own engineering rules. See [DESIGN.md](DESIGN.md) for why each piece is here.
+On top of these it keeps a few hard-won engineering rules (a decision ladder, a readiness gate, fail-safe checkpoints, evidence-based review). See [DESIGN.md](DESIGN.md) for why each piece is here.
+
+## Status
+
+| | |
+|---|---|
+| Version | **0.5.0** (see `VERSION`) |
+| State | Usable. `sdlc lint` is clean and 74 tests pass. Install, check and uninstall are verified on a fresh repo. |
+| Targets | Claude Code and GitHub Copilot (Copilot is rendered but not eval-tested) |
+| Requirements | Python 3.9+, stdlib only, no network |
+| Evidence | Behaviour evals in `evals/` (one fresh `claude -p` per prompt via `evals/run.py`). Results are in `evals/results/`: n = 1 per arm, Sonnet 5.5 only |
+| Not in the kit | The experimental "dense index" module. Spec 001 failed its evaluation gate and was rejected; spec 002 (a `find` redesign) is still a draft, and spec 003 (opt-in token and time usage per task, bug and finding) is agreed but not yet written |
+
+## Capabilities
+
+- **One source, many tools.** Skills, roles, principles, checklists and templates are rendered per tool, with a lockfile (`.sdlc/lock.json`) and drift detection.
+- **Scale-adaptive process.** A router (`/sdlc`) investigates, then picks track T0–T4, so a typo gets no spec and a feature gets the full chain with a human approval gate.
+- **17 core skills** across the lifecycle: setup, context, grill, specify, clarify, plan, tasks, analyze, implement, TDD, debug, review, converge, ship, handoff, retro, plus the router. Each has Rationalizations, Red flags and required Verification evidence.
+- **5 subagent roles** with per-role model routing (`adapters/models.json`, overridable per project).
+- **Workspace mode.** Install once over a folder of repos, map them with `sdlc discover` and `/sdlc-context`, and work in each repo under its own rules.
+- **Optional modules.** `qa` adds test-case planning and automation skills. A module can add rules to the always-loaded instructions.
+- **Self-checking kit.** `sdlc lint` enforces skill structure, valid `.sdlc/` references, and an unnamed-prompt eval for every skill the constitution names.
+- **Safe updates.** `update` skips files edited locally; project rules live in `.sdlc/config.json`, never in kit-owned files.
+
+## Sharing the kit
+
+The kit has no dependency on this machine or on any one project. To use it on another project, or to give it to a teammate:
+
+1. Share the folder, ideally as a git repository (`git clone <url> ~/sdlc-kit`). A zip also works, but a repo gives you `VERSION` and history for `update`.
+2. In the other project: `python3 <kit>/bin/sdlc install <repo>`, then run `/sdlc-setup` once.
+3. To take a newer kit later: `git pull` in the kit, then `sdlc update <repo>`.
+
+Known limits when sharing: the repo has no `LICENSE` file yet (add one before sharing outside your team), and `specs/` and `docs/adr/` hold this kit's own history, which names an internal workspace. Neither is installed into projects.
 
 ## Install into a project
 
@@ -59,6 +91,26 @@ python3 ~/Projects/sdlc-kit/bin/sdlc discover ~/Projects/shop6
 
 Then open Claude Code in the workspace folder and run `/sdlc-setup`. It detects the workspace and writes `.sdlc/workspace.md` (a map of the repos, their dependencies, commands, specs and agent surfaces) and `repos` in `.sdlc/config.json`, only after you approve. Next, run `/sdlc-context <repo>` to write a cited context file per repo (`.sdlc/context/<repo>.md`). `discover` marks it STALE once the repo moves on. From then on, `/sdlc` first names the repo each task belongs to and works inside it, under that repo's own `AGENTS.md`.
 
+## Use it in plain language
+
+After install and `/sdlc-setup`, you can just say what you want. You don't need to remember skill names. The skill descriptions and the rules in `AGENTS.md` let the agent pick the right one.
+
+| You say | What happens |
+|---|---|
+| "Review this PR / my diff / this spec" | Loads `sdlc-review`, runs the checks, and starts the report with `VERDICT: APPROVED` or `VERDICT: REJECTED` (verified, `evals/results/0.5.0.md` D9) |
+| "GET /v1/products/x returns 500 instead of 404. Fix it." | Loads `sdlc-debug`: reproduce, find the root cause, write a failing test, then the smallest fix (started correctly in one run; the fix itself wasn't observed, R6 in `evals/results/0.5.0.md`) |
+| "We need a spec for X" / "Plan this feature" / "Break this plan into tasks" | Loads `sdlc-specify`, `sdlc-plan` or `sdlc-tasks` from their descriptions (not yet eval-tested in plain language) |
+| "Pause here, I'll continue tomorrow" / "Pick up where we left off" | `sdlc-handoff` writes or reads a compact handoff (not yet eval-tested in plain language) |
+| "What did we learn from this feature?" | `sdlc-retro` turns the corrections into proposed changes (not yet eval-tested in plain language) |
+
+**For a bigger or unclear task, start with `/sdlc <task>`, in words like "/sdlc add sorting to the categories list".** The router skill is user-invoked only, so plain language doesn't reliably open it. `/sdlc` investigates, tells you which track (T0 to T4) it chose and why, and opens the steps as a todo list. You can also ask in words ("which track is this?"), but only `/sdlc` is tested.
+
+Tips:
+
+- Say the outcome and the constraint, not the process: "fix the 500 on unknown product ids, keep the response shape" beats "run the debug skill".
+- Approve at the stops. A T3 feature pauses for your approval before any code, and a review never edits.
+- If the agent skips a step, name it: "use sdlc-review on this" or "grill me on this first".
+
 ## Use
 
 Start with **`/sdlc <task>`**. It looks at the code, picks a track and opens the steps as a todo list.
@@ -86,4 +138,4 @@ python3 -m unittest discover -s tests -t .
 - Shared docs are referenced only as `.sdlc/...`. Lint fails on a path that doesn't exist.
 - Bump `VERSION` for each release. `sdlc check` in a project reports `OUTDATED` when its lock is older.
 - Lessons from projects arrive via `sdlc-retro` as proposals against this repo.
-- `evals/` holds scenario prompts with expected behaviour. Run them by hand against a scratch repo when you change a skill.
+- `evals/` holds scenario prompts with expected behaviour. When you change a skill, run its prompt against a scratch repo with `python3 evals/run.py <prompt-file> <scratch-repo> --out <transcript.jsonl>` (see `evals/scenarios.md`).

@@ -74,7 +74,8 @@ def summarize(lines):
             continue
         if d.get("type") == "system" and d.get("subtype") == "init":
             info["session"], info["model"] = d.get("session_id"), d.get("model")
-        content = (d.get("message") or {}).get("content")
+        msg = d.get("message")
+        content = msg.get("content") if isinstance(msg, dict) else None
         if isinstance(content, list):
             for b in content:
                 if isinstance(b, dict) and b.get("type") == "tool_use":

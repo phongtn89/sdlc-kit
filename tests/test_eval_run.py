@@ -79,6 +79,13 @@ class Runner(unittest.TestCase):
         with open(self.out) as f:
             self.assertEqual(len(f.read().strip().split("\n")), len(EVENTS))
 
+    def test_event_with_a_string_message_does_not_crash(self):
+        # Permission-denial notices arrive as system events whose "message" is text.
+        events = EVENTS[:1] + [{"type": "system", "message": "needs approval"}] + EVENTS[1:]
+        code, out = self.run_it(claude=self.fake_claude(events))
+        self.assertEqual(code, 0, out)
+        self.assertIn("tool: Skill sdlc-review", out)
+
     def test_reports_a_changed_target(self):
         code, out = self.run_it(claude=self.fake_claude(EVENTS, touch=os.path.join(self.target, "app.js")))
         self.assertEqual(code, 0, out)

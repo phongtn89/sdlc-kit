@@ -346,6 +346,17 @@ class DenseModule(Base):
         for banned in ("at the start", "start of every track", "read the index", "dap.py show", "dap.py fresh", "quote `<rev>`"):
             self.assertNotIn(banned, rules)
 
+    def test_eval_template_v2(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        t = self.read(".sdlc/templates/dense-eval.md")
+        for needle in ("Leak check, before the first run of each arm", "Tie rule", "context loaded",
+                       "median of (1 − B/A) over the document tasks is at least 0.20", "B/A ≤ 1.10 on each code-only task",
+                       "Lookup used", "Lookup output sizes", "Cites index or sources", "document task", "code-only task",
+                       "outside the workspace", "evals/run.py", "dap.py find"):
+            self.assertIn(needle, t)
+        for banned in ("return contract", "dense-return", "50% lower", "before the first action", "before first action"):
+            self.assertNotIn(banned, t)
+
     def test_installed_find_runs(self):
         code, out, _ = run("install", self.d, "--targets", "copilot", "--modules", "dense", kit=self.KIT)
         self.assertEqual(code, 0, out)

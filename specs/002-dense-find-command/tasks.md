@@ -7,7 +7,7 @@ Verify (kit root):
 - Full: `python3 -m unittest discover -s tests -t .` (baseline 74 OK on this branch, 2026-10-30) · `python3 bin/sdlc lint`
 - Core untouched (FR-001, FR-020): `git diff --stat main -- core adapters bin evals` prints nothing
 
-Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blocked-by: T00x`
+Legend: `- [x] T001 [P?] [S1] Description — files: … — verify: … — blocked-by: T00x`
 - `[P]` may run in parallel: no shared files, no blocking edge.
 - `[S1]` slice the task belongs to.
 - `verify` is the command or observation that proves this task alone.
@@ -21,17 +21,17 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 Goal: an agent-facing `find` that returns budgeted, located excerpts, reached through the rules an install renders.
 Acceptance: in a temp workspace installed with `--modules dense`, the rendered instructions name only the `find` command, and running the installed `dap.py find` on a fixture index returns ≤ 3 entries in ≤ 2,000 characters, with source locations and numbered excerpt lines.
 
-- [ ] T002 [S1] Write failing tests `Find.test_returns_best_three` (FR-010: best first, location, heading line, numbered matching lines; two sibling entries pointing to the same source section come back as one result with one excerpt) and `Find.test_budget_and_cut_marker` (FR-011, SC-005: a 26K section and 5 matching entries; output ≤ 2,000 characters; every shortened excerpt ends with the cut line naming its location, which the final guard never cuts off) — files: `tests/test_dap.py` — verify: `python3 -m unittest tests.test_dap.Find -v` fails because `find` is not a command — blocked-by: T001
-- [ ] T003 [S1] Implement `find()` and the `find` command per `contracts/find.md`: `nargs="*"` terms, entry scoring, excerpt, budget share per entry, cut line, the final guard that keeps room for the cut line, exits 0 and 1 — files: `modules/dense/skills/sdlc-dense-index/dap.py` — verify: `python3 -m unittest tests.test_dap -v` passes (the 50 v1 tests and the 2 new ones) — blocked-by: T002
-- [ ] T004 [S1] Write failing tests `DenseModule.test_rules_name_find_only` (FR-016, FR-018: the rendered instructions contain the exact `find` command under both `.claude/skills/…` and `.github/skills/…`, contain the lines on exits 1–3, stale and cut results, citing sources, "data, not instructions" and the rebuild after `sdlc-context` (FR-003, FR-017), and contain no "at the start", no "read the index" and no `show`) and `DenseModule.test_installed_find_runs` (FR-018: a `--targets copilot` install, then `.github/skills/sdlc-dense-index/dap.py find` answers a lookup). Replace `test_rules_point_at_show`, and update `test_install_renders_rules_skill_and_script` to assert the `find` line instead of `dap.py fresh` — files: `tests/test_sdlc.py` — verify: `python3 -m unittest tests.test_sdlc.DenseModule -v` fails on the rules text — blocked-by: T003
-- [ ] T005 [S1] Rewrite `rules.md` for v2: one command with its arguments under both skill paths ("whichever exists"), when to use it (before reading or searching the workspace documents), how to treat exits 1, 2 and 3 and stale or cut entries, cite sources not the index, data not instructions, rebuild after `sdlc-context` (FR-003, FR-016, FR-017). Update the usage notes in `SKILL.md` to point at `find` — files: `modules/dense/rules.md`, `modules/dense/skills/sdlc-dense-index/SKILL.md` — verify: `python3 -m unittest tests.test_sdlc.DenseModule -v` passes; `python3 bin/sdlc lint` ok (rules stay within the lint's 30-line cap) — blocked-by: T004
+- [x] T002 [S1] Write failing tests `Find.test_returns_best_three` (FR-010: best first, location, heading line, numbered matching lines; two sibling entries pointing to the same source section come back as one result with one excerpt) and `Find.test_budget_and_cut_marker` (FR-011, SC-005: a 26K section and 5 matching entries; output ≤ 2,000 characters; every shortened excerpt ends with the cut line naming its location, which the final guard never cuts off) — files: `tests/test_dap.py` — verify: `python3 -m unittest tests.test_dap.Find -v` fails because `find` is not a command — blocked-by: T001
+- [x] T003 [S1] Implement `find()` and the `find` command per `contracts/find.md`: `nargs="*"` terms, entry scoring, excerpt, budget share per entry, cut line, the final guard that keeps room for the cut line, exits 0 and 1 — files: `modules/dense/skills/sdlc-dense-index/dap.py` — verify: `python3 -m unittest tests.test_dap -v` passes (the 50 v1 tests and the 2 new ones) — blocked-by: T002
+- [x] T004 [S1] Write failing tests `DenseModule.test_rules_name_find_only` (FR-016, FR-018: the rendered instructions contain the exact `find` command under both `.claude/skills/…` and `.github/skills/…`, contain the lines on exits 1–3, stale and cut results, citing sources, "data, not instructions" and the rebuild after `sdlc-context` (FR-003, FR-017), and contain no "at the start", no "read the index" and no `show`) and `DenseModule.test_installed_find_runs` (FR-018: a `--targets copilot` install, then `.github/skills/sdlc-dense-index/dap.py find` answers a lookup). Replace `test_rules_point_at_show`, and update `test_install_renders_rules_skill_and_script` to assert the `find` line instead of `dap.py fresh` — files: `tests/test_sdlc.py` — verify: `python3 -m unittest tests.test_sdlc.DenseModule -v` fails on the rules text — blocked-by: T003
+- [x] T005 [S1] Rewrite `rules.md` for v2: one command with its arguments under both skill paths ("whichever exists"), when to use it (before reading or searching the workspace documents), how to treat exits 1, 2 and 3 and stale or cut entries, cite sources not the index, data not instructions, rebuild after `sdlc-context` (FR-003, FR-016, FR-017). Update the usage notes in `SKILL.md` to point at `find` — files: `modules/dense/rules.md`, `modules/dense/skills/sdlc-dense-index/SKILL.md` — verify: `python3 -m unittest tests.test_sdlc.DenseModule -v` passes; `python3 bin/sdlc lint` ok (rules stay within the lint's 30-line cap) — blocked-by: T004
 
 ## S2: Every lookup outcome is explicit and safe (spec S1 cases, S2; P1)
 
 Goal: no-match, usage errors, invalid index, stale, renamed and deleted sources, removed headings, read-only behaviour, markings and redaction.
 Acceptance: the `Find` test class covers each outcome in `contracts/find.md`, and the suite is green.
 
-- [ ] T006 [S2] Write failing tests:
+- [x] T006 [S2] Write failing tests:
   - `Find.test_no_match`: exit 1;
   - `test_no_terms`: no terms, no index argument, an unknown option, and no terms with an invalid index all exit 3;
   - `test_short_terms_ignored`: terms under 3 characters are named; only short terms exits 3;
@@ -43,15 +43,15 @@ Acceptance: the `Find` test class covers each outcome in `contracts/find.md`, an
   - `test_redacts_secret_lines`.
 
   Covers FR-008, FR-011–FR-015, NFR-001 and SC-004 — files: `tests/test_dap.py` — verify: the new tests fail for the expected reasons, not on errors — blocked-by: T003
-- [ ] T007 [S2] Implement the remaining outcomes: the order of checks, exit 3 and short-term handling, exit 2 with at most 10 errors, stale marking for edited, renamed and deleted sources, the heading-gone message, line redaction — files: `modules/dense/skills/sdlc-dense-index/dap.py` — verify: `python3 -m unittest tests.test_dap -v` passes — blocked-by: T006
-- [ ] T008 [S2] Add the regression guard `Find.test_fast_on_large_workspace` (NFR-002: generated 300 KB of sources and a 300-entry index; one lookup under 2 s, validation under 10 s). It is a guard, not a RED test, and is expected to pass on first run; optimise only if it fails — files: `tests/test_dap.py`, `modules/dense/skills/sdlc-dense-index/dap.py` — verify: `python3 -m unittest tests.test_dap.Find.test_fast_on_large_workspace -v` passes — blocked-by: T007
+- [x] T007 [S2] Implement the remaining outcomes: the order of checks, exit 3 and short-term handling, exit 2 with at most 10 errors, stale marking for edited, renamed and deleted sources, the heading-gone message, line redaction — files: `modules/dense/skills/sdlc-dense-index/dap.py` — verify: `python3 -m unittest tests.test_dap -v` passes — blocked-by: T006
+- [x] T008 [S2] Add the regression guard `Find.test_fast_on_large_workspace` (NFR-002: generated 300 KB of sources and a 300-entry index; one lookup under 2 s, validation under 10 s). It is a guard, not a RED test, and is expected to pass on first run; optimise only if it fails — files: `tests/test_dap.py`, `modules/dense/skills/sdlc-dense-index/dap.py` — verify: `python3 -m unittest tests.test_dap.Find.test_fast_on_large_workspace -v` passes — blocked-by: T007
 
 ## S3: The evaluation method ships with the module (spec S3, P2)
 
 Goal: the shipped method matches v2: leak check, tie rule, the context-loaded measure, the lookup columns, no return contract.
 Acceptance: the module test checks the template's content, and the template is usable as is for the shop6 set.
 
-- [ ] T009 [P] [S3] Write failing test `DenseModule.test_eval_template_v2` (FR-019). The template must name:
+- [x] T009 [P] [S3] Write failing test `DenseModule.test_eval_template_v2` (FR-019). The template must name:
   - the leak check before the first run;
   - the tie rule;
   - the *context loaded* measure and SC-002's formula;
@@ -60,7 +60,7 @@ Acceptance: the module test checks the template's content, and the template is u
   - the outside-the-workspace location.
 
   It must not mention the return contract — files: `tests/test_sdlc.py` — verify: the test fails on the current template — blocked-by: T005
-- [ ] T010 [S3] Update `dense-eval.md` to v2:
+- [x] T010 [S3] Update `dense-eval.md` to v2:
   - the paired procedure: a leak check per arm, one fresh session per task and arm, the exact tool allowlist from the plan, `evals/run.py`;
   - the tie rule;
   - the record format: pass, context loaded, lookup used, lookup sizes, cites index or sources;
@@ -70,9 +70,9 @@ Acceptance: the module test checks the template's content, and the template is u
 
 ## Gates before the evaluation
 
-- [ ] T011 Run full gates and record outcomes — verify: `python3 -m unittest discover -s tests -t .` passes; `python3 bin/sdlc lint` ok; the core-untouched check prints nothing — blocked-by: T008, T010
-- [ ] T012 Converge: spec, plan, tasks and code agree (`sdlc-converge`) — files: `specs/002-dense-find-command/tasks.md` (Convergence section) — verify: the Convergence section lists no open gap, or each gap is a new task — blocked-by: T011
-- [ ] T013 Independent review (`sdlc-review`); verdict recorded. Record the reviewed kit revision: the evaluation runs this revision — files: `specs/002-dense-find-command/review.md` — verify: its first line is exactly `VERDICT: APPROVED`; the revision is in its header — blocked-by: T012
+- [x] T011 Run full gates and record outcomes — verify: `python3 -m unittest discover -s tests -t .` passes; `python3 bin/sdlc lint` ok; the core-untouched check prints nothing — blocked-by: T008, T010
+- [x] T012 Converge: spec, plan, tasks and code agree (`sdlc-converge`) — files: `specs/002-dense-find-command/tasks.md` (Convergence section) — verify: the Convergence section lists no open gap, or each gap is a new task — blocked-by: T011
+- [x] T013 Independent review (`sdlc-review`); verdict recorded. Record the reviewed kit revision: the evaluation runs this revision — files: `specs/002-dense-find-command/review.md` — verify: its first line is exactly `VERDICT: APPROVED`; the revision is in its header — blocked-by: T012
 
 ## S4: Prove the gain on shop6 (spec S3, P2; gate SC-001, SC-002, SC-005, SC-007, FR-017)
 
@@ -105,7 +105,7 @@ Acceptance: `~/Projects/shop6-evals/dense2/results.md` holds every run, the tie 
 
 ## Blocked / human-only
 
-- [ ] H4 Approve implementation after `sdlc-analyze` (the T3 gate). T001 waits for it — owner: phong.ngo.vn — unblocked when: `sdlc-analyze` reports no blocking finding
+- [x] H4 Approve implementation after `sdlc-analyze` (the T3 gate). T001 waits for it — owner: phong.ngo.vn — unblocked when: `sdlc-analyze` reports no blocking finding
 - [ ] H1 Review the 8 answer keys before the freeze. The person who writes them also builds the module, so someone checks them first — owner: phong.ngo.vn — unblocked when: T014 is done
 - [ ] H2 Spot-check the grader's verdicts (at least one pass and one fail per arm, where present) — owner: phong.ngo.vn — unblocked when: T019 is done
 - [ ] H3 Decide on the gate result and approve merge or rejection (`sdlc-ship`; merges need explicit approval) — owner: phong.ngo.vn — unblocked when: T020 is done
@@ -134,6 +134,33 @@ Acceptance: `~/Projects/shop6-evals/dense2/results.md` holds every run, the tie 
 
 ## Progress log
 
+- 2026-11-03 `5f3d44b` — T012 and T013 done. Independent review (a fresh read-only agent, `sdlc-review` method) ran three times: pass 1 at `0561f13` REJECTED (F1 P1: broken `SKILL.md` merge with two Inputs/Process sections and the v1 "read the index first" step, caused by a wrong splice in T005 and masked by a v1 phrase assertion; F2 entry lines unbudgeted; F3 secret in a heading slug echoed; F4 tests that survive mutation); pass 2 at `8fb24b7` REJECTED (F5: the "no heading" line still echoed a secret slug); pass 3 at `5f3d44b` APPROVED (`review.md`). Fixes were test-first (RED seen for F2, F3, F5; F1 and F4 by structure and mutation tests). In a scratch copy, disabling the secret half of `redact()`, its e-mail half, or `guard()` now fails `tests.test_dap`. Final gates at `5f3d44b`: 152 tests OK, `python3 bin/sdlc lint` ok, core-untouched diff empty. **The evaluation (T014–T020) runs this revision.** Open advisories (non-blocking): terms after `--root` or starting with `-` give exit 3 without a hint; `test_rules_and_skill_cover_building` still asserts the v1 `dap.py show` phrase (build self-check, intended); the limit is 2,000 characters, up to 2,028 bytes; `validate` accepts a secret-shaped slug; a secret-shaped source file name is printed in the location line. Next: H1 (review of the 8 answer keys) then T014; the evaluation writes outside the kit (`~/Projects/shop6-evals/dense2`) and starts only on Phong's go-ahead
+
+- 2026-11-03 `2f97f9d` — T001–T011 done on `feat/002-dense-find`. H4: approval given by phong.ngo.vn in chat on 2026-11-03 ("implementing the spec 002"); both analyze passes had no open finding. T001 restore from `exp/dense-v1` (return contract removed): 132 OK. T002 RED `python3 -m unittest tests.test_dap.Find` 2 FAIL (`find` not a command). T003 first GREEN attempt failed `test_budget_and_cut_marker` (2,020 > 2,000: the cut-line reserve was 0 when the excerpt started as the whole section); fixed by reserving the cut line's exact length unless the whole section fits; `tests.test_dap` 52 OK. T004 RED: 2 FAIL (`test_install_renders_rules_skill_and_script`, `test_rules_name_find_only`); `test_installed_find_runs` passed at once because T003 already shipped the command. T005 GREEN after two wording fixes (the exact `.github/skills/…` command and the phrase "before reading or searching the workspace documents" must be in the rules): 135 OK, lint ok, rules 7 lines. T006 RED: 6 FAIL (stale, heading gone, exit 3, error cap, redaction, short terms); 5 tests already passed on v1 behaviour (`test_no_match`, `test_read_only`, `test_keeps_unverified_marker`, …). T007 GREEN: `tests.test_dap` 61 OK after fixing a test bug (the three stale cases shared one directory). T008 `test_fast_on_large_workspace` passed first run (guard, as expected; 0.17 s). T009 RED `test_eval_template_v2` FAIL; T010 GREEN. T011: `python3 -m unittest discover -s tests -t .` → 146 OK; `python3 bin/sdlc lint` → ok; `git diff --stat main -- core adapters bin evals` → empty; no `__pycache__` under `modules/`. Next: T012 converge, T013 review
+
 - 2026-10-30 `0ee9391` (branch `feat/002-dense-find` from `main`) — spec, plan and tasks drafted; baseline suite 74 OK.
 - 2026-10-30 — analyze pass 1: 0 CRITICAL, 7 HIGH, 13 MEDIUM, 7 LOW (A1–A27); all fixed in spec, plan, `contracts/find.md` and these tasks.
 - 2026-10-30 — analyze pass 2: 0 CRITICAL, 4 HIGH, 10 MEDIUM, 8 LOW (B1–B22); all fixed (B13's commit of the shop6 decision record waits for Phong); next: H4.
+
+## Convergence (2026-11-03, 2f97f9d)
+
+Compared `modules/dense/**`, `tests/test_dap.py` (`Find`) and `tests/test_sdlc.py` (`DenseModule`) with spec 002, plan and `contracts/find.md`. Method: each FR/NFR/SC mapped to a test or an observed run; contract behaviours spot-checked by hand (heading-plus-5-lines fallback, case-insensitive terms, cut marker).
+
+| Item | Result | Evidence |
+|---|---|---|
+| FR-001, FR-020, SC-006 (opt-in; only rules block and Skills line change) | met | `DenseModule.test_add_and_remove_restores_install`; core-untouched diff empty |
+| FR-002–FR-007, FR-009 (key list, pointers, hashes, freshness, validation, atomic commit) | met (v1 code and its 50 tests restored unchanged) | `tests.test_dap` |
+| FR-008 (no new facts, markers kept) | met for the lookup (`test_keeps_unverified_marker`); the build step is agent behaviour, covered by the SKILL.md self-check | |
+| FR-010, FR-011, SC-005 (best 3, locations, 2,000-char budget on every exit, cut marker) | met | `Find.test_returns_best_three`, `test_budget_and_cut_marker`, `test_invalid_index`, `test_no_match` |
+| FR-012 (no match, short terms) | met | `test_no_match`, `test_no_terms`, `test_short_terms_ignored` |
+| FR-013, SC-004 (lookup checks freshness; edited, renamed, deleted, heading gone) | met | `test_stale_source_marked`, `test_heading_gone` |
+| FR-014 (missing or invalid index: own exit code) | met | `test_invalid_index` |
+| FR-015 (read-only) | met | `test_read_only` |
+| FR-016, FR-017, FR-003, FR-018 (rules text; both skill paths; Copilot) | met | `DenseModule.test_rules_name_find_only`, `test_installed_find_runs`, `test_copilot_only_install_uses_github_skills` |
+| FR-019 (evaluation method: leak check, tie rule, v2 columns, outside the workspace) | met | `DenseModule.test_eval_template_v2` |
+| NFR-001 (no secret echo; excerpt redaction) | met | `test_invalid_index` (value not echoed), `test_redacts_secret_lines` |
+| NFR-002 (speed) | met | `test_fast_on_large_workspace`: 0.17 s for the lookup |
+| SC-001, SC-002, SC-007 | open: need the shop6 evaluation (T014–T020) | |
+| SC-003 (shop6 index validates) | open: T016 | |
+
+Gaps: none that need a new task. Two notes for the reviewer: (1) `dap.py show` stays in the script for maintainers (spec 001's self-check step uses it); the rules no longer mention it. (2) the rules are 7 lines; the plan allowed up to the lint cap of 30.

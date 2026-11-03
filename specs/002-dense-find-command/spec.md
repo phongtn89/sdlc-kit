@@ -2,8 +2,8 @@
 
 Feature: dense-find-command
 Number: 002
-Status: draft <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
-Approved: <!-- name, YYYY-MM-DD; filled when approved -->
+Status: approved <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
+Approved: phong.ngo.vn, 2026-11-03 (in chat, to implement; both analyze passes closed) <!-- name, YYYY-MM-DD; filled when approved -->
 Owner: phong.ngo.vn
 Created: 2026-10-30
 Track: T3

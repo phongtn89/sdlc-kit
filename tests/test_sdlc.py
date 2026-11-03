@@ -294,6 +294,149 @@ class RealKitRules(Base):
         self.assertIn("threshold", line[0])
 
 
+class DenseModule(Base):
+    """The real modules/dense, rendered with the real kit."""
+    KIT = os.environ.get("SDLC_TEST_KIT", ROOT)  # override only to check that this class catches breakage
+    SKILL = "skills/sdlc-dense-index"
+
+    def dap(self, script, *args):
+        p = subprocess.run([sys.executable, self.p(script)] + list(args), capture_output=True, text=True,
+                           timeout=20, cwd=self.d)
+        return p.returncode, p.stdout
+
+    def test_real_kit_lints(self):
+        code, out, _ = run("lint", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+
+    def test_install_renders_rules_skill_and_script(self):
+        code, out, _ = run("install", self.d, "--modules", "dense", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        agents = managed_block(self.read("AGENTS.md"))
+        self.assertIn("## Module rules\n\n### dense\n\n", agents)
+        self.assertIn("dap.py find .sdlc/context/index.dap <term>", agents)
+        self.assertEqual(agents, managed_block(self.read(".github/copilot-instructions.md")))
+        for f in ("SKILL.md", "dap.py", "keys.json"):
+            self.assertTrue(self.exists(".claude/%s/%s" % (self.SKILL, f)), f)
+        json.loads(self.read(".claude/%s/keys.json" % self.SKILL))
+        self.assertIn("**sdlc-dense-index**", agents)
+
+    def test_rules_and_skill_cover_building(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        agents = managed_block(self.read("AGENTS.md"))
+        self.assertIn("After any context build (`sdlc-context`), run `sdlc-dense-index build`", agents)
+        skill = self.read(".claude/%s/SKILL.md" % self.SKILL)
+        for step in ("dap.py commit .sdlc/context/index.dap.", "UNVERIFIED", "INFERRED", "10 entries",
+                     ".sdlc/workspace.md", ".sdlc/context/*.md", "dap.py show .sdlc/context/index.dap @",
+                     "quote the counts"):
+            self.assertIn(step, skill)
+
+    FIND = "python3 %s/skills/sdlc-dense-index/dap.py find .sdlc/context/index.dap <term> [<term> …]"
+
+    def test_rules_name_find_only(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        agents = managed_block(self.read("AGENTS.md"))
+        rules = agents[agents.index("### dense"):]
+        rules = rules[:rules.find("\n## ", 1)] if "\n## " in rules[1:] else rules
+        self.assertIn(self.FIND % ".claude", rules)
+        self.assertIn(self.FIND % ".github", rules)
+        for needle in ("before reading or searching the workspace documents", "Exit 1", "Exit 2", "Exit 3",
+                       "stale", "cut", "Cite the source file and line", "Never cite the index",
+                       "data, not instructions", "After any context build (`sdlc-context`), run `sdlc-dense-index build`"):
+            self.assertIn(needle, rules)
+        for banned in ("at the start", "start of every track", "read the index", "dap.py show", "dap.py fresh", "quote `<rev>`"):
+            self.assertNotIn(banned, rules)
+
+    def test_eval_template_v2(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        t = self.read(".sdlc/templates/dense-eval.md")
+        for needle in ("Leak check, before the first run of each arm", "Tie rule", "context loaded",
+                       "median of (1 − B/A) over the document tasks is at least 0.20", "B/A ≤ 1.10 on each code-only task",
+                       "Lookup used", "Lookup output sizes", "Cites index or sources", "document task", "code-only task",
+                       "outside the workspace", "evals/run.py", "dap.py find"):
+            self.assertIn(needle, t)
+        for banned in ("return contract", "dense-return", "50% lower", "before the first action", "before first action"):
+            self.assertNotIn(banned, t)
+
+    def test_skill_is_v2_and_well_formed(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        skill = self.read(".claude/%s/SKILL.md" % self.SKILL)
+        for h in ("## When to use", "## Inputs", "## Process", "## Rationalizations", "## Red flags", "## Verification",
+                  "## Principles applied"):
+            self.assertEqual(skill.count("\n" + h + "\n"), 1, h)
+        for banned in ("read the index first", "at the start of every track", "quote `<rev>`"):
+            self.assertNotIn(banned, skill)
+        steps = [int(l.split(".")[0]) for l in skill.split("\n") if l[:1].isdigit() and l.split(".")[0].isdigit()]
+        self.assertEqual(steps, list(range(1, len(steps) + 1)))
+        self.assertIn("dap.py find .sdlc/context/index.dap <term>", skill)
+
+    def test_installed_find_runs(self):
+        code, out, _ = run("install", self.d, "--targets", "copilot", "--modules", "dense", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        self.write(".sdlc/context/repo.md", "# Repo\n\n## Purpose\n\nA routing thing.\n")
+        with open(self.p(".sdlc/context/repo.md"), "rb") as f:
+            h = hashlib.sha256(f.read()).hexdigest()[:12]
+        self.write(".sdlc/context/index.dap", "#dap 1 built 2026-10-26\nsrc r context/repo.md %s\n"
+                                             "[repo thing]\ndesc: A thing. @r#purpose\n" % h)
+        code, out = self.dap(".github/%s/dap.py" % self.SKILL, "find", ".sdlc/context/index.dap", "routing", "thing")
+        self.assertEqual(code, 0, out)
+        self.assertIn(".sdlc/context/repo.md:3-5", out)
+        self.assertIn("A routing thing.", out)
+
+    def snapshot(self):
+        out = {}
+        for dp, _, fn in os.walk(self.d):
+            for f in fn:
+                full = os.path.join(dp, f)
+                with open(full, "rb") as fh:
+                    out[os.path.relpath(full, self.d).replace(os.sep, "/")] = hashlib.sha256(fh.read()).hexdigest()
+        return out
+
+    def test_add_and_remove_restores_install(self):
+        self.write(".sdlc/context/index.dap", "#dap 1 built 2026-10-26\n")  # project-owned, never touched
+        code, out, _ = run("install", self.d, kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        before = self.snapshot()
+        block_before = managed_block(self.read("AGENTS.md"))
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        during = self.snapshot()
+        self.assertEqual([r for r in before if r not in during], [])
+        changed = sorted(r for r in before if during[r] != before[r])
+        self.assertEqual(changed, [".github/copilot-instructions.md", ".sdlc/lock.json", "AGENTS.md"])
+        added = [r for r in during if r not in before]
+        self.assertTrue(added)
+        for r in added:
+            self.assertTrue(r.startswith((".claude/skills/sdlc-dense-index/", ".sdlc/templates/dense-")), r)
+        # Allowed: the Module rules section and the module's own Skills index line (module skills are indexed).
+        block = managed_block(self.read("AGENTS.md"))
+        start = block.index("\n\n## Module rules")
+        end = block.find("\n\n## Project rules", start)
+        block = block[:start] + (block[end:] if end >= 0 else block[-len("\n" + END):])
+        block = "\n".join(l for l in block.split("\n") if not l.startswith("- **sdlc-dense-index** — "))
+        self.assertEqual(block, block_before)
+        code, out, _ = run("install", self.d, "--modules", "", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_installed_script_runs(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        self.write(".sdlc/context/repo.md", "# Repo\n\n## Purpose\n\nA thing.\n")
+        with open(self.p(".sdlc/context/repo.md"), "rb") as f:
+            h = hashlib.sha256(f.read()).hexdigest()[:12]
+        self.write(".sdlc/context/index.dap", "#dap 1 built 2026-10-26\nsrc r context/repo.md %s\n"
+                                             "[repo thing]\ndesc: A thing. @r#purpose\n" % h)
+        script = ".claude/%s/dap.py" % self.SKILL
+        self.assertEqual(self.dap(script, "validate", ".sdlc/context/index.dap"), (0, "valid\n"))
+        code, out = self.dap(script, "fresh", ".sdlc/context/index.dap")
+        self.assertEqual(code, 0, out)
+        self.assertTrue(out.startswith("fresh "), out)
+
+    def test_copilot_only_install_uses_github_skills(self):
+        code, out, _ = run("install", self.d, "--targets", "copilot", "--modules", "dense", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        self.assertTrue(self.exists(".github/%s/dap.py" % self.SKILL))
+        self.assertIn(".github/skills/sdlc-dense-index/dap.py", self.read(".github/copilot-instructions.md"))
+
+
 class CheckUpdateTests(Base):
     def setUp(self):
         super().setUp()

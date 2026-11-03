@@ -1,6 +1,6 @@
 # sdlc-kit: plan to cover the missing layers
 
-Date: 2026-11-03 · Owner: phong.ngo.vn · Status: **draft for approval** · Track: T4 (initiative). Every story below becomes its own T2 change or T3 feature, with its own spec number from 004, and goes through the kit's own flow.
+Date: 2026-11-03 · Owner: phong.ngo.vn · Status: **approved** by phong.ngo.vn on 2026-11-03 (in chat). Approval covers the plan as a whole; no story is started, and each **D** story still needs its decision before a spec · Track: T4 (initiative). Every story below becomes its own T2 change or T3 feature, with its own spec number from 004, and goes through the kit's own flow.
 
 **Sources.** The three documents of 2026-11-03 in the shop6 workspace (`.sdlc/onboarding/`): `agentic-workflow-comparison.md` (15 factors, the matrix, §5.3 sdlc-kit, §6.3 what the kit can take), `agentic-workflow-design-decisions.md` (the 10 decisions, the enforcement ladder, the golden-task recipe, §13 the next version of sdlc-kit), and `shop6-workflow-canvas.md` (how the kit fits Shop 6's routes). Plus the kit's own evidence from specs 001–003 and the live check.
 

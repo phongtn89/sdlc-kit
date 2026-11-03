@@ -10,7 +10,7 @@ python3 .claude/skills/sdlc-usage/usage.py stop  <unit> --record <file> [--secti
 ```
 
 - Skills run the command **from the project root** (the folder that holds `.sdlc/`), using `.github/skills/sdlc-usage/usage.py` when that is the only path that exists (Copilot-only install).
-- `<unit>`: a task id (`T012`), a bug slug, or a review finding id with its pass (`review1-F3`). Letters, digits, `-`, `_`, `.` only.
+- `<unit>`: a task id (`T012`), a bug slug, or a review finding id with its pass (`review1-F3`). Letters, digits, `-`, `_`, `.` only, starting with a letter or digit.
 - `--record`: the owning record, **relative to the project root**: `specs/003-usage-metrics/tasks.md`; in a workspace, `<repo>/specs/<NNN-slug>/tasks.md`. The file must exist (a missing file is exit 2; the skill creates a bug record from the template first). `--section` (default `Progress log`): the `##` heading whose end receives marks and lines; created at the end of the file when absent. A bug uses `--section "Usage"`.
 - `--at` (optional, `stop` only): the stop time as a mark timestamp, for a backfilled stop and for tests. Default: now.
 - **Project root:** the folder holding the nearest `.sdlc/config.json`, found by walking up from the current directory. In a workspace that is the workspace folder (the kit never writes a child repo's config); only that file's switch counts. No `.sdlc/config.json` found means off.

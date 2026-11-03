@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -435,6 +436,69 @@ class DenseModule(Base):
         self.assertEqual(code, 0, out)
         self.assertTrue(self.exists(".github/%s/dap.py" % self.SKILL))
         self.assertIn(".github/skills/sdlc-dense-index/dap.py", self.read(".github/copilot-instructions.md"))
+
+
+class UsageSkill(Base):
+    """Spec 003: the sdlc-usage skill and the skills that call it, rendered from the real kit."""
+    SKILL = "skills/sdlc-usage"
+    SID = "0b8b2d7f-d1c8-4d58-86d4-eb8b0ad184f6"
+
+    def enable(self):
+        self.write(".sdlc/config.json", json.dumps({"usage": {"enabled": True}}))
+
+    def run_script(self, script, *args):
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": self.d, "CLAUDE_CONFIG_DIR": self.p("claude-cfg"),
+               "CLAUDE_CODE_SESSION_ID": self.SID}
+        p = subprocess.run([sys.executable, "-B", self.p(script)] + list(args), capture_output=True, text=True,
+                           timeout=20, cwd=self.d, env=env, stdin=subprocess.DEVNULL)
+        return p.returncode, p.stdout + p.stderr
+
+    def flow(self, script):
+        """start, a tiny transcript, stop: the line must carry the transcript's figures."""
+        self.write("specs/001-x/tasks.md", "# Tasks\n\n## Progress log\n\n")
+        code, out = self.run_script(script, "start", "T001", "--record", "specs/001-x/tasks.md")
+        self.assertEqual(code, 0, out)
+        mark = re.search(r"usage-start T001 (\S+) session=", self.read("specs/001-x/tasks.md")).group(1)
+        year = int(mark[:4]) + 1  # a response one year after the mark, and a stop two years after it
+        rec = {"type": "assistant", "timestamp": "%d%s" % (year, mark[4:]),
+               "message": {"id": "m1", "model": "claude-opus-5-5",
+                           "usage": {"input_tokens": 5, "cache_read_input_tokens": 7, "cache_creation_input_tokens": 11,
+                                     "output_tokens": 13}}}
+        self.write("claude-cfg/projects/-p/%s.jsonl" % self.SID, json.dumps(rec) + "\n")
+        code, out = self.run_script(script, "stop", "T001", "--record", "specs/001-x/tasks.md",
+                                    "--at", "%d%s" % (year + 1, mark[4:]))
+        self.assertEqual(code, 0, out)
+        self.assertRegex(self.read("specs/001-x/tasks.md"),
+                         r"- usage T001: in 5 · cache-read 7 · cache-write 11 · out 13 · sub-agents 0 · .* wall · 1 turns")
+
+    def test_install_ships_the_skill_and_script(self):
+        code, out, _ = run("install", self.d, kit=ROOT)
+        self.assertEqual(code, 0, out)
+        for f in ("SKILL.md", "usage.py"):
+            self.assertTrue(self.exists(".claude/%s/%s" % (self.SKILL, f)), f)
+        self.assertIn("**sdlc-usage**", managed_block(self.read("AGENTS.md")))
+        self.assertFalse(self.exists(".claude/%s/__pycache__" % self.SKILL))
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
+        copilot = os.path.join(self._tmp.name, "copilot-only")
+        os.makedirs(copilot)
+        self.assertEqual(run("install", copilot, "--targets", "copilot", kit=ROOT)[0], 0)
+        self.assertTrue(os.path.isfile(os.path.join(copilot, ".github", self.SKILL, "usage.py")))
+
+    def test_installed_script_runs(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        self.enable()
+        self.flow(".claude/%s/usage.py" % self.SKILL)
+
+    def test_installed_script_runs_for_a_copilot_only_install(self):
+        self.assertEqual(run("install", self.d, "--targets", "copilot", kit=ROOT)[0], 0)
+        self.enable()
+        self.flow(".github/%s/usage.py" % self.SKILL)
+
+    def test_implement_runs_start_and_stop_for_a_task(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        text = self.read(".claude/skills/sdlc-implement/SKILL.md")
+        for needle in ("usage.py start", "usage.py stop", "--record", "usage.enabled", "one after another"):
+            self.assertIn(needle, text)
 
 
 class CheckUpdateTests(Base):

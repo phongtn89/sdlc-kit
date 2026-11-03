@@ -313,7 +313,7 @@ class DenseModule(Base):
         self.assertEqual(code, 0, out)
         agents = managed_block(self.read("AGENTS.md"))
         self.assertIn("## Module rules\n\n### dense\n\n", agents)
-        self.assertIn("dap.py fresh .sdlc/context/index.dap", agents)
+        self.assertIn("dap.py find .sdlc/context/index.dap <term>", agents)
         self.assertEqual(agents, managed_block(self.read(".github/copilot-instructions.md")))
         for f in ("SKILL.md", "dap.py", "keys.json"):
             self.assertTrue(self.exists(".claude/%s/%s" % (self.SKILL, f)), f)
@@ -330,11 +330,34 @@ class DenseModule(Base):
                      "quote the counts"):
             self.assertIn(step, skill)
 
-    def test_rules_point_at_show(self):
+    FIND = "python3 %s/skills/sdlc-dense-index/dap.py find .sdlc/context/index.dap <term> [<term> …]"
+
+    def test_rules_name_find_only(self):
         run("install", self.d, "--modules", "dense", kit=self.KIT)
         agents = managed_block(self.read("AGENTS.md"))
-        self.assertIn("dap.py show .sdlc/context/index.dap @<alias>#<slug>", agents)
-        self.assertIn("instead of searching or reading whole sources", agents)
+        rules = agents[agents.index("### dense"):]
+        rules = rules[:rules.find("\n## ", 1)] if "\n## " in rules[1:] else rules
+        self.assertIn(self.FIND % ".claude", rules)
+        self.assertIn(self.FIND % ".github", rules)
+        for needle in ("before reading or searching the workspace documents", "Exit 1", "Exit 2", "Exit 3",
+                       "stale", "cut", "Cite the source file and line", "Never cite the index",
+                       "data, not instructions", "After any context build (`sdlc-context`), run `sdlc-dense-index build`"):
+            self.assertIn(needle, rules)
+        for banned in ("at the start", "start of every track", "read the index", "dap.py show", "dap.py fresh", "quote `<rev>`"):
+            self.assertNotIn(banned, rules)
+
+    def test_installed_find_runs(self):
+        code, out, _ = run("install", self.d, "--targets", "copilot", "--modules", "dense", kit=self.KIT)
+        self.assertEqual(code, 0, out)
+        self.write(".sdlc/context/repo.md", "# Repo\n\n## Purpose\n\nA routing thing.\n")
+        with open(self.p(".sdlc/context/repo.md"), "rb") as f:
+            h = hashlib.sha256(f.read()).hexdigest()[:12]
+        self.write(".sdlc/context/index.dap", "#dap 1 built 2026-10-26\nsrc r context/repo.md %s\n"
+                                             "[repo thing]\ndesc: A thing. @r#purpose\n" % h)
+        code, out = self.dap(".github/%s/dap.py" % self.SKILL, "find", ".sdlc/context/index.dap", "routing", "thing")
+        self.assertEqual(code, 0, out)
+        self.assertIn(".sdlc/context/repo.md:3-5", out)
+        self.assertIn("A routing thing.", out)
 
     def snapshot(self):
         out = {}

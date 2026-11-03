@@ -6,6 +6,9 @@
   dap.py commit <tmp> <dest> [--root DIR]   exit 0 replaced, 1 invalid (dest unchanged)
   dap.py show <index> <alias#slug> [--root DIR]   print one pointed section with line numbers;
                                            exit 0 shown, 1 unknown alias/heading, 2 invalid or missing index
+  dap.py find <index> <term> [<term> ...] [--root DIR]   the agent lookup: at most 3 matching entries with an
+                                           excerpt of each pointed section, in at most 2,000 characters;
+                                           exit 0 results, 1 no match, 2 invalid or missing index, 3 usage
 
 The grammar is specs/001-dense-agent-protocol/contracts/index-format.md in sdlc-kit.
 """
@@ -33,6 +36,7 @@ SECRET_RES = [re.compile(p) for p in (
 )]
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b(?!:)")  # not git@host:repo
 SIZE_RATIO, SIZE_FLOOR = 0.05, 20 * 1024
+BUDGET, MAX_RESULTS, LINE_MAX, CONTEXT_LINES = 2000, 3, 160, 5
 
 
 def sha12(data):
@@ -260,21 +264,122 @@ def show(index, root, ref):
     return 0
 
 
+def cut_line(rel, span):
+    return "    … cut: read .sdlc/%s:%d-%d" % (rel, span[0], span[1])
+
+
+def clip(text, n=LINE_MAX):
+    return text if len(text) <= n else text[:n - 1] + "…"
+
+
+def index_entries(index):
+    """(srcs, entries) of a valid index: srcs {alias: rel}; entries [(order, TYPE, id, key, value, alias, slug)]."""
+    srcs, entries, sec = {}, [], None
+    with open(index, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.rstrip("\r\n")
+            m = SRC_RE.match(line)
+            if m:
+                srcs[m.group(1)] = m.group(2)
+                continue
+            m = SECTION_RE.match(line)
+            if m:
+                sec = m.groups()
+                continue
+            m = ENTRY_RE.match(line)
+            at = line.rfind(" @")
+            if sec and m and at >= 0:
+                ref = REF_RE.match(line[at + 2:])
+                if ref:
+                    entries.append((len(entries), sec[0], sec[1], m.group(1), line[len(m.group(1)) + 2:at],
+                                    ref.group(1), ref.group(2)))
+    return srcs, entries
+
+
+def excerpt(lines, span, terms, room, cut):
+    """([formatted lines], whole): the section heading, then the lines holding a term with one line of context
+    either side, else the next CONTEXT_LINES lines; as many as fit in `room` characters. Unless it is the whole
+    section, it keeps room for the cut line `cut`."""
+    first, last = span
+    want = [first]
+    hits = [n for n in range(first + 1, last + 1) if any(t in lines[n - 1].lower() for t in terms)]
+    if hits:
+        want += sorted({k for n in hits for k in (n - 1, n, n + 1) if first < k <= last})
+    else:
+        want += list(range(first + 1, min(last, first + CONTEXT_LINES) + 1))
+    rows = ["    %d  %s" % (n, clip(lines[n - 1])) for n in want]
+    whole = len(want) == last - first + 1 and all(clip(lines[n - 1]) == lines[n - 1] for n in want)
+    if whole and sum(len(r) + 1 for r in rows) <= room:
+        return rows, True
+    out, used = [], 0
+    for r in rows:
+        if used + len(r) + 1 > room - len(cut) - 1:
+            break
+        out.append(r)
+        used += len(r) + 1
+    return out, False
+
+
+def find(index, root, terms):
+    """The agent lookup. Prints at most BUDGET characters. Returns the exit code."""
+    terms = [t.lower() for t in terms]
+    srcs, entries = index_entries(index)
+    scored = []
+    for e in entries:
+        hay = " ".join((e[1], e[2], e[3], e[4], e[6])).lower()
+        in_value = sum(1 for t in terms if t in e[4].lower())
+        matched = sum(1 for t in terms if t in hay)
+        if matched:
+            scored.append((matched, in_value, e))
+    if not scored:
+        print("no match for: %s" % " ".join(terms))
+        return 1
+    groups = {}
+    for matched, in_value, e in scored:
+        groups.setdefault((e[5], e[6]), []).append((matched, in_value, e))
+    ranked = sorted(groups.items(), key=lambda kv: (-max(m for m, _, _ in kv[1]), -max(v for _, v, _ in kv[1]),
+                                                   min(e[0] for _, _, e in kv[1])))[:MAX_RESULTS]
+    blocks, left = [], BUDGET
+    for i, ((alias, slug), items) in enumerate(ranked):
+        share = left // (len(ranked) - i)
+        rel = srcs[alias]
+        with open(source_path(root, rel), encoding="utf-8", errors="replace") as f:
+            lines = f.read().split("\n")
+        span = section("\n".join(lines), slug)
+        head = ["[%d] %s" % (i + 1, clip("%s %s / %s: %s @%s#%s" % (items[0][2][1].upper(), items[0][2][2], items[0][2][3],
+                                                                     items[0][2][4], alias, slug)))]
+        head += ["    " + clip("%s %s / %s: %s @%s#%s" % (e[1].upper(), e[2], e[3], e[4], alias, slug))
+                 for _, _, e in items[1:]]
+        loc = "    .sdlc/%s:%d-%d" % (rel, span[0], span[1])
+        room = share - sum(len(l) + 1 for l in head) - len(loc) - 1
+        cut = cut_line(rel, span)
+        body, whole = excerpt(lines, span, terms, room, cut)
+        block = head + [loc] + body + ([] if whole else [cut])
+        text = "\n".join(block)
+        blocks.append(text)
+        left -= len(text) + 1
+    out = "\n".join(blocks)
+    print(out)
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Validate a dense index or check its freshness.")
-    ap.add_argument("command", choices=["validate", "fresh", "commit", "show"])
+    ap.add_argument("command", choices=["validate", "fresh", "commit", "show", "find"])
     ap.add_argument("index", help="the index (for commit: the temporary index to validate)")
-    ap.add_argument("dest", nargs="?", help="commit: the index to replace; show: the @alias#slug to print")
+    ap.add_argument("rest", nargs="*", help="commit: the index to replace; show: the @alias#slug to print; "
+                                           "find: the search terms")
     ap.add_argument("--root", help="folder that holds .sdlc/ (default: nearest one above the index)")
     a = ap.parse_args(argv)
-    if (a.command in ("commit", "show")) != (a.dest is not None):
+    if a.command != "find" and (a.command in ("commit", "show")) != (len(a.rest) == 1 or (len(a.rest) > 1 and ap.error("too many arguments"))):
         ap.error("a second argument is required for commit and show, and only allowed there")
+    a.dest = a.rest[0] if a.command in ("commit", "show") else None
     root = os.path.abspath(a.root) if a.root else find_root(a.index)
     if a.command == "commit" and not commit_paths_ok(root, a.index, a.dest):
         print("ERROR 0: commit only writes .sdlc/context/index.dap from .sdlc/context/index.dap.<id>.tmp "
               "(got %s -> %s)\nnot committed: %s unchanged" % (a.index, a.dest, a.dest))
         return 1
-    errors, stale, idx, warnings, counts = check(a.index, root, fresh_mode=a.command in ("fresh", "show"))
+    errors, stale, idx, warnings, counts = check(a.index, root, fresh_mode=a.command in ("fresh", "show", "find"))
     if a.command == "validate":
         print("\n".join(warnings + (errors or ["valid"])))
         return 1 if errors else 0
@@ -290,6 +395,8 @@ def main(argv=None):
         return 2
     if a.command == "show":
         return show(a.index, root, a.dest)
+    if a.command == "find":
+        return find(a.index, root, a.rest)
     print("\n".join(["%s %s" % ("stale" if stale else "fresh", idx)] + stale))
     return 1 if stale else 0
 

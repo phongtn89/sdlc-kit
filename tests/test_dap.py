@@ -429,5 +429,59 @@ class Perf(Base):
         self.assertLess(time.monotonic() - start, 10)
 
 
+FINDSRC = ("# Admin\n\n## Routing\n\nRequests are routed per tenant.\nThe edge proxy forwards them.\n\n"
+           "## Billing\n\nInvoices per tenant come from the erp connector.\n\n"
+           "## Sessions\n\nSession routing uses a cookie.\n\n"
+           "## Search\n\nSearch routing is its own service.\n")
+
+
+class Find(Base):
+    def setUp(self):
+        super().setUp()
+        self.write("context/f.md", FINDSRC)
+
+    def build(self, body, **extra):
+        for rel, text in extra.items():
+            self.write("context/%s.md" % rel, text)
+        names = ["f"] + sorted(extra)
+        src = "\n".join("src %s context/%s.md %s" % (n[0], n, self.src_hash("context/%s.md" % n)) for n in names)
+        return self.index(body=body, src=src)
+
+    def find(self, idx, *terms):
+        return run("find", idx, *(list(terms) + ["--root", self.root]))
+
+    def test_returns_best_three(self):
+        idx = self.build("[repo admin]\ndesc: tenant routing rules @f#routing\nowns: routing table @f#routing\n"
+                         "[repo billing]\ndesc: invoices per tenant @f#billing\n"
+                         "[repo sessions]\ndesc: cookie routing @f#sessions\n"
+                         "[repo search]\ndesc: routing for search @f#search")
+        code, out = self.find(idx, "routing", "tenant")
+        self.assertEqual(code, 0, out)
+        results = [l for l in out.split("\n") if l.startswith("[")]
+        self.assertEqual([r.split("]")[0] for r in results], ["[1", "[2", "[3"], out)
+        self.assertIn("REPO admin / desc: tenant routing rules @f#routing", results[0])
+        self.assertIn("REPO billing", results[1])
+        self.assertIn("REPO sessions", results[2])
+        self.assertNotIn("REPO search", out)  # a fourth match is not returned
+        # siblings that point to one source section share one result and one excerpt
+        self.assertIn("owns: routing table @f#routing", out)
+        self.assertEqual(out.count("## Routing"), 1, out)
+        self.assertIn(".sdlc/context/f.md:3-7", out)
+        self.assertRegex(out, r"\n\s+3\s+## Routing")
+        self.assertRegex(out, r"\n\s+5\s+Requests are routed per tenant\.")
+
+    def test_budget_and_cut_marker(self):
+        big = "# Big\n" + "".join("\n## S%d\n\n%s" % (i, "needle filler text here\n" * 1100) for i in range(5))
+        self.assertGreater(len(big), 26000)
+        body = "".join("[repo r%d]\ndesc: needle number %d @g#s%d\n" % (i, i, i) for i in range(5))
+        idx = self.build(body.rstrip("\n"), g=big)
+        code, out = self.find(idx, "needle")
+        self.assertEqual(code, 0, out)
+        self.assertLessEqual(len(out), 2000)
+        cuts = [l for l in out.split("\n") if "… cut: read .sdlc/context/g.md:" in l]
+        self.assertEqual(len(cuts), 3, out)
+        self.assertIn("… cut: read", out.rstrip("\n").split("\n")[-1])
+
+
 if __name__ == "__main__":
     unittest.main()

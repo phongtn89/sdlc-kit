@@ -33,7 +33,7 @@ One new core skill, `sdlc-usage`, ships a stdlib-only script, `usage.py`, with t
 |---|---|---|---|
 | P1 | Script home | New core skill `core/skills/sdlc-usage/` (`SKILL.md` + `usage.py`), installed with the core skills | Skill folders already copy sibling files verbatim (`adapters/RENDERING.md`), so no installer change. Same pattern as the dense module's `dap.py`, now in core (FR-015) |
 | P2 | Command names | `usage.py start <unit> --record <file> [--section <h>]`, `usage.py stop …` (`contracts/usage.md`) | Named commands, exact arguments in the skill text (FR-006, retro L1) |
-| P3 | Where a mark and line go | End of a named `##` section of the owning record: task and finding → `Progress log` of the feature's `tasks.md`; bug → `## Usage` in `spec_dir/bugs/<slug>.md`. Finding ids carry their pass (`review1-F3`, `analyze2-A5`) | One mechanism for all three (FR-004, FR-005). A finding's fix has no record of its own today, and review reports are written by an independent reviewer, so the feature's progress log is the single home; `sdlc-implement` is the one skill that applies fixes (analyze finding A9) |
+| P3 | Where a mark and line go | End of a named `##` section of the owning record: task and finding → `Progress log` of the feature's `tasks.md`; bug → `## Usage` in `spec_dir/bugs/<slug>.md`. Finding ids carry their pass (`review1-F3`, `analyze2-A5`) and the line quotes the finding's text | One mechanism for all three (FR-004, FR-005). A finding's fix has no record of its own today, and review reports are written by an independent reviewer, so the feature's progress log is the single home; `sdlc-implement` is the one skill that applies fixes (analyze finding A9) |
 | P4 | Bug without a record | With the switch on, `sdlc-debug` creates the minimal bug record from `bug.md` even for an obvious bug, so the line has a home | Spec FR-004 (a line per closed bug). Only with the switch on |
 | P5 | Line shape | Exact integers with thousands separators, not `1.5K`/`2.1M`; a bullet `- usage <unit>: …` of its own, with the start mark as a hidden HTML comment; the example in the decision record read `usage: in 1.5K · …` inside the progress-log line. **Three departures from the decision record's example, all for exactness and parseability; they need your OK (H1)** | SC-002 is an exact match, and rounding would hide an error. A separate bullet and a comment mark keep the record readable and the parse unambiguous |
 | P6 | Sub-agent field | One figure: the sum of the four token fields of sub-agents in the window | Keeps the line to one row; the four main-session fields stay separate (FR-009, FR-010) |
@@ -84,7 +84,7 @@ One new core skill, `sdlc-usage`, ships a stdlib-only script, `usage.py`, with t
 ## Security & observability
 
 - Checklists loaded: `.sdlc/checklists/security.md`, `.sdlc/checklists/performance.md`.
-- Decisions: the script reads records only through `json.loads` and keeps only ids, timestamps, model names and four integers; it opens no socket and starts no process (`test_no_network_or_subprocess_modules`: the imports are listed and checked); transcripts are never copied or printed; the sentinel test (SC-005) proves no content leaves; `--record` must stay inside the project root (no `..`, symlinks resolved), as `dap.py commit` does; the unit id, the session id and the model name are checked against fixed character sets before use (NFR-004). Performance: one pass over one or a few JSONL files of tens of MB in well under a second; no timing target beyond the test's 5 s guard.
+- Decisions: the script reads records only through `json.loads` and keeps only ids, timestamps, model names and four integers; it opens no socket and starts no process (`test_imports_are_exactly_the_contracts_list`: the imports are listed and checked); transcripts are never copied or printed; the sentinel test (SC-005) proves no content leaves; `--record` must stay inside the project root (no `..`, symlinks resolved), as `dap.py commit` does; the unit id, the session id and the model name are checked against fixed character sets before use (NFR-004). Performance: one pass over one or a few JSONL files of tens of MB in well under a second; no timing target beyond the test's 5 s guard.
 - Observability: the line is the observation. No log, no metric.
 
 ## Test strategy
@@ -115,7 +115,7 @@ Level note: no mocks of the transcript reader. Every test reads real files in a 
 
 ## Size
 
-About 250 lines for `usage.py`, 80 for `SKILL.md`, 350 for tests, 40 across skills and templates, plus fixtures. Over `budget.reassess_lines` in total, but each task stays near 100–200 changed lines, and the work is split by slice, not by layer. Reassessment point: after S2 (T008), check `git diff --stat` for `usage.py`; above about 300 lines, simplify before S3.
+About 250 lines for `usage.py`, 80 for `SKILL.md`, 350 for tests, 40 across skills and templates, plus fixtures. Over `budget.reassess_lines` in total, but each task stays near 100–200 changed lines, and the work is split by slice, not by layer. Reassessment point: after lane L2 (T008), check `git diff --stat` for `usage.py`; above about 300 lines, simplify before S3.
 
 ## Complexity justifications
 

@@ -16,19 +16,19 @@ python3 .claude/skills/sdlc-usage/usage.py stop  <unit> --record <file> [--secti
 
 ## Switch
 
-`.sdlc/config.json` → `"usage": {"enabled": true}`. **Only the JSON value `true` is on.** Absent, `false`, a string, `"usage": true`, or invalid JSON is off. Off: both commands print `usage off` and exit 0 without reading a transcript or writing a file. Skills also check the switch before calling, so an off install adds no tool call.
+`.sdlc/config.json` → `"usage": {"enabled": true}`. **Only the JSON value `true` is on.** Absent, `false`, a string, `"usage": true`, or invalid JSON is off. Off: both commands print `usage off` and exit 0 without reading a transcript or writing a file. Skills check the switch before calling (the constitution already has them read `.sdlc/config.json` at the start of a track), so an off install adds no call to the script.
 
 ## Marks and lines (written at the end of `<section>`)
 
 ```text
-<!-- usage-start T012 2026-11-03T10:00:00Z session=0b8b2d7f-d1c8-4d58-86d4-eb8b0ad184f6 -->
+<!-- usage-start T012 2026-11-03T10:00:00.123Z session=0b8b2d7f-d1c8-4d58-86d4-eb8b0ad184f6 -->
 - usage T012: in 1,502 · cache-read 2,103,441 · cache-write 40,118 · out 18,004 · sub-agents 612,300 · 23 min wall · 41 turns · model claude-opus-5-5
 ```
 
-- The mark is an HTML comment, UTC with a `Z` and whole seconds. `session=unknown` when `CLAUDE_CODE_SESSION_ID` is not set or is not hex digits and `-` only. **A mark with `session=unknown` never counts as "the same session" as another mark.** Skills never edit or remove `<!-- usage-start` lines.
+- The mark is an HTML comment, UTC with a `Z` and **milliseconds**, so the response that ran `start` (its record is stamped before the command runs) falls before the mark and is not counted. `session=unknown` when `CLAUDE_CODE_SESSION_ID` is not set or is not hex digits and `-` only. **A mark with `session=unknown` never counts as "the same session" as another mark.** Skills never edit or remove `<!-- usage-start` lines.
 - The usage line is a bullet of its own, after the task's evidence line (marks and lines are appended, so order follows the work).
 - **Exact integers** with thousands separators, never rounded (SC-002). `sub-agents` is one figure: the sum of the four token fields over the sub-agent transcripts in the window. `turns` is the number of distinct main-session responses with usage in the window. `model` lists each distinct valid model name (`^[A-Za-z0-9._:-]{1,64}$`; `<synthetic>` and anything else ignored) in order of first use, comma-separated; `model not recorded` when none.
-- `wall`: seconds are summed over segments, then rounded **once**, half up, to whole minutes; under 30 s total it reads `<1 min wall`.
+- `wall`: seconds are summed over segments, then rounded **once**, half up, with integer arithmetic `(seconds + 30) // 60` (Python's `round()` rounds half to even and must not be used); under 30 s total it reads `<1 min wall`. The current time is `datetime.datetime.now(datetime.timezone.utc)` (`utcnow()` is deprecated).
 - **Zero** is written only when the source was read and held nothing for the figure (for example `sub-agents 0` when the session has no `subagents/` folder: a session that ran no sub-agent writes none). A figure whose source could not be read or understood is `not available (<reason>)` in its place, never `0`.
 
 ### Exactly what each case writes
@@ -41,10 +41,13 @@ python3 .claude/skills/sdlc-usage/usage.py stop  <unit> --record <file> [--secti
 | The session's transcript file is missing | token, turns and model fields `not available (transcript not found)`; wall from the marks |
 | No response falls in the window, or a record lacks `message.id`, a parseable timestamp or an integer counter | the affected segment's fields `not available (unexpected transcript format)` |
 | No start mark for the unit | `- usage T012: not available (no start mark)` |
-| Some segments readable, some not | the figures of the readable segments, then `· PARTIAL: segment 2 (session <id>): <reason>` per missing segment; totals are lower bounds |
-| Another unit's mark in the same section and session starts inside the window | the line ends with `· OVERLAP: <other unit>` |
 
-A whole-line `not available` or a line with no figure leaves the unit **open**; the next `stop` replaces it in place.
+Precedence, first row that applies wins for the whole line: no start mark; no session id and no Claude folder; then per segment: session id unknown, transcript not found, unexpected transcript format, no response in window. `PARTIAL` and `OVERLAP` suffixes are added after.
+| Some segments readable, some not | the figures of the readable segments, then `· PARTIAL: segment 2 (session <id>): <reason>` per missing segment; totals are lower bounds |
+| Another unit's mark in the **same record** and session starts inside the window | the line ends with `· OVERLAP: <unit>[, <unit>…]` (units in other records are not seen; stated limit) |
+| No response from a non-`<synthetic>` model falls in the window (a hand run, or start and stop inside one response) | the segment's token, turn and model fields `not available (no response in window)` |
+
+A line is **closed** only if it holds at least one token, sub-agent or turn figure. A whole-line `not available`, or a line whose only figures are wall time and model, leaves the unit **open**; the next `stop` replaces it in place (so a wrong `CLAUDE_CONFIG_DIR` can be fixed and the stop repeated).
 
 ## Behaviour
 
@@ -60,15 +63,16 @@ A whole-line `not available` or a line with no figure leaves the unit **open**; 
 
 - A unit that is started and never stopped keeps only its mark (FR-016).
 - A line matches a unit only by `- usage <unit>:` at the start, with the exact id, inside the section.
-- **Atomic write:** the record is read, the section located, the text inserted at the end of the section, written to a temporary file in the same folder and renamed over the record. Other sections are kept byte for byte.
+- **Atomic write:** the record is read as bytes, the section located, the text inserted at the end of the section, written as bytes to a temporary file in the same folder and renamed over the record. The mode of the record is kept; a symlinked record is resolved first and its target must be inside the project root. Other sections are kept byte for byte, line endings included.
 
 ## Segments and figures
 
-- A **segment** is one mark. Its window is **half open**, `[start, end)`. It starts at the mark's time. The last mark ends at the stop time. An earlier mark (the unit was resumed in a later session) ends at the earlier of its own session's last transcript timestamp and the next mark's time. This counts any unrelated work done in that session after the unit paused; the figure is an upper bound for that segment, and the line says nothing more. When that session's transcript is missing, the segment's wall time is `not available (transcript not found)` and the line is PARTIAL.
+- A **segment** is one mark. Its window is **half open**, `[start, end)`. It starts at the mark's time. The last mark ends at the stop time. An earlier mark (the unit was resumed in a later session) ends at the earlier of (its own session's last transcript timestamp **plus 1 ms**, so the final response is included; "last" means the latest `timestamp` of any assistant record) and the next mark's time. An earlier mark whose session is unknown has no transcript: its window ends at the next mark's time and its token fields are `not available (session id unknown)`. A repeated `start` in an unknown session appends a mark each time. An earlier segment counts any unrelated work done in its session after the unit paused; the figure is an upper bound and the line says nothing more. When that session's transcript is missing, the segment's wall time is `not available (transcript not found)` and the line is PARTIAL.
 - **Timestamps** are parsed with a regular expression for `YYYY-MM-DDTHH:MM:SS(.fff)?Z` and converted with `datetime.strptime`; Python 3.9's `fromisoformat` rejects `Z`. Any other timestamp form is `unexpected transcript format`.
 - **Transcript lookup** (read-only): `$CLAUDE_CONFIG_DIR` or `~/.claude`, then `projects/*/<session>.jsonl`; sub-agents in `projects/*/<session>/subagents/agent-*.jsonl`.
+- **Counted responses:** `<synthetic>` responses count toward neither tokens, turns nor models. Only the **kept** record of each `message.id` is shape-checked; a superseded duplicate is ignored. A counter that is a boolean is not an integer.
 - **Fields taken** from each JSONL record: `type`, `timestamp`, and for `assistant` records `message.id`, `message.model` and the four `message.usage` counters. The record is dropped after parsing (NFR-001).
 - **De-duplication:** per file, the last assistant record per `message.id` is kept. **Then** the kept records are placed in windows by their timestamp (the last record's, so a response that straddles a boundary is counted once, in one window).
 - **Unparsable lines:** an unparsable **last** line is skipped (the file may be mid-write); any other unparsable line makes that segment's token fields `not available (unexpected transcript format)`.
 - No network access, no subprocess, no prompts, standard input not read (NFR-002, NFR-003). The script imports only `argparse`, `datetime`, `glob`, `json`, `os`, `re`, `sys`, `tempfile`.
-- **Known limits (stated, not hidden):** thinking tokens are inside `output_tokens` (equal to the CLI's on the recorded run, which reported 66 thinking tokens); a sub-agent still running at `stop` is counted up to now; two sessions sharing one unit are windowed by clock.
+- **Known limits (stated, not hidden):** a missing `subagents/` folder is read as "no sub-agent ran" (`sub-agents 0`), so a Claude Code release that moves that folder would show 0 instead of `not available`; the live check asserts the folder exists in a run that used a sub-agent. Thinking tokens are inside `output_tokens` (equal to the CLI's on the recorded run, which reported 66 thinking tokens); a sub-agent still running at `stop` is counted up to now; two sessions sharing one unit are windowed by clock.

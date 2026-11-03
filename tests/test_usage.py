@@ -581,5 +581,83 @@ class RecordFile(Base):
         self.assertEqual(code, 2, out + err)
 
 
+class Privacy(Base):
+    SENTINEL = "ZXQ-SENTINEL-7f3a9c"
+
+    def noisy_records(self):
+        r = response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))
+        r["message"]["content"] = [{"type": "text", "text": "the answer is " + self.SENTINEL},
+                                   {"type": "tool_use", "name": "Bash", "input": {"command": "echo " + self.SENTINEL}}]
+        return [r, {"type": "user", "timestamp": "2026-11-03T10:01:30.000Z",
+                    "message": {"role": "user", "content": [{"type": "tool_result", "content": self.SENTINEL}]}}]
+
+    def test_sentinel_in_messages_tool_input_and_tool_output_is_never_output_or_written(self):  # guard
+        self.write_record(TASKS + self.mark())
+        self.transcript(self.noisy_records())
+        self.subagent([dict(self.noisy_records()[0], timestamp="2026-11-03T10:02:00.000Z")])
+        code, out, err = self.stop()
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn(self.SENTINEL, out + err)
+        for dp, _, files in os.walk(self.proj):
+            for f in files:
+                with open(os.path.join(dp, f), errors="replace") as fh:
+                    self.assertNotIn(self.SENTINEL, fh.read(), f)
+
+    def test_malformed_content_still_gives_figures(self):  # guard
+        r = response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))
+        r["message"]["content"] = 12345
+        r["extra"] = [None, {"a": {"b": [1, 2, {"c": "d"}]}}]
+        self.write_record(TASKS + self.mark())
+        self.transcript([r])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", self.line())
+
+    def test_imports_are_a_subset_of_the_contracts_list(self):  # guard
+        import ast
+        with open(USAGE) as f:
+            tree = ast.parse(f.read())
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names |= {a.name.split(".")[0] for a in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                names.add((node.module or "").split(".")[0])
+        self.assertLessEqual(names, {"argparse", "datetime", "glob", "json", "os", "re", "sys", "tempfile"})
+
+    def test_runs_with_sockets_and_processes_unavailable(self):  # guard
+        d = os.path.join(self._tmp.name, "blocker")
+        os.makedirs(d)
+        with open(os.path.join(d, "sitecustomize.py"), "w") as f:
+            f.write("import os, socket, subprocess\n"
+                    "def _no(*a, **k):\n    raise RuntimeError('network or process use is not allowed')\n"
+                    "socket.socket = _no\nsocket.create_connection = _no\n"
+                    "subprocess.Popen = _no\nos.system = _no\nos.popen = _no\n")
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        code, out, err = self.run_usage("stop", "T012", "--record", "specs/001-x/tasks.md", "--at", STOP,
+                                        env_extra={"PYTHONPATH": d})
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.lines_for().__len__(), 1)
+
+    def test_record_must_stay_inside_the_project(self):
+        outside = os.path.join(self._tmp.name, "outside.md")
+        with open(outside, "w") as f:
+            f.write("# outside\n\n## Progress log\n\n")
+        os.symlink(outside, os.path.join(self.proj, "specs", "001-x", "link.md"))
+        for rel in ("../outside.md", "../../outside.md", outside, "specs/001-x/link.md"):
+            code, out, err = self.run_usage("start", "T012", "--record", rel)
+            self.assertEqual(code, 2, (rel, out, err))
+        with open(outside) as f:
+            self.assertEqual(f.read(), "# outside\n\n## Progress log\n\n")
+
+    def test_session_id_charset_in_the_environment_and_in_a_mark(self):  # guard: both are treated as unknown
+        self.assertEqual(self.start(sid="../../etc/passwd")[0], 0)
+        self.assertIn("session=unknown", self.read_record())
+        os.makedirs(self.cfg)
+        self.write_record(TASKS + self.mark(sid="../../x*"))
+        self.assertEqual(self.stop(sid=None)[0], 0)
+        self.assertIn("tokens not available (session id unknown)", self.line())
+
+
 if __name__ == "__main__":
     unittest.main()

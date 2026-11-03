@@ -325,6 +325,12 @@ def write_atomic(root, record, data):
     return None
 
 
+def inside(root, path):
+    """True when the path, with symlinks resolved, lies inside the project root."""
+    base, real = os.path.realpath(root), os.path.realpath(path)
+    return os.path.commonpath([base, real]) == base
+
+
 def cmd(args):
     root = find_root(os.getcwd())
     if root is None or not switch_on(root):
@@ -334,6 +340,9 @@ def cmd(args):
         print("usage: unit id may use letters, digits, '-', '_' and '.' only (and must start with a letter or digit)")
         return 2
     record = os.path.join(root, args.record)
+    if os.path.isabs(args.record) or ".." in args.record.replace("\\", "/").split("/") or not inside(root, record):
+        print("usage: the record must be a path inside the project: %s" % args.record)
+        return 2
     if not os.path.isfile(record):
         print("usage: record not found: %s" % args.record)
         return 2

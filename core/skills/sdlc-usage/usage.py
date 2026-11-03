@@ -91,30 +91,46 @@ def section_text(text, heading):
     return lines[b[0] + 1:b[1]] if b else []
 
 
+def claude_base():
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+
+
 def transcript_for(session):
-    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
-    hits = sorted(glob.glob(os.path.join(base, "projects", "*", session + ".jsonl")))
-    return hits[0] if hits else None
+    """The one transcript of a session, or None when there is none or several."""
+    hits = glob.glob(os.path.join(claude_base(), "projects", "*", session + ".jsonl"))
+    return hits[0] if len(hits) == 1 else None
+
+
+class FormatError(Exception):
+    pass
 
 
 MODEL_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
 
 
 def read_responses(path):
-    """The last assistant record per message id in one transcript: [(timestamp, usage dict, model)], oldest first."""
+    """The last assistant record per message id in one transcript: [(timestamp, usage dict, model)], oldest first.
+    Raises FormatError for a counted record (an assistant record with usage) that lacks an id, a parseable
+    timestamp or four integer counters, and for an unparsable line other than the last."""
     kept = {}
     with open(path, encoding="utf-8", errors="replace") as f:
-        for line in f:
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            msg = rec.get("message") if isinstance(rec, dict) else None
-            if rec.get("type") != "assistant" or not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
-                continue
-            ts = parse_ts(rec.get("timestamp"))
-            if ts is not None:
-                kept[msg.get("id")] = (ts, msg["usage"], msg.get("model"))
+        lines = [l for l in f.read().split("\n") if l.strip()]
+    for i, line in enumerate(lines):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            if i == len(lines) - 1:
+                continue  # the file may be mid-write
+            raise FormatError("unparsable line")
+        msg = rec.get("message") if isinstance(rec, dict) else None
+        if not isinstance(rec, dict) or rec.get("type") != "assistant" or not isinstance(msg, dict) \
+                or not isinstance(msg.get("usage"), dict):
+            continue
+        ts, u, mid = parse_ts(rec.get("timestamp")), msg["usage"], msg.get("id")
+        if ts is None or not isinstance(mid, str) or not mid or \
+                any(type(u.get(k)) is not int for k in FIELDS):
+            raise FormatError("counted record out of shape")
+        kept[mid] = (ts, u, msg.get("model"))
     return sorted(kept.values(), key=lambda r: r[0])
 
 
@@ -148,6 +164,79 @@ def n(value):
     return "{:,}".format(value)
 
 
+CLOSED_RE = re.compile(r"(?:\bin |cache-read |cache-write |out |sub-agents )\d|\d[\d,]* turns")
+
+
+def segment(session, begin, end):
+    """('ok', totals, turns, models, sub-agent total) or ('na', reason) for one window of one session."""
+    if session == "unknown":
+        return ("na", "session id unknown")
+    path = transcript_for(session)
+    if path is None:
+        return ("na", "transcript not found")
+    try:
+        total, turns, models = read_main(path, begin, end)
+        subs = read_subagents(path, session, begin, end)
+    except FormatError:
+        return ("na", "unexpected transcript format")
+    if turns == 0:
+        return ("na", "no response in window")
+    return ("ok", total, turns, models, subs)
+
+
+def usage_line(unit, seg, wall):
+    if seg[0] == "na":
+        r = seg[1]
+        return "- usage %s: tokens not available (%s) · sub-agents not available (%s) · %s · turns not available (%s)" \
+               " · model not available (%s)" % (unit, r, r, wall, r, r)
+    _, total, turns, models, subs = seg
+    return "- usage %s: in %s · cache-read %s · cache-write %s · out %s · sub-agents %s · %s · %s turns · model %s" % (
+        unit, n(total["input_tokens"]), n(total["cache_read_input_tokens"]), n(total["cache_creation_input_tokens"]),
+        n(total["output_tokens"]), n(subs), wall, n(turns), ", ".join(models) if models else "model not recorded")
+
+
+def wall_text(seconds):
+    return "<1 min wall" if seconds < 30 else "%d min wall" % ((int(seconds) + 30) // 60)
+
+
+def replace_open_line(lines, unit, new_lines):
+    """Replace an existing open usage line (and the stop mark after it) in place; None when there is none."""
+    for i, line in enumerate(lines):
+        if line.startswith("- usage %s:" % unit):
+            j = i + 1
+            if j < len(lines) and lines[j].startswith("<!-- usage-stop %s " % unit):
+                j += 1
+            return lines[:i] + new_lines + lines[j:]
+    return None
+
+
+def do_stop(args, text, now):
+    unit = args.unit
+    body = section_text(text, args.section)
+    existing = [l for l in body if l.startswith("- usage %s:" % unit)]
+    if existing and CLOSED_RE.search(existing[-1]):
+        print("already closed")
+        return None
+    marks = [re.match(r"<!-- usage-start %s (\S+) session=(\S+) -->$" % re.escape(unit), l) for l in body]
+    marks = [m for m in marks if m]
+    if not marks:
+        new = ["- usage %s: not available (no start mark)" % unit]
+    else:
+        stored = next((parse_ts(m.group(1)) for m in
+                       (re.match(r"<!-- usage-stop %s (\S+) -->$" % re.escape(unit), l) for l in body) if m), None)
+        stop = parse_ts(args.at) if args.at else (stored or now)
+        if stop is None:
+            raise SystemExit("usage: --at needs a timestamp like 2026-11-03T10:23:07.456Z")
+        begin, session = parse_ts(marks[-1].group(1)), marks[-1].group(2)
+        wall = wall_text((stop - begin).total_seconds())
+        if session == "unknown" and not os.path.isdir(claude_base()):
+            new = ["- usage %s: not available (no transcript on this target)" % unit]
+        else:
+            new = [usage_line(unit, segment(session, begin, stop), wall)]
+        new.append("<!-- usage-stop %s %s -->" % (unit, fmt_ts(stop)))
+    return new
+
+
 def cmd(args):
     root = find_root(os.getcwd())
     if root is None or not switch_on(root):
@@ -166,29 +255,15 @@ def cmd(args):
     if args.command == "start":
         session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
         session = session if SESSION_RE.match(session) else "unknown"
-        mark = "<!-- usage-start %s %s session=%s -->" % (args.unit, fmt_ts(now), session)
-        out = insert(text, args.section, [mark])
+        out = insert(text, args.section, ["<!-- usage-start %s %s session=%s -->" % (args.unit, fmt_ts(now), session)])
     else:
-        marks = [re.match(r"<!-- usage-start %s (\S+) session=(\S+) -->$" % re.escape(args.unit), l)
-                 for l in section_text(text, args.section)]
-        marks = [m for m in marks if m]
-        if not marks:
-            print("usage: no start mark for %s" % args.unit)
-            return 2
-        stop = parse_ts(args.at) if args.at else now
-        if stop is None:
-            print("usage: --at needs a timestamp like 2026-11-03T10:23:07.456Z")
-            return 2
-        begin = parse_ts(marks[-1].group(1))
-        path = transcript_for(marks[-1].group(2))
-        total, turns, models = read_main(path, begin, stop)
-        subs = read_subagents(path, marks[-1].group(2), begin, stop)
-        minutes = (int((stop - begin).total_seconds()) + 30) // 60
-        wall = "%d min wall" % minutes if (stop - begin).total_seconds() >= 30 else "<1 min wall"
-        line = "- usage %s: in %s · cache-read %s · cache-write %s · out %s · sub-agents %s · %s · %s turns · model %s" % (
-            args.unit, n(total["input_tokens"]), n(total["cache_read_input_tokens"]),
-            n(total["cache_creation_input_tokens"]), n(total["output_tokens"]), n(subs), wall, n(turns), ", ".join(models))
-        out = insert(text, args.section, [line, "<!-- usage-stop %s %s -->" % (args.unit, fmt_ts(stop))])
+        new = do_stop(args, text, now)
+        if new is None:
+            return 0
+        lines = text.split("\n")
+        replaced = replace_open_line(lines, args.unit, new)
+        out = "\n".join(replaced) if replaced is not None and any(
+            l.startswith("- usage %s:" % args.unit) for l in lines) else insert(text, args.section, new)
     with open(record, "w", encoding="utf-8", newline="") as f:
         f.write(out)
     return 0

@@ -278,5 +278,153 @@ class RealFixture(Base):
         self.assertIn(" 3 turns", line)
 
 
+class NotAvailable(Base):
+    def na_line(self, reason, wall="23 min wall"):
+        return ("- usage T012: tokens not available (%s) · sub-agents not available (%s) · %s · turns not available (%s)"
+                " · model not available (%s)" % (reason, reason, wall, reason, reason))
+
+    def assert_open_and_no_zero(self, line):
+        self.assertNotRegex(line, r"\b(in|cache-read|cache-write|out|sub-agents|tokens|turns) 0\b")
+
+    def test_row1_no_start_mark(self):
+        code, out, err = self.stop()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.lines_for(), ["- usage T012: not available (no start mark)"])
+        self.assertNotIn("usage-stop", self.read_record())
+
+    def test_row2_no_session_id_and_no_claude_folder(self):
+        self.write_record(TASKS + self.mark(sid="unknown"))
+        self.assertFalse(os.path.exists(self.cfg))
+        self.assertEqual(self.stop(sid=None)[0], 0)
+        self.assertEqual(self.lines_for(), ["- usage T012: not available (no transcript on this target)"])
+
+    def test_row3_session_id_unknown_keeps_wall_time(self):
+        os.makedirs(self.cfg)  # a Claude folder exists
+        self.write_record(TASKS + self.mark(sid="unknown"))
+        self.assertEqual(self.stop(sid=None)[0], 0)
+        self.assertEqual(self.lines_for(), [self.na_line("session id unknown")])
+
+    def test_row4_transcript_not_found_keeps_wall_time(self):
+        os.makedirs(self.cfg)
+        self.write_record(TASKS + self.mark())
+        self.assertEqual(self.stop()[0], 0)
+        self.assertEqual(self.lines_for(), [self.na_line("transcript not found")])
+        # two project folders holding the same session id are ambiguous: also "not found"
+        self.write_record(TASKS + self.mark())
+        for proj in ("-a", "-b"):
+            self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 1, 1, 1))], project=proj)
+        self.assertEqual(self.stop()[0], 0)
+        self.assertEqual(self.lines_for(), [self.na_line("transcript not found")])
+
+    def stop_with(self, records, reason, **kw):
+        self.write_record(TASKS + self.mark())
+        self.transcript(records)
+        self.assertEqual(self.stop(**kw)[0], 0)
+        self.assertEqual(self.lines_for(), [self.na_line(reason)], records)
+
+    def test_row5_unexpected_format(self):
+        good = response("m0", "2026-11-03T10:00:30.000Z", usage(1, 1, 1, 1))
+        no_counter = response("m1", "2026-11-03T10:01:00.000Z", {"input_tokens": 1, "cache_creation_input_tokens": 1,
+                                                                 "output_tokens": 1})
+        self.stop_with([good, no_counter], "unexpected transcript format")
+        no_id = response("m1", "2026-11-03T10:01:00.000Z", usage(1, 1, 1, 1))
+        del no_id["message"]["id"]
+        self.stop_with([good, no_id], "unexpected transcript format")
+        self.stop_with([good, response("m1", "2026-11-03 10:01:00", usage(1, 1, 1, 1))], "unexpected transcript format")
+        self.stop_with([good, response("m1", "2026-11-03T10:01:00.000Z", usage(True, 1, 1, 1))],
+                       "unexpected transcript format")
+        self.stop_with([good, "{not json", response("m2", "2026-11-03T10:02:00.000Z", usage(1, 1, 1, 1))],
+                       "unexpected transcript format")  # a bad line in the middle
+
+    def test_a_bad_last_line_is_skipped(self):  # the file may be mid-write
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4)), '{"type": "assist'])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", self.line())
+
+    def test_row6_no_response_in_window(self):
+        self.stop_with([response("m1", "2026-11-03T09:00:00.000Z", usage(1, 1, 1, 1))], "no response in window")
+
+    def test_sub_agents_is_not_available_unless_the_main_transcript_was_read(self):
+        self.write_record(TASKS + self.mark())
+        self.assertEqual(self.stop()[0], 0)  # no Claude folder: row 2 or 4, never "sub-agents 0"
+        self.assert_open_and_no_zero(self.line())
+        self.assertNotIn("sub-agents 0", self.line())
+
+    def test_no_data_fixtures_have_no_zero_figure(self):
+        os.makedirs(self.cfg)
+        for mark in (self.mark(sid="unknown"), self.mark()):
+            self.write_record(TASKS + mark)
+            self.assertEqual(self.stop(sid=None)[0], 0)
+            self.assert_open_and_no_zero(self.line())
+
+    def test_a_real_zero_is_written_as_zero(self):  # guard: a zero figure from a source that was read stays zero
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(0, 5, 0, 3))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("in 0 · cache-read 5 · cache-write 0 · out 3 · sub-agents 0 · ", self.line())
+
+    def test_stop_in_a_plain_terminal_uses_the_sessions_in_the_marks(self):  # guard
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop(sid=None)[0], 0)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", self.line())
+
+    def test_open_line_after_a_wall_only_line_is_replaced_and_keeps_the_stored_stop_time(self):
+        os.makedirs(self.cfg)
+        self.write_record(TASKS + self.mark())
+        self.assertEqual(self.stop()[0], 0)
+        self.assertEqual(self.lines_for(), [self.na_line("transcript not found")])
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])  # the cause is fixed
+        self.assertEqual(self.stop(at=None)[0], 0)  # no --at: the stored stop time is used, not now
+        text = self.read_record()
+        self.assertEqual(len(self.lines_for()), 1, text)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · sub-agents 0 · 23 min wall · 1 turns", self.line())
+        self.assertEqual(text.count("<!-- usage-stop T012"), 1, text)
+        self.assertIn("<!-- usage-stop T012 %s -->" % STOP, text)
+
+
+class SwitchOff(Base):
+    def test_every_non_true_form_writes_nothing(self):  # guard: the first implementation already reads the switch
+        forms = ['{"usage": {"enabled": "true"}}', '{"usage": true}', '{"usage": {"enabled": 1}}',
+                 '{"usage": {"enabled": null}}', '{"usage": []}', "not json at all", "[]", ""]
+        for cfg in forms:
+            self.config(cfg)
+            self.write_record(TASKS + self.mark())
+            self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+            before = self.read_record()
+            for call in (self.start, self.stop):
+                code, out, err = call()
+                self.assertEqual((code, out.strip()), (0, "usage off"), (cfg, out, err))
+                self.assertEqual(self.read_record(), before, cfg)
+        os.remove(os.path.join(self.proj, ".sdlc", "config.json"))  # no config file at all: off, and not an error
+        self.assertEqual(self.start()[1].strip(), "usage off")
+
+    def test_by_hand_works_the_same_with_or_without_a_skill(self):  # guard (S3.4)
+        # The script never looks at a skill: a hand run gives the same line as the flow a skill runs.
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop()[0], 0)
+        first = self.line()
+        self.write_record(TASKS + self.mark())
+        self.assertEqual(self.stop()[0], 0)
+        self.assertEqual(self.line(), first)
+
+    def test_workspace_root_uses_the_nearest_config(self):  # guard
+        child = os.path.join(self.proj, "repo-a")
+        os.makedirs(os.path.join(child, ".sdlc"))
+        with open(os.path.join(child, ".sdlc", "config.json"), "w") as f:
+            json.dump({"usage": {"enabled": False}}, f)  # a child with its own, off, config
+        # run from the workspace root: the workspace's switch (on) counts; the child's config is not consulted
+        code, out, err = self.run_usage("start", "T012", "--record", "specs/001-x/tasks.md")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("usage-start T012", self.read_record())
+        # run from inside the child: its nearest config (off) counts
+        before = self.read_record()
+        code, out, err = self.run_usage("start", "T013", "--record", "specs/001-x/tasks.md", cwd=child)
+        self.assertEqual((code, out.strip()), (0, "usage off"), out + err)
+        self.assertEqual(self.read_record(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

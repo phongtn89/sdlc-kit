@@ -35,6 +35,8 @@ python3 .claude/skills/sdlc-usage/usage.py stop  <unit> --record <file> [--secti
 
 ### Exactly what each case writes
 
+When a segment's figures are `not available`, the line groups them: `- usage T012: tokens not available (<reason>) · sub-agents not available (<reason>) · 23 min wall · turns not available (<reason>) · model not available (<reason>)`. `tokens` stands for the four token fields. Wall time stays, from the marks.
+
 Precedence: the first row that applies wins for the whole line (rows 1–2) or for a segment (rows 3–6). `PARTIAL` and `OVERLAP` suffixes come after.
 
 | # | Case | What `stop` writes |

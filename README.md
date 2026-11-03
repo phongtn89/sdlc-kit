@@ -15,7 +15,7 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 | | |
 |---|---|
 | Version | **0.5.0** (see `VERSION`) |
-| State | Usable. `sdlc lint` is clean and 74 tests pass. Install, check and uninstall are verified on a fresh repo. |
+| State | Usable. Last checked 2026-11-03 on `main` at `d196ea7`: `sdlc lint` is clean and 75 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code and GitHub Copilot (Copilot is rendered but not eval-tested) |
 | Requirements | Python 3.9+, stdlib only, no network |
 | Evidence | Behaviour evals in `evals/` (one fresh `claude -p` per prompt via `evals/run.py`). Results are in `evals/results/`: n = 1 per arm, Sonnet 5.5 only |

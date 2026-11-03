@@ -442,6 +442,71 @@ class UsageSkill(Base):
     """Spec 003: the sdlc-usage skill and the skills that call it, rendered from the real kit."""
     SKILL = "skills/sdlc-usage"
     SID = "0b8b2d7f-d1c8-4d58-86d4-eb8b0ad184f6"
+    # The files an install of the kit at `main` fc77daa (before spec 003) wrote, except .sdlc/lock.json.
+    MAIN_PATHS = {
+        ".claude/agents/sdlc-explorer.md",
+        ".claude/agents/sdlc-implementer.md",
+        ".claude/agents/sdlc-planner.md",
+        ".claude/agents/sdlc-reviewer.md",
+        ".claude/agents/sdlc-security-reviewer.md",
+        ".claude/skills/sdlc-analyze/SKILL.md",
+        ".claude/skills/sdlc-clarify/SKILL.md",
+        ".claude/skills/sdlc-context/SKILL.md",
+        ".claude/skills/sdlc-converge/SKILL.md",
+        ".claude/skills/sdlc-debug/SKILL.md",
+        ".claude/skills/sdlc-grill/SKILL.md",
+        ".claude/skills/sdlc-handoff/SKILL.md",
+        ".claude/skills/sdlc-implement/SKILL.md",
+        ".claude/skills/sdlc-plan/SKILL.md",
+        ".claude/skills/sdlc-retro/SKILL.md",
+        ".claude/skills/sdlc-review/SKILL.md",
+        ".claude/skills/sdlc-review/references/review-method.md",
+        ".claude/skills/sdlc-setup/SKILL.md",
+        ".claude/skills/sdlc-ship/SKILL.md",
+        ".claude/skills/sdlc-specify/SKILL.md",
+        ".claude/skills/sdlc-tasks/SKILL.md",
+        ".claude/skills/sdlc-tdd/SKILL.md",
+        ".claude/skills/sdlc/SKILL.md",
+        ".github/agents/sdlc-explorer.agent.md",
+        ".github/agents/sdlc-implementer.agent.md",
+        ".github/agents/sdlc-planner.agent.md",
+        ".github/agents/sdlc-reviewer.agent.md",
+        ".github/agents/sdlc-security-reviewer.agent.md",
+        ".github/copilot-instructions.md",
+        ".sdlc/checklists/accessibility.md",
+        ".sdlc/checklists/compatibility-migration.md",
+        ".sdlc/checklists/definition-of-done.md",
+        ".sdlc/checklists/observability.md",
+        ".sdlc/checklists/performance.md",
+        ".sdlc/checklists/requirements-quality.md",
+        ".sdlc/checklists/security.md",
+        ".sdlc/config.json",
+        ".sdlc/constitution.md",
+        ".sdlc/principles/agree-before-building.md",
+        ".sdlc/principles/depth-follows-risk.md",
+        ".sdlc/principles/encode-lessons.md",
+        ".sdlc/principles/evidence-over-claims.md",
+        ".sdlc/principles/fail-safe-keep-work.md",
+        ".sdlc/principles/guard-context.md",
+        ".sdlc/principles/prove-it-works.md",
+        ".sdlc/principles/root-causes.md",
+        ".sdlc/principles/subtract-before-adding.md",
+        ".sdlc/principles/thin-vertical-slices.md",
+        ".sdlc/templates/adr.md",
+        ".sdlc/templates/bug.md",
+        ".sdlc/templates/context.md",
+        ".sdlc/templates/handoff.md",
+        ".sdlc/templates/mini-spec.md",
+        ".sdlc/templates/plan.md",
+        ".sdlc/templates/pr.md",
+        ".sdlc/templates/prd.md",
+        ".sdlc/templates/review-report.md",
+        ".sdlc/templates/spec.md",
+        ".sdlc/templates/tasks.md",
+        ".sdlc/templates/workspace.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+    }
 
     def enable(self):
         self.write(".sdlc/config.json", json.dumps({"usage": {"enabled": True}}))
@@ -470,6 +535,35 @@ class UsageSkill(Base):
         self.assertEqual(code, 0, out)
         self.assertRegex(self.read("specs/001-x/tasks.md"),
                          r"- usage T001: in 5 · cache-read 7 · cache-write 11 · out 13 · sub-agents 0 · .* wall · 1 turns")
+
+    def installed_paths(self):
+        out = set()
+        for dp, _, files in os.walk(self.d):
+            for f in files:
+                out.add(os.path.relpath(os.path.join(dp, f), self.d).replace(os.sep, "/"))
+        return out - {".sdlc/lock.json"}
+
+    def test_install_adds_only_the_expected_paths(self):
+        code, out, _ = run("install", self.d, kit=ROOT)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.installed_paths(), UsageSkill.MAIN_PATHS | {".claude/skills/sdlc-usage/SKILL.md",
+                                                                          ".claude/skills/sdlc-usage/usage.py"})
+        default = json.loads(open(os.path.join(ROOT, "adapters", "config.default.json")).read())
+        self.assertEqual(json.loads(self.read(".sdlc/config.json")), default)
+        self.assertNotIn("usage", default)
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
+        self.enable()  # FR-018: lint and drift stay green with the switch on
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
+        self.assertEqual(run("lint", kit=ROOT)[0], 0)
+
+    def test_reinstall_is_idempotent_and_check_is_ok(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        before = {p: open(self.p(p), "rb").read() for p in self.installed_paths()}
+        code, out, _ = run("install", self.d, kit=ROOT)
+        self.assertEqual(code, 0, out)
+        self.assertEqual({p: open(self.p(p), "rb").read() for p in self.installed_paths()}, before)
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
 
     def test_install_ships_the_skill_and_script(self):
         code, out, _ = run("install", self.d, kit=ROOT)

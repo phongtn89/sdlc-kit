@@ -16,15 +16,15 @@ import re
 import sys
 import tempfile
 
-UNIT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-SESSION_RE = re.compile(r"^[0-9A-Fa-f-]{8,64}$")
-TS_RE = re.compile(r"^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d{1,6}))?Z$")
+UNIT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+SESSION_RE = re.compile(r"^[0-9A-Fa-f-]{8,64}\Z")
+TS_RE = re.compile(r"^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d{1,6}))?Z\Z")
 UTC = datetime.timezone.utc
 FIELDS = ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens")
 
 
 def parse_ts(text):
-    m = TS_RE.match(text or "")
+    m = TS_RE.match(text) if isinstance(text, str) else None
     if not m:
         return None
     y, mo, d, h, mi, s = (int(x) for x in m.groups()[:6])
@@ -57,13 +57,19 @@ def switch_on(root):
 
 
 def section_bounds(lines, heading):
-    """(start, end) line indexes of the `## heading` section, or None."""
-    want = "## " + heading
+    """(start, end) line indexes of the `## heading` section (headings inside code fences do not count), or None."""
+    want, fenced, start = "## " + heading, False, None
     for i, line in enumerate(lines):
-        if line.rstrip("\r\n") == want:
-            end = next((j for j in range(i + 1, len(lines)) if lines[j].startswith("## ")), len(lines))
-            return i, end
-    return None
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        if start is None and line.rstrip() == want:
+            start = i
+        elif start is not None and line.startswith("## "):
+            return start, i
+    return (start, len(lines)) if start is not None else None
 
 
 def insert(text, heading, new_lines):
@@ -98,7 +104,7 @@ def claude_base():
 
 def transcript_for(session):
     """The one transcript of a session, or None when there is none or several."""
-    hits = glob.glob(os.path.join(claude_base(), "projects", "*", session + ".jsonl"))
+    hits = glob.glob(os.path.join(glob.escape(claude_base()), "projects", "*", glob.escape(session) + ".jsonl"))
     return hits[0] if len(hits) == 1 else None
 
 
@@ -106,7 +112,7 @@ class FormatError(Exception):
     pass
 
 
-MODEL_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+MODEL_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}\Z")
 
 
 def read_responses(path):
@@ -127,6 +133,8 @@ def read_responses(path):
         if not isinstance(rec, dict) or rec.get("type") != "assistant" or not isinstance(msg, dict) \
                 or not isinstance(msg.get("usage"), dict):
             continue
+        if msg.get("model") == "<synthetic>":
+            continue  # counts for nothing, so its shape does not matter
         ts, u, mid = parse_ts(rec.get("timestamp")), msg["usage"], msg.get("id")
         if ts is None or not isinstance(mid, str) or not mid or \
                 any(type(u.get(k)) is not int for k in FIELDS):
@@ -153,7 +161,7 @@ def read_main(path, start, end):
 
 def read_subagents(main_path, session, start, end):
     """Sum of the four token fields over the sub-agent transcripts of the session inside the window."""
-    folder = os.path.join(os.path.dirname(main_path), session, "subagents")
+    folder = os.path.join(glob.escape(os.path.dirname(main_path)), glob.escape(session), "subagents")
     total = 0
     for f in sorted(glob.glob(os.path.join(folder, "agent-*.jsonl"))):
         for _, u, _ in in_window(read_responses(f), start, end):
@@ -200,17 +208,22 @@ def wall_text(seconds):
     return "<1 min wall" if seconds < 30 else "%d min wall" % ((int(seconds) + 30) // 60)
 
 
-def replace_open_line(text, unit, new_lines):
-    """Replace an existing usage line of the unit (and the stop mark after it) in place; None when there is none."""
+def replace_open_line(text, unit, new_lines, heading):
+    """Replace the unit's usage line (the last one in the section, and the stop mark after it) in place; None when
+    the section has none."""
     nl = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(True)
-    for i, line in enumerate(lines):
-        if line.startswith("- usage %s:" % unit):
-            j = i + 1
-            if j < len(lines) and lines[j].startswith("<!-- usage-stop %s " % unit):
-                j += 1
-            return "".join(lines[:i] + [l + nl for l in new_lines] + lines[j:])
-    return None
+    bounds = section_bounds(lines, heading)
+    if bounds is None:
+        return None
+    hits = [i for i in range(bounds[0] + 1, bounds[1]) if lines[i].startswith("- usage %s:" % unit)]
+    if not hits:
+        return None
+    i = hits[-1]
+    j = i + 1
+    if j < bounds[1] and lines[j].startswith("<!-- usage-stop %s " % unit):
+        j += 1
+    return "".join(lines[:i] + [l + nl for l in new_lines] + lines[j:])
 
 
 MARK_RE = re.compile(r"<!-- usage-start (\S+) (\S+) session=(\S+) -->$")
@@ -261,8 +274,6 @@ def do_stop(args, text, now):
     stored = next((parse_ts(m.group(1)) for m in
                    (re.match(r"<!-- usage-stop %s (\S+) -->$" % re.escape(unit), l.rstrip("\r")) for l in body) if m), None)
     stop = parse_ts(args.at) if args.at else (stored or now)
-    if stop is None:
-        raise SystemExit("usage: --at needs a timestamp like 2026-11-03T10:23:07.456Z")
     stop_mark = "<!-- usage-stop %s %s -->" % (unit, fmt_ts(stop))
     if all(m[2] == "unknown" for m in marks) and not os.path.isdir(claude_base()):
         return ["- usage %s: not available (no transcript on this target)" % unit, stop_mark]
@@ -339,6 +350,9 @@ def cmd(args):
     if not UNIT_RE.match(args.unit):
         print("usage: unit id may use letters, digits, '-', '_' and '.' only (and must start with a letter or digit)")
         return 2
+    if args.at is not None and parse_ts(args.at) is None:
+        print("usage: --at needs a timestamp like 2026-11-03T10:23:07.456Z")
+        return 2
     record = os.path.join(root, args.record)
     if os.path.isabs(args.record) or ".." in args.record.replace("\\", "/").split("/") or not inside(root, record):
         print("usage: the record must be a path inside the project: %s" % args.record)
@@ -365,7 +379,7 @@ def cmd(args):
         new = do_stop(args, text, now)
         if new is None:
             return 0
-        out = replace_open_line(text, args.unit, new)
+        out = replace_open_line(text, args.unit, new, args.section)
         if out is None:
             out = insert(text, args.section, new)
     err = write_atomic(root, record, out.encode("utf-8", "surrogateescape"))

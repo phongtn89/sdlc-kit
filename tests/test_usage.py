@@ -685,5 +685,109 @@ class Units(Base):
         self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", self.line("review1-F3"))
 
 
+class EdgeCases(Base):
+    """Findings of the independent review of spec 003 (F1-F5, advisories A1, A2, and the surviving mutations)."""
+
+    def test_f1_a_bad_at_is_exit_2_with_one_line_on_stdout(self):
+        self.write_record(TASKS + self.mark())
+        for bad in ("garbage", "2026-11-03T10:23:07", "2026-11-03T10:23:07.456Z\n"):  # the second lacks the Z
+            code, out, err = self.run_usage("stop", "T012", "--record", "specs/001-x/tasks.md", "--at", bad)
+            self.assertEqual(code, 2, (bad, out, err))
+            self.assertIn("--at", out)
+            self.assertEqual(err, "")
+        self.assertEqual(self.lines_for(), [])
+
+    def test_f2_a_non_string_timestamp_is_unexpected_format_not_a_crash(self):
+        self.write_record(TASKS + self.mark())
+        for ts in (5, [1], None, {"a": 1}):
+            r = response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))
+            r["timestamp"] = ts
+            self.transcript([response("m0", "2026-11-03T10:00:30.000Z", usage(1, 1, 1, 1)), r])
+            self.write_record(TASKS + self.mark())
+            code, out, err = self.stop()
+            self.assertEqual(code, 0, (ts, out, err))
+            self.assertIn("tokens not available (unexpected transcript format)", self.line())
+
+    def test_f3_a_line_in_another_section_is_never_replaced(self):
+        notes = "## Notes\n\n- usage T012: not available (no start mark)\n\n"
+        self.write_record("# Tasks\n\n" + notes + "## Progress log\n\n" + self.mark())
+        self.assertEqual(self.stop()[0], 0)
+        text = self.read_record()
+        self.assertIn(notes, text)  # the Notes line is untouched
+        self.assertIn("## Progress log", text)
+        self.assertRegex(text[text.index("## Progress log"):], r"- usage T012: tokens not available \(transcript not found\)")
+
+    def test_f4_a_config_dir_with_glob_characters_still_finds_the_transcript(self):
+        self.cfg = os.path.join(self._tmp.name, "[cfg]*?")
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.subagent([response("s1", "2026-11-03T10:02:00.000Z", usage(1, 1, 1, 1))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · sub-agents 4 · ", self.line())
+
+    def test_f5_a_trailing_newline_is_not_part_of_an_id(self):
+        before = self.read_record()
+        code, out, err = self.run_usage("start", "T01\n", "--record", "specs/001-x/tasks.md")
+        self.assertEqual(code, 2, out + err)
+        self.assertEqual(self.read_record(), before)
+        # a session id with a trailing newline is unknown; a model name with one is ignored
+        self.assertEqual(self.start("T013", sid=SID + "\n")[0], 0)
+        self.assertIn("session=unknown -->", self.read_record())
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4), model="abc\n")])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertTrue(self.line().endswith("model model not recorded"), self.line())
+        self.assertEqual(self.read_record().count("\n\n<!-- usage-stop"), 0)  # no blank line before the stop mark
+
+    def test_a1_a_heading_in_a_code_fence_is_not_the_section_and_trailing_spaces_are_ignored(self):
+        text = "# T\n\n```\n## Progress log\n```\n\n## Progress log  \n\n- real\n"
+        self.write_record(text)
+        self.assertEqual(self.start()[0], 0)
+        after = self.read_record()
+        self.assertTrue(after.startswith("# T\n\n```\n## Progress log\n```\n\n## Progress log  \n\n- real\n<!-- usage-start"), after)
+        self.assertEqual(after.count("## Progress log"), 2)  # no second section was created
+
+    def test_a2_a_synthetic_record_without_an_id_is_not_shape_checked(self):
+        self.write_record(TASKS + self.mark())
+        synth = response("x", "2026-11-03T10:00:30.000Z", usage(9, 9, 9, 9), model="<synthetic>")
+        del synth["message"]["id"]
+        self.transcript([synth, response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", self.line())
+
+    # -- tests added for mutations the review found to survive
+    def test_a_timestamp_without_z_is_unexpected_format(self):
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("tokens not available (unexpected transcript format)", self.line())
+
+    def test_an_id_that_is_a_prefix_of_another_never_replaces_its_open_line(self):
+        os.makedirs(self.cfg)
+        self.write_record(TASKS + self.mark("T012") + self.mark("T01"))
+        self.assertEqual(self.stop("T012")[0], 0)  # transcript not found: an open wall-only line for T012
+        open_line = self.line("T012")
+        self.assertEqual(self.stop("T01")[0], 0)
+        self.assertEqual(self.lines_for("T012"), [open_line])
+        self.assertEqual(len(self.lines_for("T01")), 1)
+
+    def test_no_start_mark_writes_exactly_one_line(self):
+        before = self.read_record()
+        self.assertEqual(self.stop()[0], 0)
+        after = self.read_record()
+        self.assertEqual(after.replace("- usage T012: not available (no start mark)\n", ""), before)
+
+    def test_a_failed_replace_leaves_no_temporary_file(self):
+        d = os.path.join(self._tmp.name, "blocker")
+        os.makedirs(d)
+        with open(os.path.join(d, "sitecustomize.py"), "w") as f:
+            f.write("import os\ndef _fail(*a, **k):\n    raise OSError(13, 'denied')\nos.replace = _fail\n")
+        before = self.read_record()
+        code, out, err = self.run_usage("start", "T012", "--record", "specs/001-x/tasks.md", env_extra={"PYTHONPATH": d})
+        self.assertEqual(code, 2, out + err)
+        self.assertEqual(self.read_record(), before)
+        self.assertEqual([f for f in os.listdir(os.path.dirname(self.rec_path())) if f.startswith(".usage-")], [])
+
+
 if __name__ == "__main__":
     unittest.main()

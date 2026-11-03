@@ -592,6 +592,17 @@ class Find(Base):
         self.assertNotIn(secret, out)
         self.assertNotIn(secret.lower(), out)
 
+    def test_secret_slug_not_echoed_when_the_heading_is_gone(self):
+        secret = "sk-" + "a1B2c3D4" * 4
+        self.write("context/f.md", FINDSRC.replace("## Routing", "## %s notes" % secret))
+        slug = (secret + " notes").lower().replace(" ", "-")
+        idx = self.build("[repo admin]\ndesc: tenant routing rules @f#%s" % slug)
+        self.write("context/f.md", "# F\n\nrouting\n")  # the source changed and the heading is gone
+        code, out = self.find(idx, "routing")
+        self.assertEqual(code, 0, out)
+        self.assertIn("no heading [redacted] in context/f.md", out)
+        self.assertNotIn(secret.lower(), out.lower())
+
     def test_many_sibling_entries_keep_every_result_and_cut_line(self):
         self.write("context/g.md", "# G\n\n## One\n\n" + "routing filler line\n" * 300 + "\n## Two\n\nrouting two\n")
         keys = ["desc", "stack", "run", "runtime", "db", "owns", "scope", "consumers", "envs", "specs", "owner"]

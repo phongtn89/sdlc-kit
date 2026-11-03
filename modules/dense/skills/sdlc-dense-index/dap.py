@@ -388,7 +388,7 @@ def find(index, root, terms, stale=(), ignored=()):
                 lines = f.read().split("\n")
             span = section("\n".join(lines), slug)
             if span is None:
-                block = head + ["    %s" % note, "    no heading %s in %s" % (slug, rel)]
+                block = head + ["    %s" % note, "    no heading %s in %s" % ("[redacted]" if redact(slug) else slug, rel)]
             else:
                 loc = "    .sdlc/%s:%d-%d%s" % (rel, span[0], span[1], ("        " + note) if is_stale else "")
                 room = share - sum(len(l) + 1 for l in head) - len(loc) - 1

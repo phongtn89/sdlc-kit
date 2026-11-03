@@ -36,7 +36,8 @@ SECRET_RES = [re.compile(p) for p in (
 )]
 EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b(?!:)")  # not git@host:repo
 SIZE_RATIO, SIZE_FLOOR = 0.05, 20 * 1024
-BUDGET, MAX_RESULTS, LINE_MAX, CONTEXT_LINES = 2000, 3, 160, 5
+BUDGET, MAX_RESULTS, LINE_MAX, CONTEXT_LINES, MAX_ERRORS, MIN_TERM = 2000, 3, 160, 5, 10, 3
+CALL = "dap.py find <index> <term> [<term> …] [--root DIR]"
 
 
 def sha12(data):
@@ -264,6 +265,20 @@ def show(index, root, ref):
     return 0
 
 
+def guard(text):
+    """The final budget guard: at most BUDGET characters with the newline print adds. Over budget, the text is
+    shortened but a closing cut line, if it has one, is kept."""
+    if len(text) < BUDGET:
+        return text
+    last = text.rsplit("\n", 1)[-1]
+    tail = "\n" + last if last.startswith("    … cut:") else ""
+    return text[:BUDGET - len(tail) - 2] + "…" + tail
+
+
+def redact(text):
+    return any(r.search(text) for r in SECRET_RES) or bool(EMAIL_RE.search(text))
+
+
 def cut_line(rel, span):
     return "    … cut: read .sdlc/%s:%d-%d" % (rel, span[0], span[1])
 
@@ -307,8 +322,10 @@ def excerpt(lines, span, terms, room, cut):
         want += sorted({k for n in hits for k in (n - 1, n, n + 1) if first < k <= last})
     else:
         want += list(range(first + 1, min(last, first + CONTEXT_LINES) + 1))
-    rows = ["    %d  %s" % (n, clip(lines[n - 1])) for n in want]
-    whole = len(want) == last - first + 1 and all(clip(lines[n - 1]) == lines[n - 1] for n in want)
+    rows = ["    %d  %s" % (n, "[redacted: read the source]" if redact(lines[n - 1]) else clip(lines[n - 1]))
+            for n in want]
+    whole = len(want) == last - first + 1 and all(clip(lines[n - 1]) == lines[n - 1] or redact(lines[n - 1])
+                                                  for n in want)
     if whole and sum(len(r) + 1 for r in rows) <= room:
         return rows, True
     out, used = [], 0
@@ -320,10 +337,11 @@ def excerpt(lines, span, terms, room, cut):
     return out, False
 
 
-def find(index, root, terms):
+def find(index, root, terms, stale=(), ignored=()):
     """The agent lookup. Prints at most BUDGET characters. Returns the exit code."""
     terms = [t.lower() for t in terms]
     srcs, entries = index_entries(index)
+    first = ["ignored short terms: %s" % clip(", ".join(ignored), 120)] if ignored else []
     scored = []
     for e in entries:
         hay = " ".join((e[1], e[2], e[3], e[4], e[6])).lower()
@@ -332,46 +350,93 @@ def find(index, root, terms):
         if matched:
             scored.append((matched, in_value, e))
     if not scored:
-        print("no match for: %s" % " ".join(terms))
+        print(guard("\n".join(first + ["no match for: %s" % clip(" ".join(terms), 200)])))
         return 1
     groups = {}
     for matched, in_value, e in scored:
         groups.setdefault((e[5], e[6]), []).append((matched, in_value, e))
     ranked = sorted(groups.items(), key=lambda kv: (-max(m for m, _, _ in kv[1]), -max(v for _, v, _ in kv[1]),
                                                    min(e[0] for _, _, e in kv[1])))[:MAX_RESULTS]
-    blocks, left = [], BUDGET
+    blocks, left = [], BUDGET - sum(len(l) + 1 for l in first)
     for i, ((alias, slug), items) in enumerate(ranked):
         share = left // (len(ranked) - i)
         rel = srcs[alias]
-        with open(source_path(root, rel), encoding="utf-8", errors="replace") as f:
-            lines = f.read().split("\n")
-        span = section("\n".join(lines), slug)
+        is_stale = any(x.split()[1] == alias for x in stale)
         head = ["[%d] %s" % (i + 1, clip("%s %s / %s: %s @%s#%s" % (items[0][2][1].upper(), items[0][2][2], items[0][2][3],
                                                                      items[0][2][4], alias, slug)))]
         head += ["    " + clip("%s %s / %s: %s @%s#%s" % (e[1].upper(), e[2], e[3], e[4], alias, slug))
                  for _, _, e in items[1:]]
-        loc = "    .sdlc/%s:%d-%d" % (rel, span[0], span[1])
-        room = share - sum(len(l) + 1 for l in head) - len(loc) - 1
-        cut = cut_line(rel, span)
-        body, whole = excerpt(lines, span, terms, room, cut)
-        block = head + [loc] + body + ([] if whole else [cut])
+        full = source_path(root, rel)
+        note = "(stale: %s changed since the index was built)" % rel
+        if not full or not os.path.isfile(full):
+            block = head + ["    (stale: %s) source not found: %s" % (rel, rel)]
+        else:
+            with open(full, encoding="utf-8", errors="replace") as f:
+                lines = f.read().split("\n")
+            span = section("\n".join(lines), slug)
+            if span is None:
+                block = head + ["    %s" % note, "    no heading %s in %s" % (slug, rel)]
+            else:
+                loc = "    .sdlc/%s:%d-%d%s" % (rel, span[0], span[1], ("        " + note) if is_stale else "")
+                room = share - sum(len(l) + 1 for l in head) - len(loc) - 1
+                cut = cut_line(rel, span)
+                body, whole = excerpt(lines, span, terms, room, cut)
+                block = head + [loc] + body + ([] if whole else [cut])
         text = "\n".join(block)
         blocks.append(text)
         left -= len(text) + 1
-    out = "\n".join(blocks)
-    print(out)
+    print(guard("\n".join(first + blocks)))
     return 0
 
 
+def usage_error(message):
+    print(guard("usage error: %s\ncall: %s" % (message, CALL)))
+    return 3
+
+
+def find_main(a):
+    """find: usage first, then the index (spec 002 contract order of checks)."""
+    if a.index is None:
+        return usage_error("an index argument is required")
+    terms = [t.strip() for t in a.rest]
+    usable = [t for t in terms if len(t) >= MIN_TERM]
+    ignored = [t for t in terms if len(t) < MIN_TERM]
+    if not usable:
+        return usage_error("at least one search term of %d or more characters is required%s"
+                           % (MIN_TERM, (" (ignored: %s)" % clip(", ".join(ignored), 80)) if ignored else ""))
+    root = os.path.abspath(a.root) if a.root else find_root(a.index)
+    errors, stale, _, _, _ = check(a.index, root, fresh_mode=True)
+    if errors:
+        shown = [clip(e, 120) for e in errors[:MAX_ERRORS]]
+        if len(errors) > MAX_ERRORS:
+            shown.append("… %d more; run dap.py validate %s" % (len(errors) - MAX_ERRORS, clip(a.index, 80)))
+        print(guard("\n".join(["INVALID"] + shown)))
+        return 2
+    return find(a.index, root, usable, stale, ignored)
+
+
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Validate a dense index or check its freshness.")
+    argv = sys.argv[1:] if argv is None else argv
+    is_find = bool(argv) and argv[0] == "find"
+
+    class Parser(argparse.ArgumentParser):
+        def error(self, message):  # find reports its own usage errors as exit 3, so exit 2 means "bad index"
+            if is_find:
+                sys.exit(usage_error(message))
+            super().error(message)
+
+    ap = Parser(description="Validate a dense index, check its freshness, or look things up in it.")
     ap.add_argument("command", choices=["validate", "fresh", "commit", "show", "find"])
-    ap.add_argument("index", help="the index (for commit: the temporary index to validate)")
+    ap.add_argument("index", nargs="?", help="the index (for commit: the temporary index to validate)")
     ap.add_argument("rest", nargs="*", help="commit: the index to replace; show: the @alias#slug to print; "
                                            "find: the search terms")
     ap.add_argument("--root", help="folder that holds .sdlc/ (default: nearest one above the index)")
     a = ap.parse_args(argv)
-    if a.command != "find" and (a.command in ("commit", "show")) != (len(a.rest) == 1 or (len(a.rest) > 1 and ap.error("too many arguments"))):
+    if a.command == "find":
+        return find_main(a)
+    if a.index is None:
+        ap.error("an index argument is required")
+    if (a.command in ("commit", "show")) != (len(a.rest) == 1 or (len(a.rest) > 1 and ap.error("too many arguments"))):
         ap.error("a second argument is required for commit and show, and only allowed there")
     a.dest = a.rest[0] if a.command in ("commit", "show") else None
     root = os.path.abspath(a.root) if a.root else find_root(a.index)
@@ -379,7 +444,7 @@ def main(argv=None):
         print("ERROR 0: commit only writes .sdlc/context/index.dap from .sdlc/context/index.dap.<id>.tmp "
               "(got %s -> %s)\nnot committed: %s unchanged" % (a.index, a.dest, a.dest))
         return 1
-    errors, stale, idx, warnings, counts = check(a.index, root, fresh_mode=a.command in ("fresh", "show", "find"))
+    errors, stale, idx, warnings, counts = check(a.index, root, fresh_mode=a.command in ("fresh", "show"))
     if a.command == "validate":
         print("\n".join(warnings + (errors or ["valid"])))
         return 1 if errors else 0
@@ -395,8 +460,6 @@ def main(argv=None):
         return 2
     if a.command == "show":
         return show(a.index, root, a.dest)
-    if a.command == "find":
-        return find(a.index, root, a.rest)
     print("\n".join(["%s %s" % ("stale" if stale else "fresh", idx)] + stale))
     return 1 if stale else 0
 

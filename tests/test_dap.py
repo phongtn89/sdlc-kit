@@ -482,6 +482,120 @@ class Find(Base):
         self.assertEqual(len(cuts), 3, out)
         self.assertIn("… cut: read", out.rstrip("\n").split("\n")[-1])
 
+    def routing_index(self, **kw):
+        return self.build("[repo admin]\ndesc: tenant routing rules @f#routing\nowns: routing table @f#routing")
+
+    def test_no_match(self):
+        code, out = self.find(self.routing_index(), "zzzzzz")
+        self.assertEqual((code, out.strip()), (1, "no match for: zzzzzz"))
+
+    def test_no_terms(self):
+        idx = self.routing_index()
+        self.assertEqual(run("find", idx, "--root", self.root)[0], 3)            # no terms
+        self.assertEqual(run("find", "--root", self.root)[0], 3)                 # no index argument
+        self.assertEqual(run("find", idx, "routing", "--bogus", "--root", self.root)[0], 3)  # unknown option
+        self.write("context/index.dap", "#dap 1 built 2026-10-26\n")
+        code, out = run("find", idx, "--root", self.root)                         # usage is checked before the index
+        self.assertEqual(code, 3, out)
+
+    def test_short_terms_ignored(self):
+        idx = self.routing_index()
+        code, out = self.find(idx, "id", "routing")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out.split("\n")[0], "ignored short terms: id")
+        code, out = self.find(idx, "id", "a")
+        self.assertEqual(code, 3, out)
+
+    def test_invalid_index(self):
+        code, out = self.find(self.path("context/none.dap"), "routing")
+        self.assertEqual(code, 2, out)
+        self.assertTrue(out.startswith("INVALID"), out)
+        bad = "[repo r]\n" + "\n".join("bogus%d: x @f#routing" % i for i in range(200))
+        code, out = self.find(self.build(bad), "routing")
+        self.assertEqual(code, 2, out)
+        self.assertLessEqual(len(out), 2000)
+        self.assertLessEqual(len([l for l in out.split("\n") if l.startswith("ERROR")]), 10)
+        self.assertIn("… 190 more; run dap.py validate", out)
+        secret = "sk-" + "a1B2c3D4" * 4
+        code, out = self.find(self.build("[repo r]\ndesc: key %s @f#routing" % secret), "routing")
+        self.assertEqual(code, 2, out)
+        self.assertNotIn(secret, out)
+
+    def stale_case(self, edit):
+        self.write("context/f.md", FINDSRC)  # each case starts from the source the index is built on
+        idx = self.routing_index()
+        edit()
+        code, out = self.find(idx, "routing")
+        self.assertEqual(code, 0, out)
+        self.assertIn("stale", out)
+        self.assertIn("context/f.md", out)
+        fcode, fout = self.fresh(idx)
+        self.assertEqual(fcode, 1, fout)
+        self.assertIn("STALE f context/f.md", fout)
+        return out
+
+    def test_stale_source_marked(self):
+        out = self.stale_case(lambda: self.write("context/f.md", FINDSRC + "\nmore routing.\n"))
+        self.assertIn("(stale: context/f.md changed since the index was built)", out)
+        self.assertRegex(out, r"\n\s+3\s+## Routing")  # the excerpt comes from the current file
+        out = self.stale_case(lambda: os.rename(self.path("context/f.md"), self.path("context/renamed.md")))
+        self.assertIn("source not found: context/f.md", out)
+        self.assertNotIn("Requests are routed", out)
+        out = self.stale_case(lambda: os.remove(self.path("context/f.md")))
+        self.assertIn("source not found: context/f.md", out)
+
+    def test_heading_gone(self):
+        out = self.stale_case(lambda: self.write("context/f.md", FINDSRC.replace("## Routing", "## Paths")))
+        self.assertIn("no heading routing in context/f.md", out)
+
+    def test_read_only(self):
+        idx = self.routing_index()
+
+        def snap():
+            return {os.path.join(dp, f): sha12(open(os.path.join(dp, f), "rb").read())
+                    for dp, _, fs in os.walk(self.root) for f in fs}
+        before = snap()
+        self.find(idx, "routing")
+        self.find(idx, "zzzzzz")
+        self.assertEqual(snap(), before)
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(DAP), "__pycache__")))
+
+    def test_keeps_unverified_marker(self):
+        idx = self.build("[repo admin]\ndesc: UNVERIFIED tenant routing @f#routing")
+        code, out = self.find(idx, "routing")
+        self.assertEqual(code, 0, out)
+        self.assertIn("UNVERIFIED tenant routing", out)
+
+    def test_redacts_secret_lines(self):
+        secret = "sk-" + "a1B2c3D4" * 4
+        self.write("context/f.md", FINDSRC.replace("The edge proxy forwards them.",
+                                                   "Routing token %s and mail ops@example.com." % secret))
+        idx = self.routing_index()  # built after the edit, so fresh
+        code, out = self.find(idx, "routing")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(secret, out)
+        self.assertNotIn("ops@example.com", out)
+        self.assertRegex(out, r"\n\s+6\s+\[redacted: read the source\]")
+
+    def test_fast_on_large_workspace(self):
+        import time
+        sections = "".join("\n## Section %d\n\n%s\n" % (i, "word " * 600) for i in range(10))
+        srcs = []
+        for i in range(10):
+            self.write("context/r%d.md" % i, "# Repo %d\n%s" % (i, sections))  # 10 x ~30 KB = ~300 KB
+            srcs.append("src r%d context/r%d.md %s" % (i, i, self.src_hash("context/r%d.md" % i)))
+        body = "\n".join("[repo r%d-%d]\ndesc: entry %d @r%d#section-%d" % (i, j, j, i, j % 10)
+                         for i in range(10) for j in range(30))
+        idx = self.index(body=body, src="\n".join(srcs))
+        start = time.monotonic()
+        code, out = self.find(idx, "entry", "word")
+        self.assertLess(time.monotonic() - start, 2)
+        self.assertEqual(code, 0, out)
+        self.assertLessEqual(len(out), 2000)
+        start = time.monotonic()
+        self.assertEqual(self.validate(idx)[0], 0)
+        self.assertLess(time.monotonic() - start, 10)
+
 
 if __name__ == "__main__":
     unittest.main()

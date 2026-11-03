@@ -60,6 +60,18 @@ class Base(unittest.TestCase):
             for r in records:
                 f.write((r if isinstance(r, str) else json.dumps(r)) + "\n")
 
+    def subagent(self, records, name="agent-a1", sid=SID, project="-proj"):
+        d = os.path.join(self.cfg, "projects", project, sid, "subagents")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, name + ".jsonl"), "w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+
+    def line(self, unit="T012"):
+        lines = self.lines_for(unit)
+        self.assertEqual(len(lines), 1, self.read_record())
+        return lines[0]
+
     def mark(self, unit="T012", ts=START, sid=SID):
         return "<!-- usage-start %s %s session=%s -->\n" % (unit, ts, sid)
 
@@ -146,6 +158,124 @@ class Tracer(Base):
         code, out, err = self.stop()
         self.assertEqual(code, 0, out + err)
         self.assertRegex(self.lines_for()[0], r"in 2 · cache-read 0 · cache-write 0 · out 30 · .* 2 turns")
+
+
+class Dedupe(Base):
+    def test_one_response_written_five_times_counts_once(self):
+        self.write_record(TASKS + self.mark())
+        recs = [response("m1", "2026-11-03T10:01:0%d.000Z" % k, usage(2, 100, 50, 10 * (k + 1))) for k in range(5)]
+        recs.append(response("m2", "2026-11-03T10:05:00.000Z", usage(1, 10, 5, 7)))
+        self.transcript(recs)
+        self.assertEqual(self.stop()[0], 0)
+        # the last record of m1 (out 50) and m2: 2 responses, not 6 records
+        self.assertIn("in 3 · cache-read 110 · cache-write 55 · out 57 · ", self.line())
+        self.assertIn(" 2 turns", self.line())
+
+    def test_the_last_record_wins_even_if_it_has_fewer_tokens(self):
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(9, 9, 9, 99)),
+                         response("m1", "2026-11-03T10:01:01.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", self.line())
+
+
+class SubAgents(Base):
+    def test_separate_and_not_added_to_main(self):
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.subagent([response("s1", "2026-11-03T10:02:00.000Z", usage(1, 20, 30, 40))], "agent-a1")
+        self.subagent([response("s2", "2026-11-03T09:00:00.000Z", usage(500, 500, 500, 500))], "agent-a2")  # before the mark
+        self.assertEqual(self.stop()[0], 0)
+        line = self.line()
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · sub-agents 91 · ", line)  # 1+20+30+40
+        self.assertIn(" 1 turns", line)
+
+    def test_no_subagents_folder_means_zero(self):  # guard: the first implementation already writes 0
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn("sub-agents 0 · ", self.line())
+
+
+class Models(Base):
+    def test_each_distinct_model_listed_synthetic_and_invalid_ignored(self):
+        self.write_record(TASKS + self.mark())
+        self.transcript([
+            response("m1", "2026-11-03T10:01:00.000Z", usage(1, 0, 0, 1), model="claude-opus-5-5"),
+            response("m2", "2026-11-03T10:02:00.000Z", usage(1, 0, 0, 1), model="claude-haiku-5-5"),
+            response("m3", "2026-11-03T10:03:00.000Z", usage(1, 0, 0, 1), model="claude-opus-5-5"),
+            response("m4", "2026-11-03T10:04:00.000Z", usage(900, 0, 0, 900), model="<synthetic>"),
+            response("m5", "2026-11-03T10:05:00.000Z", usage(1, 0, 0, 1), model="bad model!"),
+        ])
+        self.assertEqual(self.stop()[0], 0)
+        line = self.line()
+        self.assertTrue(line.endswith(" · model claude-opus-5-5, claude-haiku-5-5"), line)
+        self.assertIn("in 4 · ", line)  # the synthetic response counts for nothing
+        self.assertIn(" 4 turns", line)
+
+    def test_turns_count_main_responses_only(self):  # guard: sub-agent files are not read yet, so this already holds
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 0, 0, 1)),
+                         response("m2", "2026-11-03T10:02:00.000Z", usage(1, 0, 0, 1))])
+        self.subagent([response("s1", "2026-11-03T10:02:30.000Z", usage(1, 0, 0, 1))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn(" 2 turns", self.line())
+
+
+class Windows(Base):
+    def test_half_open_and_straddling_response_counted_once(self):
+        self.write_record(TASKS + self.mark())
+        self.transcript([
+            response("before", "2026-11-03T09:59:59.999Z", usage(100, 0, 0, 100)),                    # before the mark
+            response("at-start", START, usage(1, 0, 0, 1)),                                           # exactly at the mark: in
+            response("straddle-start", "2026-11-03T09:59:59.000Z", usage(50, 0, 0, 50)),             # first record before ...
+            response("straddle-start", "2026-11-03T10:00:01.000Z", usage(2, 0, 0, 2)),               # ... last record inside: in, once
+            response("inside", "2026-11-03T10:10:00.000Z", usage(4, 0, 0, 4)),
+            response("at-stop", STOP, usage(1000, 0, 0, 1000)),                                       # exactly at the stop: out
+            response("straddle-stop", "2026-11-03T10:23:07.000Z", usage(300, 0, 0, 300)),            # first inside ...
+            response("straddle-stop", "2026-11-03T10:23:08.000Z", usage(300, 0, 0, 300)),            # ... last after: out
+        ])
+        self.assertEqual(self.stop()[0], 0)
+        line = self.line()
+        self.assertIn("in 7 · cache-read 0 · cache-write 0 · out 7 · ", line)  # 1 + 2 + 4
+        self.assertIn(" 3 turns", line)
+
+    def test_non_assistant_records_without_timestamps_are_ignored(self):  # guard
+        self.write_record(TASKS + self.mark())
+        self.transcript([{"type": "api-request", "message": "x"}, {"type": "last-prompt"},
+                         {"type": "user", "timestamp": "2026-11-03T10:01:00.000Z", "message": {"role": "user"}},
+                         response("m1", "2026-11-03T10:02:00.000Z", usage(1, 0, 0, 1))])
+        self.assertEqual(self.stop()[0], 0)
+        self.assertIn(" 1 turns", self.line())
+
+
+class RealFixture(Base):
+    """SC-009: a recorded real run (reduced to ids, timestamps, models and usage) against the CLI's own result."""
+    DIR = os.path.join(ROOT, "tests", "fixtures", "usage", "real-run")
+
+    def test_matches_the_cli_result(self):
+        with open(os.path.join(self.DIR, "expected.json")) as f:
+            exp = json.load(f)
+        sid = exp["session"]
+        d = os.path.join(self.cfg, "projects", "-proj")
+        os.makedirs(os.path.join(d, sid, "subagents"))
+        for src, dst in (("main.jsonl", os.path.join(d, sid + ".jsonl")),
+                         ("agent-afa034c1c95177076.jsonl", os.path.join(d, sid, "subagents", "agent-afa034c1c95177076.jsonl"))):
+            with open(os.path.join(self.DIR, src), "rb") as f, open(dst, "wb") as o:
+                o.write(f.read())
+        self.write_record(TASKS + self.mark(ts=exp["window"]["start"], sid=sid))
+        code, out, err = self.stop(at=exp["window"]["stop"])
+        self.assertEqual(code, 0, out + err)
+        r, m = exp["result_usage"], exp["model_usage"]
+        line = self.line()
+        main_part = "in %s · cache-read %s · cache-write %s · out %s · " % (
+            "{:,}".format(r["input_tokens"]), "{:,}".format(r["cache_read_input_tokens"]),
+            "{:,}".format(r["cache_creation_input_tokens"]), "{:,}".format(r["output_tokens"]))
+        self.assertIn(main_part, line)  # the four main fields equal result.usage exactly
+        everything = m["inputTokens"] + m["cacheReadInputTokens"] + m["cacheCreationInputTokens"] + m["outputTokens"]
+        main_total = sum(r.values())
+        self.assertIn("sub-agents {:,} · ".format(everything - main_total), line)  # main + sub-agents = modelUsage
+        self.assertIn(" 3 turns", line)
 
 
 if __name__ == "__main__":

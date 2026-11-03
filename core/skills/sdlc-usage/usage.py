@@ -97,9 +97,12 @@ def transcript_for(session):
     return hits[0] if hits else None
 
 
-def read_main(path, start, end):
-    """Sum the counted assistant records of one transcript inside [start, end)."""
-    total, turns, models = dict.fromkeys(FIELDS, 0), 0, []
+MODEL_RE = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+
+
+def read_responses(path):
+    """The last assistant record per message id in one transcript: [(timestamp, usage dict, model)], oldest first."""
+    kept = {}
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
@@ -110,15 +113,35 @@ def read_main(path, start, end):
             if rec.get("type") != "assistant" or not isinstance(msg, dict) or not isinstance(msg.get("usage"), dict):
                 continue
             ts = parse_ts(rec.get("timestamp"))
-            if ts is None or not (start <= ts < end):
-                continue
-            for k in FIELDS:
-                total[k] += msg["usage"][k]
-            turns += 1
-            model = msg.get("model")
-            if isinstance(model, str) and model not in models:
-                models.append(model)
-    return total, turns, models
+            if ts is not None:
+                kept[msg.get("id")] = (ts, msg["usage"], msg.get("model"))
+    return sorted(kept.values(), key=lambda r: r[0])
+
+
+def in_window(responses, start, end):
+    return [r for r in responses if start <= r[0] < end and r[2] != "<synthetic>"]
+
+
+def read_main(path, start, end):
+    """Sum the counted responses of one transcript inside [start, end): (totals, turns, models)."""
+    total, models = dict.fromkeys(FIELDS, 0), []
+    rows = in_window(read_responses(path), start, end)
+    for _, u, model in rows:
+        for k in FIELDS:
+            total[k] += u[k]
+        if isinstance(model, str) and MODEL_RE.match(model) and model not in models:
+            models.append(model)
+    return total, len(rows), models
+
+
+def read_subagents(main_path, session, start, end):
+    """Sum of the four token fields over the sub-agent transcripts of the session inside the window."""
+    folder = os.path.join(os.path.dirname(main_path), session, "subagents")
+    total = 0
+    for f in sorted(glob.glob(os.path.join(folder, "agent-*.jsonl"))):
+        for _, u, _ in in_window(read_responses(f), start, end):
+            total += sum(u[k] for k in FIELDS)
+    return total
 
 
 def n(value):
@@ -159,11 +182,12 @@ def cmd(args):
         begin = parse_ts(marks[-1].group(1))
         path = transcript_for(marks[-1].group(2))
         total, turns, models = read_main(path, begin, stop)
+        subs = read_subagents(path, marks[-1].group(2), begin, stop)
         minutes = (int((stop - begin).total_seconds()) + 30) // 60
         wall = "%d min wall" % minutes if (stop - begin).total_seconds() >= 30 else "<1 min wall"
-        line = "- usage %s: in %s · cache-read %s · cache-write %s · out %s · sub-agents 0 · %s · %s turns · model %s" % (
+        line = "- usage %s: in %s · cache-read %s · cache-write %s · out %s · sub-agents %s · %s · %s turns · model %s" % (
             args.unit, n(total["input_tokens"]), n(total["cache_read_input_tokens"]),
-            n(total["cache_creation_input_tokens"]), n(total["output_tokens"]), wall, n(turns), ", ".join(models))
+            n(total["cache_creation_input_tokens"]), n(total["output_tokens"]), n(subs), wall, n(turns), ", ".join(models))
         out = insert(text, args.section, [line, "<!-- usage-stop %s %s -->" % (args.unit, fmt_ts(stop))])
     with open(record, "w", encoding="utf-8", newline="") as f:
         f.write(out)

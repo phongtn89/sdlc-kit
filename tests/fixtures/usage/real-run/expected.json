@@ -1,0 +1,7 @@
+{
+  "provenance": "claude -p with two Read calls and one Agent (sub-agent) call, Claude Code on 2026-11-03, model claude-opus-5-5; the figures are the result event's own (ADR-0002). Transcripts reduced to ids, timestamps, models and usage.",
+  "session": "0b8b2d7f-d1c8-4d58-86d4-eb8b0ad184f6",
+  "result_usage": {"input_tokens": 6, "cache_read_input_tokens": 103919, "cache_creation_input_tokens": 17271, "output_tokens": 573},
+  "model_usage": {"inputTokens": 12, "cacheReadInputTokens": 169358, "cacheCreationInputTokens": 52629, "outputTokens": 1347, "thinkingTokens": 66},
+  "window": {"start": "2026-11-03T07:44:00.000Z", "stop": "2026-11-03T07:45:00.000Z"}
+}

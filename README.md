@@ -15,20 +15,21 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 | | |
 |---|---|
 | Version | **0.5.0** (see `VERSION`) |
-| State | Usable. Last checked 2026-11-03 on `main` after the spec 002 merge: `sdlc lint` is clean and 152 tests pass. Install, check and uninstall are verified on a fresh repo. |
+| State | Usable. Last checked 2026-11-03 on branch `feat/003-usage-metrics`: `sdlc lint` is clean and 217 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code and GitHub Copilot (Copilot is rendered but not eval-tested) |
 | Requirements | Python 3.9+, stdlib only, no network |
-| Evidence | Behaviour evals in `evals/` (one fresh `claude -p` per prompt via `evals/run.py`). Results are in `evals/results/`: n = 1 per arm, Sonnet 5.5 only |
-| Experimental | The opt-in `dense` module (spec 002, `find` instead of read) is built and independently reviewed, but its shop6 paired evaluation hasn't run. Don't enable it for real work until it passes. Spec 001's v1 was rejected (tag `exp/dense-v1`). Spec 003 (opt-in token and time usage per task, bug and finding) is a draft; its technique is being chosen |
+| Evidence | Behaviour evals in `evals/` (one fresh `claude -p` per prompt via `evals/run.py`). Results are in `evals/results/`: n = 1 per arm, Sonnet 5.5 only. Usage metrics have a live check on real sessions, `evals/results/usage-live-check.md` |
+| Experimental | The opt-in `dense` module (spec 002, `find` instead of read) is built and independently reviewed, but its shop6 paired evaluation hasn't run. Don't enable it for real work until it passes. Spec 001's v1 was rejected (tag `exp/dense-v1`). |
 
 ## Capabilities
 
 - **One source, many tools.** Skills, roles, principles, checklists and templates are rendered per tool, with a lockfile (`.sdlc/lock.json`) and drift detection.
 - **Scale-adaptive process.** A router (`/sdlc`) investigates, then picks track T0–T4, so a typo gets no spec and a feature gets the full chain with a human approval gate.
-- **17 core skills** across the lifecycle: setup, context, grill, specify, clarify, plan, tasks, analyze, implement, TDD, debug, review, converge, ship, handoff, retro, plus the router. Each has Rationalizations, Red flags and required Verification evidence.
+- **18 core skills** across the lifecycle: setup, context, grill, specify, clarify, plan, tasks, analyze, implement, TDD, debug, review, converge, ship, handoff, retro, usage, plus the router. Each has Rationalizations, Red flags and required Verification evidence.
 - **5 subagent roles** with per-role model routing (`adapters/models.json`, overridable per project).
 - **Workspace mode.** Install once over a folder of repos, map them with `sdlc discover` and `/sdlc-context`, and work in each repo under its own rules.
 - **Optional modules.** `qa` adds test-case planning and automation skills. `dense` (experimental, unevaluated) adds a one-command lookup, `dap.py find`, over a source-pointed index of the workspace documents. A module can add rules to the always-loaded instructions.
+- **Usage metrics (opt-in).** One switch in `.sdlc/config.json` records the tokens and wall time of each task, bug and fixed review finding, read from the Claude Code session transcript. See [Usage metrics](#usage-metrics-opt-in).
 - **Self-checking kit.** `sdlc lint` enforces skill structure, valid `.sdlc/` references, and an unnamed-prompt eval for every skill the constitution names.
 - **Safe updates.** `update` skips files edited locally; project rules live in `.sdlc/config.json`, never in kit-owned files.
 
@@ -123,9 +124,38 @@ Start with **`/sdlc <task>`**. It looks at the code, picks a track and opens the
 | T3 Feature | Contract, data model, security, more than one seam | specify → clarify → plan → tasks → analyze → **approval** → implement → converge → review → ship |
 | T4 Initiative | Several features, teams or repos | grill → PRD → ADRs → T3 per feature |
 
-Skills: `sdlc`, `sdlc-setup`, `sdlc-context`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`. A module may also ship a `rules.md`, rendered into the instructions under "Module rules" (`adapters/RENDERING.md`).
+Skills: `sdlc`, `sdlc-setup`, `sdlc-context`, `sdlc-grill`, `sdlc-specify`, `sdlc-clarify`, `sdlc-plan`, `sdlc-tasks`, `sdlc-analyze`, `sdlc-implement`, `sdlc-tdd`, `sdlc-debug`, `sdlc-review`, `sdlc-converge`, `sdlc-ship`, `sdlc-handoff`, `sdlc-retro`, `sdlc-usage`. The QA module adds `sdlc-qa-plan` and `sdlc-qa-automate`. A module may also ship a `rules.md`, rendered into the instructions under "Module rules" (`adapters/RENDERING.md`).
 
 Roles (subagents): `sdlc-explorer`, `sdlc-planner`, `sdlc-implementer`, `sdlc-reviewer`, `sdlc-security-reviewer`. The model for each role is set in `adapters/models.json` and can be overridden per project in `config.json` → `models`.
+
+## Usage metrics (opt-in)
+
+Off by default. To record what a task, a bug or a fixed review finding cost, add this to `.sdlc/config.json`:
+
+```json
+{ "usage": { "enabled": true } }
+```
+
+Only the JSON value `true` turns it on. Then `sdlc-implement` (tasks and review findings) and `sdlc-debug` (bugs) run two commands around each unit, from the project root:
+
+```bash
+python3 .claude/skills/sdlc-usage/usage.py start <unit> --record <file> [--section <heading>]
+python3 .claude/skills/sdlc-usage/usage.py stop  <unit> --record <file> [--section <heading>]
+```
+
+`start` writes a hidden mark with the time and the session id. `stop` reads the session transcript (and the sub-agent transcripts) and adds one line to the record that owns the unit: the feature's `tasks.md` Progress log for a task or a finding (`review1-F3`), and a `## Usage` section of the bug record for a bug.
+
+```text
+- usage T012: in 1,502 · cache-read 2,103,441 · cache-write 40,118 · out 18,004 · sub-agents 612,300 · 23 min wall · 41 turns · model claude-opus-5-5
+```
+
+- **Exact, not rounded.** Figures are the four token fields separately, sub-agents as one figure, wall time (clock time, including waiting for you), turns, and the models used. No cost.
+- **`not available (<reason>)`, never 0.** If a transcript is missing or its shape is unexpected, the field says so and why. Copilot leaves no transcript, so it reports `not available (no transcript on this target)`.
+- **Private and offline.** The script reads only ids, timestamps, model names and usage counters; it copies no message text, opens no network connection and starts no process.
+- **Measured.** On recorded and live Claude Code runs the figures equal the CLI's own totals to the token, sub-agents included (`evals/results/usage-live-check.md`, `tests/fixtures/usage/real-run/`).
+- **Limits.** The transcript format is documented by Claude Code as internal: re-run the UR1 check in `evals/scenarios.md` after a major version change. Wall time includes idle time. `claude --resume` keeps the session id, so one window spans the runs; a new session id adds a mark. Run one unit at a time: overlapping units are flagged `OVERLAP`. Fixes to `sdlc-analyze` findings are not measured.
+
+Design and evidence: [spec 003](specs/003-usage-metrics/spec.md), [ADR-0002](docs/adr/0002-usage-metric-technique.md).
 
 ## Develop the kit
 

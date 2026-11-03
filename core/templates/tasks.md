@@ -49,6 +49,6 @@ Acceptance:
 
 ## Progress log
 
-<!-- One line per session: date, revision, tasks done, evidence, next task. -->
+<!-- One line per session: date, revision, tasks done, evidence, next task. With usage metrics on (`usage.enabled` in `.sdlc/config.json`), `sdlc-usage` also adds hidden `usage-start` and `usage-stop` comments and a `- usage <task id>: …` bullet per task here. Do not edit them. -->
 
 - YYYY-MM-DD `rev` — T00x done (`command` exit 0); next: T00y

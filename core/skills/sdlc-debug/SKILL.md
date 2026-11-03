@@ -22,12 +22,12 @@ user-invocable: true
 ## Process
 
 1. **Restate the symptom**: what is expected versus what actually happens, where (environment, revision) and since when. Note what you don't know.
-2. **Reproduce.** Get the smallest reliable reproduction: a failing test, a script, or an exact request with its response. If you can't reproduce it, collect more evidence (logs, traces, inputs) and say so. Don't fix it blind.
+2. **Reproduce.** First, only if `usage.enabled` is `true` in `.sdlc/config.json`: create the bug record `<spec_dir>/bugs/<slug>.md` from `.sdlc/templates/bug.md` if it does not exist (even for an obvious bug), then run `python3 .claude/skills/sdlc-usage/usage.py start <slug> --record <spec_dir>/bugs/<slug>.md --section "Usage"` (`.github/skills/...` when that is the only path). Then get the smallest reliable reproduction: a failing test, a script, or an exact request with its response. If you can't reproduce it, collect more evidence (logs, traces, inputs) and say so. Don't fix it blind.
 3. **Localize.** Narrow it with evidence, not by reading everything: bisect (`git bisect` or by input), add temporary instrumentation, compare a good input with a bad one. Delegate wide searches to `sdlc-explorer`.
 4. **Find the root cause.** Ask why until you reach a cause you can change. State it in one sentence, with `path:line` and the evidence that proves it (a log line, the test output, a value). Separate verified from inferred.
 5. **RED**: turn the reproduction into a regression test at the right seam (see `sdlc-tdd`). It must fail for the bug's reason.
 6. **Make the smallest fix at the cause.** Don't widen catches, add retries, or disable checks to hide a deterministic failure. Remove temporary instrumentation.
-7. **GREEN**: the regression test passes, the nearby tests pass, and the original reproduction now behaves correctly on the real surface.
+7. **GREEN**: the regression test passes, the nearby tests pass, and the original reproduction now behaves correctly on the real surface. Then, if `usage.enabled` is `true`, run `python3 .claude/skills/sdlc-usage/usage.py stop <slug> --record <spec_dir>/bugs/<slug>.md --section "Usage"` and quote the line it adds in the report.
 8. **Check siblings.** Search for the same pattern elsewhere. Fix them in scope if they're trivial; otherwise list them as follow-ups.
 9. **Report**: the symptom, the root cause (one sentence plus evidence), the fix, the test, the commands with results, and the siblings found. Then `sdlc-review`.
 

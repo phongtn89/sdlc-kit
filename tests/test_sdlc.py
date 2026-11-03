@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -435,6 +436,204 @@ class DenseModule(Base):
         self.assertEqual(code, 0, out)
         self.assertTrue(self.exists(".github/%s/dap.py" % self.SKILL))
         self.assertIn(".github/skills/sdlc-dense-index/dap.py", self.read(".github/copilot-instructions.md"))
+
+
+class UsageSkill(Base):
+    """Spec 003: the sdlc-usage skill and the skills that call it, rendered from the real kit."""
+    SKILL = "skills/sdlc-usage"
+    SID = "0b8b2d7f-d1c8-4d58-86d4-eb8b0ad184f6"
+    # The files an install of the kit at `main` fc77daa (before spec 003) wrote, except .sdlc/lock.json.
+    MAIN_PATHS = {
+        ".claude/agents/sdlc-explorer.md",
+        ".claude/agents/sdlc-implementer.md",
+        ".claude/agents/sdlc-planner.md",
+        ".claude/agents/sdlc-reviewer.md",
+        ".claude/agents/sdlc-security-reviewer.md",
+        ".claude/skills/sdlc-analyze/SKILL.md",
+        ".claude/skills/sdlc-clarify/SKILL.md",
+        ".claude/skills/sdlc-context/SKILL.md",
+        ".claude/skills/sdlc-converge/SKILL.md",
+        ".claude/skills/sdlc-debug/SKILL.md",
+        ".claude/skills/sdlc-grill/SKILL.md",
+        ".claude/skills/sdlc-handoff/SKILL.md",
+        ".claude/skills/sdlc-implement/SKILL.md",
+        ".claude/skills/sdlc-plan/SKILL.md",
+        ".claude/skills/sdlc-retro/SKILL.md",
+        ".claude/skills/sdlc-review/SKILL.md",
+        ".claude/skills/sdlc-review/references/review-method.md",
+        ".claude/skills/sdlc-setup/SKILL.md",
+        ".claude/skills/sdlc-ship/SKILL.md",
+        ".claude/skills/sdlc-specify/SKILL.md",
+        ".claude/skills/sdlc-tasks/SKILL.md",
+        ".claude/skills/sdlc-tdd/SKILL.md",
+        ".claude/skills/sdlc/SKILL.md",
+        ".github/agents/sdlc-explorer.agent.md",
+        ".github/agents/sdlc-implementer.agent.md",
+        ".github/agents/sdlc-planner.agent.md",
+        ".github/agents/sdlc-reviewer.agent.md",
+        ".github/agents/sdlc-security-reviewer.agent.md",
+        ".github/copilot-instructions.md",
+        ".sdlc/checklists/accessibility.md",
+        ".sdlc/checklists/compatibility-migration.md",
+        ".sdlc/checklists/definition-of-done.md",
+        ".sdlc/checklists/observability.md",
+        ".sdlc/checklists/performance.md",
+        ".sdlc/checklists/requirements-quality.md",
+        ".sdlc/checklists/security.md",
+        ".sdlc/config.json",
+        ".sdlc/constitution.md",
+        ".sdlc/principles/agree-before-building.md",
+        ".sdlc/principles/depth-follows-risk.md",
+        ".sdlc/principles/encode-lessons.md",
+        ".sdlc/principles/evidence-over-claims.md",
+        ".sdlc/principles/fail-safe-keep-work.md",
+        ".sdlc/principles/guard-context.md",
+        ".sdlc/principles/prove-it-works.md",
+        ".sdlc/principles/root-causes.md",
+        ".sdlc/principles/subtract-before-adding.md",
+        ".sdlc/principles/thin-vertical-slices.md",
+        ".sdlc/templates/adr.md",
+        ".sdlc/templates/bug.md",
+        ".sdlc/templates/context.md",
+        ".sdlc/templates/handoff.md",
+        ".sdlc/templates/mini-spec.md",
+        ".sdlc/templates/plan.md",
+        ".sdlc/templates/pr.md",
+        ".sdlc/templates/prd.md",
+        ".sdlc/templates/review-report.md",
+        ".sdlc/templates/spec.md",
+        ".sdlc/templates/tasks.md",
+        ".sdlc/templates/workspace.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+    }
+
+    def enable(self):
+        self.write(".sdlc/config.json", json.dumps({"usage": {"enabled": True}}))
+
+    def run_script(self, script, *args):
+        env = {"PATH": os.environ.get("PATH", ""), "HOME": self.d, "CLAUDE_CONFIG_DIR": self.p("claude-cfg"),
+               "CLAUDE_CODE_SESSION_ID": self.SID}
+        p = subprocess.run([sys.executable, "-B", self.p(script)] + list(args), capture_output=True, text=True,
+                           timeout=20, cwd=self.d, env=env, stdin=subprocess.DEVNULL)
+        return p.returncode, p.stdout + p.stderr
+
+    def flow(self, script):
+        """start, a tiny transcript, stop: the line must carry the transcript's figures."""
+        self.write("specs/001-x/tasks.md", "# Tasks\n\n## Progress log\n\n")
+        code, out = self.run_script(script, "start", "T001", "--record", "specs/001-x/tasks.md")
+        self.assertEqual(code, 0, out)
+        mark = re.search(r"usage-start T001 (\S+) session=", self.read("specs/001-x/tasks.md")).group(1)
+        year = int(mark[:4]) + 1  # a response one year after the mark, and a stop two years after it
+        rec = {"type": "assistant", "timestamp": "%d%s" % (year, mark[4:]),
+               "message": {"id": "m1", "model": "claude-opus-5-5",
+                           "usage": {"input_tokens": 5, "cache_read_input_tokens": 7, "cache_creation_input_tokens": 11,
+                                     "output_tokens": 13}}}
+        self.write("claude-cfg/projects/-p/%s.jsonl" % self.SID, json.dumps(rec) + "\n")
+        code, out = self.run_script(script, "stop", "T001", "--record", "specs/001-x/tasks.md",
+                                    "--at", "%d%s" % (year + 1, mark[4:]))
+        self.assertEqual(code, 0, out)
+        self.assertRegex(self.read("specs/001-x/tasks.md"),
+                         r"- usage T001: in 5 · cache-read 7 · cache-write 11 · out 13 · sub-agents 0 · .* wall · 1 turns")
+
+    def installed_paths(self):
+        out = set()
+        for dp, _, files in os.walk(self.d):
+            for f in files:
+                out.add(os.path.relpath(os.path.join(dp, f), self.d).replace(os.sep, "/"))
+        return out - {".sdlc/lock.json"}
+
+    def test_install_adds_only_the_expected_paths(self):
+        code, out, _ = run("install", self.d, kit=ROOT)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.installed_paths(), UsageSkill.MAIN_PATHS | {".claude/skills/sdlc-usage/SKILL.md",
+                                                                          ".claude/skills/sdlc-usage/usage.py"})
+        default = json.loads(open(os.path.join(ROOT, "adapters", "config.default.json")).read())
+        self.assertEqual(json.loads(self.read(".sdlc/config.json")), default)
+        self.assertNotIn("usage", default)
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
+        self.enable()  # FR-018: lint and drift stay green with the switch on
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
+        self.assertEqual(run("lint", kit=ROOT)[0], 0)
+
+    def test_reinstall_is_idempotent_and_check_is_ok(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        before = {p: open(self.p(p), "rb").read() for p in self.installed_paths()}
+        code, out, _ = run("install", self.d, kit=ROOT)
+        self.assertEqual(code, 0, out)
+        self.assertEqual({p: open(self.p(p), "rb").read() for p in self.installed_paths()}, before)
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
+
+    def test_install_ships_the_skill_and_script(self):
+        code, out, _ = run("install", self.d, kit=ROOT)
+        self.assertEqual(code, 0, out)
+        for f in ("SKILL.md", "usage.py"):
+            self.assertTrue(self.exists(".claude/%s/%s" % (self.SKILL, f)), f)
+        self.assertIn("**sdlc-usage**", managed_block(self.read("AGENTS.md")))
+        self.assertFalse(self.exists(".claude/%s/__pycache__" % self.SKILL))
+        self.assertEqual(run("check", self.d, kit=ROOT)[1].strip(), "ok")
+        copilot = os.path.join(self._tmp.name, "copilot-only")
+        os.makedirs(copilot)
+        self.assertEqual(run("install", copilot, "--targets", "copilot", kit=ROOT)[0], 0)
+        self.assertTrue(os.path.isfile(os.path.join(copilot, ".github", self.SKILL, "usage.py")))
+
+    def test_installed_script_runs(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        self.enable()
+        self.flow(".claude/%s/usage.py" % self.SKILL)
+
+    def test_installed_script_runs_for_a_copilot_only_install(self):
+        self.assertEqual(run("install", self.d, "--targets", "copilot", kit=ROOT)[0], 0)
+        self.enable()
+        self.flow(".github/%s/usage.py" % self.SKILL)
+
+    def test_bug_template_has_a_usage_section(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        self.assertEqual(self.read(".sdlc/templates/bug.md").count("\n## Usage\n"), 1)
+
+    def test_debug_names_the_exact_commands_and_the_bug_record(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        text = self.read(".claude/skills/sdlc-debug/SKILL.md")
+        for needle in ("usage.py start <slug> --record", "usage.py stop <slug> --record", '--section "Usage"',
+                       "usage.enabled", "bugs/<slug>.md", "create the bug record"):
+            self.assertIn(needle, text)
+
+    def test_implement_names_the_exact_commands_for_a_finding(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        text = self.read(".claude/skills/sdlc-implement/SKILL.md")
+        for needle in ("review finding", "<pass>-<finding id>", "review1-F3", "one-line text", "Progress log"):
+            self.assertIn(needle, text)
+
+    def test_every_skill_that_asks_names_the_command(self):  # guard for sdlc-implement, already covered by the task step
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        for name in ("sdlc-implement", "sdlc-debug"):
+            for line in self.read(".claude/skills/%s/SKILL.md" % name).split("\n"):
+                if "usage.py" in line:
+                    self.assertRegex(line, r"usage\.py (start|stop) ", (name, line))
+                    self.assertIn("--record", line, (name, line))
+
+    def test_implement_runs_start_and_stop_for_a_task(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        text = self.read(".claude/skills/sdlc-implement/SKILL.md")
+        for needle in ("usage.py start", "usage.py stop", "--record", "usage.enabled", "one after another"):
+            self.assertIn(needle, text)
+
+
+class EvalRows(unittest.TestCase):
+    def rows(self):
+        with open(os.path.join(ROOT, "evals", "scenarios.md"), encoding="utf-8") as f:
+            return {l.split("|")[1].strip(): l for l in f.read().split("\n") if l.startswith("| ") and l.count("|") >= 4}
+
+    def test_u1_u2_u3_and_ur1_exist_and_name_neither_skill_nor_script(self):
+        rows = self.rows()
+        for key in ("U1", "U2", "U3", "UR1"):
+            self.assertIn(key, rows)
+        for key in ("U1", "U2", "U3"):
+            prompt = rows[key].split("|")[2]
+            self.assertNotIn("sdlc-usage", prompt, key)
+            self.assertNotIn("usage.py", prompt, key)
+            self.assertNotIn("usage", prompt.lower().replace("usage metrics", ""), key)
 
 
 class CheckUpdateTests(Base):

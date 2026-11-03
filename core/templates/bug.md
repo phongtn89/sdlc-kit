@@ -42,3 +42,7 @@ Track: T1 · Status: open <!-- open | fixed | won't fix --> · Reported: [YYYY-M
 <!-- Where else the same cause could exist, how you searched, and what you found. -->
 
 - Search: `[command]` → [result]
+
+## Usage
+
+<!-- Written by `sdlc-usage` when `.sdlc/config.json` has `usage.enabled` true (hidden start and stop marks and one usage line). Leave it empty otherwise. Do not edit the marks. -->

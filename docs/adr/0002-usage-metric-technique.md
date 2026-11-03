@@ -55,3 +55,7 @@ We will measure a unit by reading the Claude Code session transcripts (the main 
 | One fresh headless session per unit (`claude -p`, read `result.usage`) | Exact and documented, but only for work the kit itself launches. Interactive and desktop sessions, which are the normal case, are not covered |
 | Status line totals | Session-level, and the token totals are context size, not billing |
 | Proxy, gateway, observability platform | Need a server or account and store content; fail the kit's constraints |
+
+## Note (2026-11-03, after implementation)
+
+The Decision above is unchanged. Two facts changed since it was written. Spec 003 now flags overlapping units on the line (`OVERLAP`) instead of excluding them (FR-021). The live check (`evals/results/usage-live-check.md`) ran the resume and multi-model legs against `claude -p`: `--resume` keeps the session id, and the figures matched independent computations exactly.

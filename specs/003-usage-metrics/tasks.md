@@ -79,7 +79,7 @@ Acceptance: `Units` and the `UsageSkill` text tests pass; three eval rows exist.
 - [x] T020 Live check, hand-run (needs an authenticated `claude` CLI and network; run by the owner or with their go-ahead). Steps: (1) in a headless run with `--allowed-tools 'Bash(echo:*)'`, print `$CLAUDE_CODE_SESSION_ID` and note whether it is set; (2) install the kit in a scratch repo with the switch on and run U1, U2, U3 through `evals/run.py --allowed-tools 'Read,Edit,Write,Grep,Glob,Agent,Bash(python3 .claude/skills/sdlc-usage/usage.py:*),Bash(python3 -m unittest:*),Bash(git status:*),Bash(git diff:*)'`; (3) one `claude -p` run with a sub-agent and, in it, start and stop around the whole task, asserting that `<session>/subagents/` exists on disk for that run (a moved folder would read as zero); (4) a resume leg (`--resume`) for one unit; (5) if a model switch mid-session is available, one multi-model unit, else record the limit. Compare each usage line with that run's own `result` (`usage`, `modelUsage`); the line may differ only by responses before the start mark and after the stop, which are listed from the transcript. Record the Claude Code version and the outcome — files: `evals/results/usage-live-check.md` — verify: main fields ≤ the CLI's, and the difference is exactly the listed outside-window responses; the agent ran the commands unprompted in U1, U2 and U3; step 1 recorded — blocked-by: T008, T018, T019, H3
 - [x] T021 Update docs: `README.md` (Status, Capabilities, a "Usage metrics" paragraph with the switch key and the command names; a note on re-running the SC-009 check when Claude Code's major version changes) on re-running the SC-009 check when Claude Code's major version changes — the spec's `Approved` line is set when H1 is given and `Status: implemented` by `sdlc-ship`, not here — files: `README.md` — verify: `python3 bin/sdlc lint` ok; the README paragraph matches the contract (switch key, command names, section names) — blocked-by: T020
 - [x] T022 Run full gates and record outcomes — verify: `python3 -m unittest discover -s tests -t .` passes; `python3 bin/sdlc lint` ok; `git diff --stat main -- bin adapters/config.default.json` prints nothing — blocked-by: T021
-- [ ] T023 Converge: spec, plan, tasks and code agree (`sdlc-converge`) — files: `specs/003-usage-metrics/tasks.md` (Convergence section) — verify: no open gap, or each gap is a new task — blocked-by: T022
+- [x] T023 Converge: spec, plan, tasks and code agree (`sdlc-converge`) — files: `specs/003-usage-metrics/tasks.md` (Convergence section) — verify: no open gap, or each gap is a new task — blocked-by: T022
 - [ ] T024 Independent review (`sdlc-review`) by a fresh read-only agent; verdict recorded, including the reviewed revision. The review report is written by the reviewer and is not edited — files: `specs/003-usage-metrics/review.md` — verify: first line exactly `VERDICT: APPROVED` — blocked-by: T023
 
 ## Blocked / human-only
@@ -108,6 +108,31 @@ Acceptance: `Units` and the `UsageSkill` text tests pass; three eval rows exist.
 | SC-009 | T007, T008, T020 |
 | SC-008 (reported) | after the first feature built with the switch on (retro) |
 
+## Convergence (2026-11-03, a861dd5)
+
+Compared `core/skills/sdlc-usage/`, the edited skills and templates, `tests/test_usage.py`, `tests/test_sdlc.py` (`UsageSkill`, `EvalRows`) and `evals/` with the spec, plan and contract. Method: each FR, NFR and SC mapped to a test or an observed run; a dead-code scan of `usage.py` (every function is used; 323 of 389 lines are code, so the plan's 300-line reassessment point is exceeded by real behaviour, not padding).
+
+| Item | Result | Evidence |
+|---|---|---|
+| FR-001, FR-002, FR-015, SC-004 (opt-in; off writes and reads nothing; install differs only by the new skill and the edited texts) | met | `SwitchOff` (8 non-`true` forms), `UsageSkill.test_install_adds_only_the_expected_paths` (62 files of `main` plus 2), `test_reinstall_is_idempotent…` |
+| FR-003, FR-004, FR-005, FR-006, SC-001, SC-007 (units, homes, one format, named commands) | met | `UsageSkill` text tests, `Units`, `EvalRows`; live U1, U2, U3 each wrote one line from an unnamed prompt |
+| FR-007, FR-008, FR-016, FR-017, FR-021, FR-022 (marks, resume, abandoned, idempotence, overlap, closed) | met | `Resume`, `RecordFile`, `NotAvailable`; live resume and fork legs |
+| FR-009–FR-011, FR-019, SC-002 (fields, sub-agents, wall, de-duplication, exact figures) | met | `Dedupe`, `SubAgents`, `Models`, `Windows`; live legs equal an independent computation exactly |
+| FR-012, FR-013, FR-020, SC-003 (not available, never a false zero) | met | `NotAvailable` (rows 1–6, PARTIAL, real zero, no-zero scan) |
+| FR-014, NFR-001, NFR-003, SC-005 (no content, local only) | met | `Privacy` (sentinel in message, tool input, tool output, sub-agent file); read set in the contract |
+| NFR-002, SC-006 (offline, non-interactive) | met | `Privacy.test_runs_with_sockets_and_processes_unavailable`; `stdin=DEVNULL` in every test run |
+| NFR-004 (containment) | met | `Privacy.test_record_must_stay_inside_the_project`, charset tests, `Tracer.test_unit_id_charset` |
+| FR-018 (lint and drift green, switch on and off) | met | `test_install_adds_only_the_expected_paths` (check ok after enabling), gates T022 |
+| SC-009 | met | `RealFixture` (pinned run) and the live check |
+| SC-008 | open by design | reported at the retro of the first feature built with the switch on |
+
+Drift and notes (none needs a new task):
+1. **U2 (live): the agent ran the first reproduction before `start`**, so that response is outside the window. A possible `sdlc-debug` change (start as step 1) is a follow-up for the retro, not a spec gap.
+2. ADR-0002's Consequences say "spec 003 already excludes overlap"; FR-021 now flags it. A dated note was added to the ADR (its Decision is unchanged).
+3. `--resume` keeps the session id (found live), so a resumed unit in one session id uses `already started`; documented in the README and the eval results.
+4. `test_a_stop_run_later_reuses_the_stored_stop_time` was folded into T009's open-line test.
+5. Spec `Status: implemented` is set by `sdlc-ship`, not here.
+
 ## Progress log
 
 - 2026-11-03 `77f4f98` (branch `feat/003-usage-metrics`, merged with `main` at `fc77daa`) — plan, contract and tasks drafted after ADR-0002 was accepted; baseline 152 tests OK, lint ok; next: `sdlc-analyze`, then H1
@@ -124,3 +149,4 @@ Acceptance: `Units` and the `UsageSkill` text tests pass; three eval rows exist.
 - 2026-11-03 `a629b4d`+ — T019 done. The pinned path list is the real install of `main` at `fc77daa` (62 files; the installed kit adds exactly `.claude/skills/sdlc-usage/SKILL.md` and `usage.py`); `test_install_adds_only_the_expected_paths` (also: `config.json` equals the default and has no `usage` key; `check` is `ok` with the switch off and on; lint ok) and `test_reinstall_is_idempotent_and_check_is_ok` pass at once, as guards. Full suite 217 OK, lint ok. T001–T019 are done. T020 (the live check) waits for H3: it needs the owner's go-ahead to run real `claude` sessions. T021–T024 follow it
 - 2026-11-03 `5b08af9`+ — H3 given by phong.ngo.vn in chat ("Run live check"); T020 done: `evals/results/usage-live-check.md`. Claude Code 2.1.316: `CLAUDE_CODE_SESSION_ID` is set in a headless run and equals the session id. U1 and U3 pass; U2 is partial (the agent ran the reproduction once before `start`: the line is a lower bound by that step, a possible `sdlc-debug` change recorded as a follow-up); the sub-agent leg, the resume (same session id), forked two-session and multi-model legs all match independent computations exactly, and the whole-session transcript equals the CLI's `result.usage` to the token. Findings: `--resume` keeps the session id (so `already started` applies); `echo "$VAR"` is refused by the permission layer, `printenv` works. Cost about $2 to $3. Next: T021 docs
 - 2026-11-03 `85481df`+ — T021–T022 done. T021: README (Status rows, 18 core skills, a Usage-metrics capability and a "Usage metrics (opt-in)" section with the switch, the command names, the line format, the section names, privacy, the measured evidence and the limits including that `--resume` keeps the session id); `adapters/RENDERING.md` is not changed (it already says skill folders copy any sibling files). T022 gates: `python3 -m unittest discover -s tests -t .` 217 OK; `python3 bin/sdlc lint` ok; `git diff --stat main -- bin adapters/config.default.json` prints nothing; no `__pycache__` under `core/`, `modules/` or `tests/`. Next: T023 converge, T024 review
+- 2026-11-03 `a861dd5` — T023 done: Convergence section written; no open gap. Next: T024, the independent review

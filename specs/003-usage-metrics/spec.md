@@ -16,7 +16,7 @@ Track: T3
 
 **Who:** Maintainers and teams who run sdlc tracks and want to see what a task, a bug or a finding fix cost in tokens and time, and the owners of later retro views.
 
-**Why now:** The Claude target already writes the numbers locally: every model turn in the session transcript carries token usage and every event a timestamp, and sub-agents write their own transcripts (decision record, Context). Spec 002's 19 build tasks are the next sizeable piece of work, and measuring them needs this first. Nothing needs to be built on a service; a switch and one script with the core skills are enough.
+**Why now:** The Claude target already writes the numbers locally: every model turn in the session transcript carries token usage and every event a timestamp, and sub-agents write their own transcripts (decision record, Context). The order in the decision record (decision 7: build this spec first, then implement spec 002, so that its build tasks are measured) was not kept: spec 002 was implemented and merged first, on the user's instruction of 2026-11-03. What this spec can still measure is spec 002's evaluation tasks and every feature built after it. Nothing needs to be built on a service; a switch and one script with the core skills are enough.
 
 ## Out of scope
 
@@ -33,10 +33,10 @@ Track: T3
 
 - **Resolved unit**: the thing a usage line describes. One of: a **task** (a task in a feature's task list), a **bug** (an investigated bug, closed by `sdlc-debug`), a **finding** (a review or analyze finding that was fixed). New.
 - **Owning record**: the document that already owns a unit: the task list's progress log for a task, the bug record for a bug, the fix note for a finding. New.
-- **Fix note**: the line in the owning record that says a finding was fixed and how. The kit has no such record yet for findings (a review report row holds the correction, `core/templates/review-report.md:25`; analyze reports in chat only, `core/skills/sdlc-analyze/SKILL.md:37`), so this spec requires the line and leaves its exact home to the plan. New.
+- **Finding fix**: the work of fixing one review or analyze finding. Its unit id is `<pass>-<finding id>` (for example `review1-F3`, `analyze2-A5`), stable across passes. Its owning record is the Progress log of its feature's `tasks.md`; the independent review report stays untouched. Fixes are applied by `sdlc-implement`. New.
 - **Start mark**: a record in the owning record of the time and the session ID at which work on a unit began or resumed. New.
 - **Segment**: the span from one start mark to the next stop, or to the end of that session; a unit has one segment per session it was worked in. New.
-- **Usage line**: the single line, in one shared format, that gives a unit's figures. New.
+- **Usage line**: the line, in one shared format, that gives a unit's figures. It is a bullet of its own in the owning record, written by the stop command. A figure is `0` only when the source was read and held nothing for it, and `not available (<reason>)` otherwise. New.
 - **Usage switch**: the one setting in `.sdlc/config.json` that turns the feature on. New.
 - **Wall time**: elapsed clock time from the start mark to the stop, summed over segments, including time spent waiting for the user. It is not compute time and the line says "wall". New.
 - **Sub-agent usage**: the token usage of sub-agents that ran inside a segment, reported apart from the main session. New.
@@ -51,7 +51,7 @@ As a maintainer with usage metrics on, I want each task's tokens and time to be 
 **Independent test:** In a test repo with the switch on and a recorded Claude transcript fixture, run the start command for a task, then the stop command, and read the task's progress-log line. Compare each figure with the sum computed independently from the fixture.
 
 1. **Given** the switch is on, **When** `sdlc-implement` begins a task, **Then** it runs the named start command, and the progress log holds a start mark with the time and session ID.
-2. **Given** a task with a start mark, **When** the task is ticked and the named stop command runs, **Then** the task's progress-log line carries a usage line with the four token fields (uncached input, cache-read, cache-write, output), sub-agent usage, wall time, turns and model.
+2. **Given** a task with a start mark, **When** the task is ticked and the named stop command runs, **Then** the progress log holds a usage line for the task (a bullet of its own) with the four token fields (uncached input, cache-read, cache-write, output), sub-agent usage, wall time, turns and model.
 3. **Given** a task worked over two sessions (start, handoff, resume), **When** the resumed work begins, **Then** a new start mark is written for the new session, and the stop adds the two segments together into one usage line.
 4. **Given** sub-agents ran inside a segment, **When** the stop command runs, **Then** their usage appears as a separate "sub-agents" figure and is not added to the main-session token fields.
 
@@ -101,29 +101,32 @@ As a user of the kit, I want the figures taken without anything I wrote or the a
 - **FR-001**: The feature MUST be opt-in, controlled by one usage switch in `.sdlc/config.json`, off when the setting is absent. (S3)
 - **FR-002**: With the switch off or absent, no skill MUST ask for a start mark or a stop, nothing MUST write a usage line or mark, and installed files and behaviour MUST be identical to a kit without the feature, apart from the files the feature ships as part of core. (S3)
 - **FR-003**: With the switch on, the skills that resolve a unit (`sdlc-implement` for a task, `sdlc-debug` for a bug, and the skill that applies a review or analyze finding's fix) MUST record usage for that unit. (S1, S4)
-- **FR-004**: A usage line MUST be written in the owning record of the unit: a task in its task list's progress-log line, a bug in its bug record when `sdlc-debug` closes it, a finding in its fix note. There MUST be no central log. (S1, S4)
+- **FR-004**: A usage line MUST be written in the owning record of the unit: a task and a finding in the Progress log of their feature's `tasks.md`, a bug in a `## Usage` section of its bug record. There MUST be no central log. (S1, S4)
 - **FR-005**: All three units MUST use one shared usage-line format. (S1, S4)
 - **FR-006**: Recording MUST be a named start command run at the start of the unit, and a named stop command run at its end. The skill text MUST give each command's exact name and arguments; a prose rule without a named command MUST NOT be the means of recording (spec 001 retro lesson L1, `specs/001-dense-agent-protocol/retro.md:27`). (S1, S4)
 - **FR-007**: The start command MUST write a start mark holding the time and the session ID into the owning record. (S1)
 - **FR-008**: When a unit is resumed in another session, the start command MUST write a new start mark for that session, and the stop command MUST add up every segment of the unit. (S1)
 - **FR-009**: The usage line MUST show, as separate fields: uncached input tokens, cache-read tokens, cache-write tokens, output tokens, sub-agent usage, wall time labelled "wall", turns, and model. It MUST NOT show a cost and MUST NOT merge the token fields into one total. (S1)
 - **FR-010**: Sub-agent usage MUST be found from the sub-agents' own transcripts (`<session-id>/subagents/agent-<id>.jsonl`) by matching their timestamps to the segment, and MUST be reported apart from the main session's token fields. (S1)
-- **FR-019**: The script MUST count each model response once: a transcript writes one response as several records, so records MUST be de-duplicated by `message.id`, keeping the last one, before summing (ADR-0002: a naive sum overcounted output by 43% and cache writes by 80% on a measured run). (S1)
-- **FR-020**: When a transcript record lacks the expected usage fields, the script MUST report the affected figures as "not available" with the reason "unexpected transcript format" and MUST NOT guess. (S2)
 - **FR-011**: Wall time MUST be the clock time from start mark to stop, summed over segments, and MUST be labelled "wall" in the line. (S1)
-- **FR-012**: A figure that cannot be found MUST be written as "not available" with a reason, and MUST NOT be written as 0. This includes the whole line on a target with no comparable transcript (today Copilot), a missing transcript, and a missing start mark. (S2)
+- **FR-012**: A figure that cannot be found MUST be written as "not available" with a reason, and MUST NOT be written as 0. This includes the whole line on a target with no comparable transcript (today Copilot), a missing transcript, and a missing start mark. (S2) A figure is written as `0` only when the source was read and held nothing for it: a segment with no sub-agent transcript files has `sub-agents 0`, and uncached input can be 0. Whether a source was read is stated by the contract, not guessed. (S2)
 - **FR-013**: When some segments of a unit are found and others are not, the line MUST give the figures found, name each missing segment with its reason, and mark the totals as partial. (S2)
-- **FR-014**: The script that reads the figures MUST read only usage numbers, timestamps, the model name and the turn count from a transcript. It MUST NOT read, copy or write message content, tool input or tool output. (S5)
+- **FR-014**: The script MUST NOT copy, print, write or keep message content, tool input or tool output. It parses each transcript record only to take usage numbers, timestamps, the model name, the message id and the type, and drops the record. (S5)
 - **FR-015**: The usage switch, the script and the skill changes MUST ship as core: the switch is read from `.sdlc/config.json`, and the script is installed with the core skills, not as a module. (S3)
 - **FR-016**: With the switch on, a unit that is abandoned (a start mark but no stop) MUST leave only its start mark; the stop command MUST NOT be needed to keep the record valid. (S4)
 - **FR-017**: The start and stop commands MUST be safe to run twice for the same unit state: a second stop on an already-closed unit MUST NOT change its usage line, and a second start in the same session for a unit with an open start mark MUST NOT add a duplicate mark. (S1)
 - **FR-018**: The kit's lint and drift checks MUST keep passing with the feature installed, with the switch on and off. (S3)
+- **FR-019**: The script MUST count each model response once: a transcript writes one response as several records, so records MUST be de-duplicated by `message.id`, keeping the last one, before summing (ADR-0002: a naive sum overcounted output by 43% and cache writes by 80% on a measured run). The last record's timestamp places the response in a window. (S1)
+- **FR-020**: When a transcript record lacks the expected fields (`message.id`, a parseable timestamp, or the four usage counters as integers), or when no response falls in a window, the script MUST report the affected figures as "not available" with the reason "unexpected transcript format" and MUST NOT guess or write 0. An unparsable last line is skipped (the file may be mid-write); any other unparsable line makes the figures of the segment that holds it "unexpected transcript format". (S2)
+- **FR-021**: When another unit has a start mark in the same session inside a unit's window, the unit's line MUST end with `· OVERLAP: <unit>`, because the figures then include the other unit's work. With the switch on, `sdlc-implement` MUST run `[P]` tasks one after another. (S1)
+- **FR-022**: A unit is **closed** when its usage line holds at least one figure. A `stop` on a closed unit MUST NOT change anything. A line that is only `not available` does not close the unit: the next `stop` replaces it. A unit is matched by its exact id within its section (`T01` never matches `T012`). Rework after a stop is measured as a new unit id (for example `T012-r2`). (S1)
 
 ## Non-functional
 
 - **NFR-001** (privacy): The script MUST NOT write, log or print any transcript content, and MUST send nothing anywhere: no network access, no upload. The only things it stores are the figures and marks in the owning records. Yes/no, tested with a sentinel in a fixture transcript and a run with network access blocked. (S5)
 - **NFR-002** (offline, non-interactive): Start and stop MUST run offline and without prompts, so an unattended agent session can run them. Yes/no, tested with no network and no terminal input. (S1, S3)
-- **NFR-003** (data kept local): The only source read is the session transcripts under the user's own home directory, found from the session ID the running session exposes; the kit MUST NOT copy those transcripts. (S5)
+- **NFR-003** (data kept local): The only source read is the session transcripts under `$CLAUDE_CONFIG_DIR` or the user's `~/.claude`, found from the session ID the running session exposes; the kit MUST NOT copy those transcripts. (S5)
+- **NFR-004** (containment): The record to write MUST resolve inside the project root (no `..`, no symlink out); the unit id MUST use letters, digits, `-`, `_` and `.` only; a session ID MUST be hex digits and `-` before it is used to find a file. Anything else exits with a usage error and writes nothing. (S5)
 - Performance, availability and accessibility: not applicable (a one-shot local command per unit; no runtime service or UI).
 
 ## Success criteria
@@ -132,24 +135,24 @@ No criterion is a measured threshold, so no value gate is needed for the plan (`
 
 - **SC-001**: With the switch on, 100% of closed units in the test run (task, bug and finding) carry a usage line in the shared format. Measured by running the skills' recording steps on fixtures and counting lines.
 - **SC-002**: Every token, sub-agent, turn and wall-time figure in a usage line equals the value computed independently from the fixture transcripts, for single-segment, multi-segment and sub-agent fixtures, including a fixture with duplicated records for one response. Exact match, measured by test.
-- **SC-009**: On a recorded real `claude -p` run with a sub-agent, the four token fields of the usage line equal the CLI's own `result` figures (`usage` for the main session, `modelUsage` for all). Exact match, checked against a pinned fixture; re-checked when Claude Code's major version changes (ADR-0002).
+- **SC-009**: On a recorded real `claude -p` run with a sub-agent, with a window that spans the whole run, the four main-session token fields equal the CLI's `result.usage`, and the usage line's main fields plus its sub-agent figure equal the sum of `modelUsage` over the four fields. Exact match against a pinned fixture; re-checked when Claude Code's major version changes (ADR-0002).
 - **SC-003**: In 100% of no-data fixtures (no transcript, Copilot target, missing start mark, partial segments) the line says "not available" with a reason, and no figure is written as 0. Measured by test.
 - **SC-004**: With the switch off or absent, the files of an install equal those of a kit without the feature, except the files shipped by this feature, and no skill run produces a mark or a usage line. Measured by the kit's drift check and a run of each skill. (As spec 002 SC-006.)
 - **SC-005**: A sentinel string in a fixture transcript appears in 0 outputs and 0 written records after a stop. Measured by search after the run.
 - **SC-006**: Start and stop complete with no network and no input in 100% of test runs. Measured by running the tests with network access blocked and standard input closed.
-- **SC-007**: In 100% of skill texts that ask for a mark or a stop, the exact command is named (no prose-only rule). Measured by an unnamed-prompt evaluation row per skill, following retro lesson L1, plus a read of the skill text.
-- **SC-008** (reported, not a gate): once spec 002's build tasks are run with the switch on, the share of its tasks that carry a usage line. Reported at that build's retro, so a skipped step can be told apart from a missing figure.
+- **SC-007**: In 100% of skill texts that ask for a mark or a stop (`sdlc-implement`, `sdlc-debug`), the exact command is named (no prose-only rule). Measured by a read of the skill text, and by an unnamed-prompt evaluation row per use (a task, a bug, a finding), following retro lesson L1.
+- **SC-008** (reported, not a gate): once a feature is built with the switch on (spec 002's evaluation tasks, or the next feature), the share of its tasks that carry a usage line. Reported at that feature's retro, so a skipped step can be told apart from a missing figure.
 
 ## Assumptions & dependencies
 
 - Technique: chosen in [ADR-0002](../../docs/adr/0002-usage-metric-technique.md) (2026-11-03) after comparing transcript parsing, hooks and native OpenTelemetry on a measured run: transcripts de-duplicated by `message.id`, between start and stop marks; hooks and OpenTelemetry not required.
 - Assumption: the Claude target exposes the session ID to the running session as `CLAUDE_CODE_SESSION_ID` (set in a measured desktop session, but not listed in the env-var docs; hooks and the status line document `session_id`, so the plan must say what the start command does when the variable is absent), and writes the transcript to `~/.claude/projects/<encoded folder>/<session-id>.jsonl` with usage on every model turn and a timestamp on every event; sub-agents write `<session-id>/subagents/agent-<id>.jsonl` (verified 2026-10-30, decision record Context). If the layout changes, the figures become "not available", never wrong; the plan should add a fixture-based check so a change is noticed.
 - Assumption: the Copilot target has no comparable transcript, so every usage line there is "not available".
-- Assumption: units are worked one at a time within a session. Overlapping open units in one session would double count; this is not supported and is not detected.
-- Assumption: "turns" counts the model turns that carry usage in the segment, main session only; sub-agent turns are not added to it.
+- Assumption: units are worked one at a time within a session. Overlap is detected and flagged (FR-021), not separated.
+- Assumption: "turns" counts the distinct main-session model responses with usage in the window; sub-agent responses are not added to it.
 - Assumption: when a unit's segments used more than one model, the line lists each distinct model rather than one.
 - Assumption: wall time includes time waiting for the user (decision record, Defaults); the label "wall" tells the reader.
-- Assumption: a fixed finding's fix note exists as a line in the record that applies the fix (the review report's finding row or the analyze fix's owning document); the plan decides the home and the line's exact position, and the three units' lines share one format wherever they sit.
+- Assumption: finding fixes run through `sdlc-implement`, and analyze and review findings are numbered per pass, so the unit id carries the pass (`review1-F3`).
 - Dependency: the kit's config reader for `.sdlc/config.json`, which already reads `spec_dir` (`bin/sdlc:511-512`).
 - Dependency: the kit's install and drift check, to show the switch-off install is unchanged (SC-004).
 - Dependency: spec 002's analyze findings are fixed before this spec is planned (decision 7); no content dependency on spec 002.

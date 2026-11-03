@@ -494,11 +494,52 @@ class UsageSkill(Base):
         self.enable()
         self.flow(".github/%s/usage.py" % self.SKILL)
 
+    def test_bug_template_has_a_usage_section(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        self.assertEqual(self.read(".sdlc/templates/bug.md").count("\n## Usage\n"), 1)
+
+    def test_debug_names_the_exact_commands_and_the_bug_record(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        text = self.read(".claude/skills/sdlc-debug/SKILL.md")
+        for needle in ("usage.py start <slug> --record", "usage.py stop <slug> --record", '--section "Usage"',
+                       "usage.enabled", "bugs/<slug>.md", "create the bug record"):
+            self.assertIn(needle, text)
+
+    def test_implement_names_the_exact_commands_for_a_finding(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        text = self.read(".claude/skills/sdlc-implement/SKILL.md")
+        for needle in ("review finding", "<pass>-<finding id>", "review1-F3", "one-line text", "Progress log"):
+            self.assertIn(needle, text)
+
+    def test_every_skill_that_asks_names_the_command(self):  # guard for sdlc-implement, already covered by the task step
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        for name in ("sdlc-implement", "sdlc-debug"):
+            for line in self.read(".claude/skills/%s/SKILL.md" % name).split("\n"):
+                if "usage.py" in line:
+                    self.assertRegex(line, r"usage\.py (start|stop) ", (name, line))
+                    self.assertIn("--record", line, (name, line))
+
     def test_implement_runs_start_and_stop_for_a_task(self):
         self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
         text = self.read(".claude/skills/sdlc-implement/SKILL.md")
         for needle in ("usage.py start", "usage.py stop", "--record", "usage.enabled", "one after another"):
             self.assertIn(needle, text)
+
+
+class EvalRows(unittest.TestCase):
+    def rows(self):
+        with open(os.path.join(ROOT, "evals", "scenarios.md"), encoding="utf-8") as f:
+            return {l.split("|")[1].strip(): l for l in f.read().split("\n") if l.startswith("| ") and l.count("|") >= 4}
+
+    def test_u1_u2_u3_and_ur1_exist_and_name_neither_skill_nor_script(self):
+        rows = self.rows()
+        for key in ("U1", "U2", "U3", "UR1"):
+            self.assertIn(key, rows)
+        for key in ("U1", "U2", "U3"):
+            prompt = rows[key].split("|")[2]
+            self.assertNotIn("sdlc-usage", prompt, key)
+            self.assertNotIn("usage.py", prompt, key)
+            self.assertNotIn("usage", prompt.lower().replace("usage metrics", ""), key)
 
 
 class CheckUpdateTests(Base):

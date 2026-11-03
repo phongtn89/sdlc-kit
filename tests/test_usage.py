@@ -659,5 +659,31 @@ class Privacy(Base):
         self.assertIn("tokens not available (session id unknown)", self.line())
 
 
+class Units(Base):
+    def test_bug_record_usage_section(self):  # guard: the script is section-generic
+        rel = "specs/bugs/wrong-500.md"
+        os.makedirs(os.path.dirname(self.rec_path(rel)))
+        self.write_record("# Bug: wrong 500\n\n## Fix\n\nsmall\n\n## Usage\n\n", rel=rel)
+        code, out, err = self.run_usage("start", "wrong-500", "--record", rel, "--section", "Usage")
+        self.assertEqual(code, 0, out + err)
+        text = self.read_record(rel)
+        self.assertGreater(text.index("<!-- usage-start wrong-500 "), text.index("## Usage"))  # inside the Usage section
+        # a fixed mark time, so the fixture transcript falls in the window
+        text = re.sub(r"(usage-start wrong-500 )\S+", r"\g<1>" + START, text)
+        self.write_record(text, rel=rel)
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        code, out, err = self.run_usage("stop", "wrong-500", "--record", rel, "--section", "Usage", "--at", STOP)
+        self.assertEqual(code, 0, out + err)
+        text = self.read_record(rel)
+        self.assertIn("- usage wrong-500: in 1 · cache-read 2 · cache-write 3 · out 4 · ", text[text.index("## Usage"):])
+        self.assertNotIn("usage", text[:text.index("## Usage")].replace("## Usage", "").lower().replace("small", ""))
+
+    def test_finding_unit_in_the_progress_log(self):  # guard
+        self.write_record(TASKS + self.mark("review1-F3"))
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop("review1-F3")[0], 0)
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", self.line("review1-F3"))
+
+
 if __name__ == "__main__":
     unittest.main()

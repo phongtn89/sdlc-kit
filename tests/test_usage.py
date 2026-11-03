@@ -426,5 +426,160 @@ class SwitchOff(Base):
         self.assertEqual(self.read_record(), before)
 
 
+SID_B = "1c9d8e7f-1111-4222-8333-444455556666"
+
+
+class Resume(Base):
+    def two_sessions(self, a_last="2026-11-03T10:40:00.000Z", stop="2026-11-03T11:30:00.000Z"):
+        self.write_record(TASKS + self.mark(ts="2026-11-03T10:00:00.000Z") + self.mark(ts="2026-11-03T11:00:00.000Z", sid=SID_B))
+        self.transcript([response("a1", "2026-11-03T10:05:00.000Z", usage(1, 10, 100, 1000), model="claude-opus-5-5"),
+                         response("a2", a_last, usage(2, 20, 200, 2000), model="claude-opus-5-5")], sid=SID)
+        self.transcript([response("b1", "2026-11-03T11:05:00.000Z", usage(4, 40, 400, 4000), model="claude-haiku-5-5"),
+                         response("b2", "2026-11-03T11:20:00.000Z", usage(8, 80, 800, 8000), model="claude-haiku-5-5")],
+                        sid=SID_B)
+        return self.stop(at=stop)
+
+    def test_two_sessions_add_up(self):
+        code, out, err = self.two_sessions()
+        self.assertEqual(code, 0, out + err)
+        line = self.line()
+        self.assertIn("in 15 · cache-read 150 · cache-write 1,500 · out 15,000 · sub-agents 0 · ", line)
+        self.assertIn(" · 70 min wall · 4 turns · model claude-opus-5-5, claude-haiku-5-5", line)  # 40 min + 30 min
+        self.assertNotIn("PARTIAL", line)
+
+    def test_earlier_segment_end_is_last_timestamp_plus_1ms_and_next_mark_bound(self):
+        # a response exactly at the earlier session's last timestamp is counted
+        self.two_sessions(a_last="2026-11-03T10:40:00.000Z")
+        self.assertIn("in 15 · ", self.line())
+        # a record exactly at the next mark's time is not; one just before it is
+        self.write_record(TASKS + self.mark(ts="2026-11-03T10:00:00.000Z") + self.mark(ts="2026-11-03T10:45:00.000Z", sid=SID_B))
+        self.transcript([response("a1", "2026-11-03T10:44:59.999Z", usage(1, 0, 0, 1)),
+                         response("a2", "2026-11-03T10:45:00.000Z", usage(10, 0, 0, 10)),
+                         response("a3", "2026-11-03T10:50:00.000Z", usage(100, 0, 0, 100))], sid=SID)
+        self.transcript([response("b1", "2026-11-03T10:46:00.000Z", usage(1000, 0, 0, 1000))], sid=SID_B)
+        self.assertEqual(self.stop(at="2026-11-03T11:00:00.000Z")[0], 0)
+        self.assertIn("in 1,001 · cache-read 0 · cache-write 0 · out 1,001 · ", self.line())
+
+    def test_end_is_never_before_start(self):
+        self.write_record(TASKS + self.mark(ts="2026-11-03T10:30:00.000Z") + self.mark(ts="2026-11-03T11:00:00.000Z", sid=SID_B))
+        self.transcript([response("a1", "2026-11-03T10:00:00.000Z", usage(9, 9, 9, 9))], sid=SID)  # before its own mark
+        self.transcript([response("b1", "2026-11-03T11:05:00.000Z", usage(1, 2, 3, 4))], sid=SID_B)
+        self.assertEqual(self.stop(at="2026-11-03T11:30:00.000Z")[0], 0)
+        line = self.line()
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", line)
+        self.assertIn("PARTIAL: segment 1 (session %s): no response in window" % SID, line)
+        self.assertIn(" 30 min wall", line)  # the empty segment adds no time
+
+    def test_segment_with_missing_transcript_is_partial(self):
+        self.write_record(TASKS + self.mark(ts="2026-11-03T10:00:00.000Z") + self.mark(ts="2026-11-03T11:00:00.000Z", sid=SID_B))
+        self.transcript([response("b1", "2026-11-03T11:05:00.000Z", usage(1, 2, 3, 4))], sid=SID_B)  # session A has none
+        self.assertEqual(self.stop(at="2026-11-03T11:30:00.000Z")[0], 0)
+        line = self.line()
+        self.assertIn("in 1 · cache-read 2 · cache-write 3 · out 4 · ", line)
+        self.assertIn("PARTIAL: segment 1 (session %s): transcript not found" % SID, line)
+        self.assertIn(" 90 min wall", line)  # the missing segment still has its wall time: it ends at the next mark
+
+    def test_two_segments_rounded_once_half_up(self):
+        def run_case(b_stop):
+            self.write_record(TASKS + self.mark(ts="2026-11-03T10:00:00.000Z") + self.mark(ts="2026-11-03T11:00:00.000Z", sid=SID_B))
+            self.transcript([response("a1", "2026-11-03T10:00:14.399Z", usage(1, 0, 0, 1))], sid=SID)  # 14.4 s
+            self.transcript([response("b1", "2026-11-03T11:00:05.000Z", usage(1, 0, 0, 1))], sid=SID_B)
+            self.assertEqual(self.stop(at=b_stop)[0], 0)
+            return self.line()
+        self.assertIn(" · 1 min wall · ", run_case("2026-11-03T11:00:15.600Z"))   # 14.4 + 15.6 = 30.0 s: rounds up once
+        self.assertIn(" · <1 min wall · ", run_case("2026-11-03T11:00:15.500Z"))  # 29.9 s
+
+    def test_second_start_in_the_same_session_adds_no_mark(self):
+        self.assertEqual(self.start()[0], 0)
+        code, out, _ = self.start()
+        self.assertEqual((code, out.strip()), (0, "already started"))
+        self.assertEqual(self.read_record().count("<!-- usage-start T012"), 1)
+
+    def test_unknown_session_marks_never_match(self):  # guard: a plain append already writes one per start
+        for _ in range(2):
+            self.assertEqual(self.start(sid=None)[0], 0)
+        self.assertEqual(self.read_record().count("session=unknown"), 2)
+
+    def test_second_stop_changes_nothing(self):  # guard: the closed rule landed with the stored stop time
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop()[0], 0)
+        before = self.read_record()
+        code, out, _ = self.stop(at="2026-11-03T12:00:00.000Z")
+        self.assertEqual((code, out.strip()), (0, "already closed"))
+        self.assertEqual(self.read_record(), before)
+
+    def test_restart_of_a_closed_unit_is_refused_with_a_message(self):
+        self.write_record(TASKS + self.mark())
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop()[0], 0)
+        before = self.read_record()
+        code, out, _ = self.start()
+        self.assertEqual(code, 0)
+        self.assertIn("unit already closed", out)
+        self.assertEqual(self.read_record(), before)
+
+    def test_id_match_is_exact(self):  # guard
+        self.write_record(TASKS + self.mark("T01") + self.mark("T012"))
+        self.transcript([response("m1", "2026-11-03T10:01:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop("T01")[0], 0)
+        code, out, _ = self.stop("T012")
+        self.assertEqual(code, 0)
+        self.assertNotIn("already closed", out)
+        self.assertEqual((len(self.lines_for("T01")), len(self.lines_for("T012"))), (1, 1))
+
+    def test_unit_never_stopped_leaves_only_its_mark(self):  # guard
+        self.assertEqual(self.start()[0], 0)
+        self.assertEqual(self.lines_for(), [])
+
+    def test_overlap_is_flagged(self):
+        self.write_record(TASKS + self.mark("T012", ts="2026-11-03T10:00:00.000Z") + self.mark("T013", ts="2026-11-03T10:10:00.000Z"))
+        self.transcript([response("m1", "2026-11-03T10:11:00.000Z", usage(1, 2, 3, 4))])
+        self.assertEqual(self.stop("T012", at="2026-11-03T10:20:00.000Z")[0], 0)
+        self.assertTrue(self.line("T012").endswith(" · OVERLAP: T013"), self.line("T012"))
+        self.assertEqual(self.stop("T013", at="2026-11-03T10:30:00.000Z")[0], 0)  # asymmetric: T012 began before T013's window
+        self.assertNotIn("OVERLAP", self.line("T013"))
+
+
+class RecordFile(Base):
+    def test_insertion_in_a_middle_section_keeps_the_rest_byte_for_byte(self):
+        text = "# T\n\n## Progress log\n\n- a log line\n\n## Other\n\nbody  \n\ttabbed\n"
+        self.write_record(text)
+        self.assertEqual(self.start()[0], 0)
+        after = self.read_record()
+        self.assertTrue(after.startswith("# T\n\n## Progress log\n\n- a log line\n<!-- usage-start T012 "), after)
+        self.assertTrue(after.endswith("\n\n## Other\n\nbody  \n\ttabbed\n"), after)
+
+    def test_mode_symlink_and_crlf_are_kept(self):
+        self.write_record("# T\r\n\r\n## Progress log\r\n\r\n- line\r\n")
+        os.chmod(self.rec_path(), 0o640)
+        self.assertEqual(self.start()[0], 0)
+        text = self.read_record()
+        self.assertNotRegex(text, r"(?<!\r)\n")  # every line ending is still CRLF
+        self.assertEqual(os.stat(self.rec_path()).st_mode & 0o777, 0o640)
+        real = os.path.join(self.proj, "specs", "001-x", "real-tasks.md")
+        os.rename(self.rec_path(), real)
+        os.symlink("real-tasks.md", self.rec_path())  # a symlink to a file inside the project
+        self.assertEqual(self.start("T013")[0], 0)
+        self.assertTrue(os.path.islink(self.rec_path()))
+        with open(real, newline="") as f:
+            self.assertIn("usage-start T013", f.read())
+
+    def test_a_failed_write_leaves_the_record_unchanged(self):
+        before = self.read_record()
+        folder = os.path.dirname(self.rec_path())
+        os.chmod(folder, 0o500)  # no new file can be created here
+        try:
+            code, out, err = self.start()
+        finally:
+            os.chmod(folder, 0o700)
+        self.assertEqual(code, 2, out + err)
+        self.assertEqual(self.read_record(), before)
+
+    def test_a_missing_record_file_is_exit_2(self):  # guard
+        code, out, err = self.run_usage("start", "T012", "--record", "specs/001-x/none.md")
+        self.assertEqual(code, 2, out + err)
+
+
 if __name__ == "__main__":
     unittest.main()

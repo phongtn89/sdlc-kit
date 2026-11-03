@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 
 UNIT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 SESSION_RE = re.compile(r"^[0-9A-Fa-f-]{8,64}$")
@@ -199,15 +200,52 @@ def wall_text(seconds):
     return "<1 min wall" if seconds < 30 else "%d min wall" % ((int(seconds) + 30) // 60)
 
 
-def replace_open_line(lines, unit, new_lines):
-    """Replace an existing open usage line (and the stop mark after it) in place; None when there is none."""
+def replace_open_line(text, unit, new_lines):
+    """Replace an existing usage line of the unit (and the stop mark after it) in place; None when there is none."""
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(True)
     for i, line in enumerate(lines):
         if line.startswith("- usage %s:" % unit):
             j = i + 1
             if j < len(lines) and lines[j].startswith("<!-- usage-stop %s " % unit):
                 j += 1
-            return lines[:i] + new_lines + lines[j:]
+            return "".join(lines[:i] + [l + nl for l in new_lines] + lines[j:])
     return None
+
+
+MARK_RE = re.compile(r"<!-- usage-start (\S+) (\S+) session=(\S+) -->$")
+SEG_ONE_MS = datetime.timedelta(milliseconds=1)
+
+
+def read_marks(body):
+    """[(unit, start datetime, session)] in file order; a session that is not hex digits and '-' is unknown."""
+    out = []
+    for line in body:
+        m = MARK_RE.match(line.rstrip("\r"))
+        ts = parse_ts(m.group(2)) if m else None
+        if m and ts:
+            out.append((m.group(1), ts, m.group(3) if SESSION_RE.match(m.group(3)) else "unknown"))
+    return out
+
+
+def last_assistant_ts(session):
+    path = transcript_for(session) if session != "unknown" else None
+    last = None
+    if path:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                ts = parse_ts(rec.get("timestamp")) if isinstance(rec, dict) and rec.get("type") == "assistant" else None
+                if ts and (last is None or ts > last):
+                    last = ts
+    return last
+
+
+def unit_marks(body, unit):
+    return [m for m in read_marks(body) if m[0] == unit]
 
 
 def do_stop(args, text, now):
@@ -217,24 +255,74 @@ def do_stop(args, text, now):
     if existing and CLOSED_RE.search(existing[-1]):
         print("already closed")
         return None
-    marks = [re.match(r"<!-- usage-start %s (\S+) session=(\S+) -->$" % re.escape(unit), l) for l in body]
-    marks = [m for m in marks if m]
+    marks = unit_marks(body, unit)
     if not marks:
-        new = ["- usage %s: not available (no start mark)" % unit]
-    else:
-        stored = next((parse_ts(m.group(1)) for m in
-                       (re.match(r"<!-- usage-stop %s (\S+) -->$" % re.escape(unit), l) for l in body) if m), None)
-        stop = parse_ts(args.at) if args.at else (stored or now)
-        if stop is None:
-            raise SystemExit("usage: --at needs a timestamp like 2026-11-03T10:23:07.456Z")
-        begin, session = parse_ts(marks[-1].group(1)), marks[-1].group(2)
-        wall = wall_text((stop - begin).total_seconds())
-        if session == "unknown" and not os.path.isdir(claude_base()):
-            new = ["- usage %s: not available (no transcript on this target)" % unit]
+        return ["- usage %s: not available (no start mark)" % unit]
+    stored = next((parse_ts(m.group(1)) for m in
+                   (re.match(r"<!-- usage-stop %s (\S+) -->$" % re.escape(unit), l.rstrip("\r")) for l in body) if m), None)
+    stop = parse_ts(args.at) if args.at else (stored or now)
+    if stop is None:
+        raise SystemExit("usage: --at needs a timestamp like 2026-11-03T10:23:07.456Z")
+    stop_mark = "<!-- usage-stop %s %s -->" % (unit, fmt_ts(stop))
+    if all(m[2] == "unknown" for m in marks) and not os.path.isdir(claude_base()):
+        return ["- usage %s: not available (no transcript on this target)" % unit, stop_mark]
+    segs, seconds = [], 0.0
+    for i, (_, begin, session) in enumerate(marks):
+        if i == len(marks) - 1:
+            end = stop
         else:
-            new = [usage_line(unit, segment(session, begin, stop), wall)]
-        new.append("<!-- usage-stop %s %s -->" % (unit, fmt_ts(stop)))
-    return new
+            last = last_assistant_ts(session)
+            end = marks[i + 1][1] if last is None else min(last + SEG_ONE_MS, marks[i + 1][1])
+        end = max(end, begin)
+        seconds += (end - begin).total_seconds()
+        segs.append((session, begin, end, segment(session, begin, end)))
+    oks = [x for x in segs if x[3][0] == "ok"]
+    if oks:
+        total = dict.fromkeys(FIELDS, 0)
+        turns, subs, models = 0, 0, []
+        for _, _, _, (_, t, k, ms, sb) in oks:
+            for f in FIELDS:
+                total[f] += t[f]
+            turns, subs = turns + k, subs + sb
+            models += [m for m in ms if m not in models]
+        figures = ("ok", total, turns, models, subs)
+    else:
+        figures = segs[-1][3]
+    line = usage_line(unit, figures, wall_text(seconds))
+    for k, (session, _, _, seg) in enumerate(segs, 1):
+        if seg[0] == "na" and (oks or k < len(segs)):
+            line += " · PARTIAL: segment %d (session %s): %s" % (k, session, seg[1])
+    others = []
+    for ou, ots, osess in read_marks(body):
+        if ou != unit and osess != "unknown" and any(
+                osess == session and begin <= ots < end for session, begin, end, _ in segs) and ou not in others:
+            others.append(ou)
+    if others:
+        line += " · OVERLAP: " + ", ".join(others)
+    return [line, stop_mark]
+
+
+def write_atomic(root, record, data):
+    """Write bytes to the record through a temporary file in its folder; the record keeps its mode and a symlink is
+    followed. Returns an error text, or None."""
+    target = os.path.realpath(record)
+    try:
+        mode = os.stat(target).st_mode & 0o7777
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), prefix=".usage-", suffix=".tmp")
+    except OSError as e:
+        return "could not write the record (%s)" % e.strerror
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except OSError as e:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        return "could not write the record (%s)" % e.strerror
+    return None
 
 
 def cmd(args):
@@ -249,23 +337,32 @@ def cmd(args):
     if not os.path.isfile(record):
         print("usage: record not found: %s" % args.record)
         return 2
-    with open(record, encoding="utf-8", newline="") as f:
-        text = f.read()
+    with open(record, "rb") as f:
+        text = f.read().decode("utf-8", "surrogateescape")
     now = datetime.datetime.now(UTC)
     if args.command == "start":
+        body = section_text(text, args.section)
+        existing = [l for l in body if l.startswith("- usage %s:" % args.unit)]
         session = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
         session = session if SESSION_RE.match(session) else "unknown"
+        if existing and CLOSED_RE.search(existing[-1]):
+            print("unit already closed (use a new id, for example %s-r2)" % args.unit)
+            return 0
+        if session != "unknown" and any(m[2] == session for m in unit_marks(body, args.unit)):
+            print("already started")
+            return 0
         out = insert(text, args.section, ["<!-- usage-start %s %s session=%s -->" % (args.unit, fmt_ts(now), session)])
     else:
         new = do_stop(args, text, now)
         if new is None:
             return 0
-        lines = text.split("\n")
-        replaced = replace_open_line(lines, args.unit, new)
-        out = "\n".join(replaced) if replaced is not None and any(
-            l.startswith("- usage %s:" % args.unit) for l in lines) else insert(text, args.section, new)
-    with open(record, "w", encoding="utf-8", newline="") as f:
-        f.write(out)
+        out = replace_open_line(text, args.unit, new)
+        if out is None:
+            out = insert(text, args.section, new)
+    err = write_atomic(root, record, out.encode("utf-8", "surrogateescape"))
+    if err:
+        print("usage: " + err)
+        return 2
     return 0
 
 

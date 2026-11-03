@@ -2,7 +2,7 @@
 
 Feature: usage-metrics
 Number: 003
-Status: approved <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
+Status: implemented <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
 Approved: phong.ngo.vn, 2026-11-03 (H1, in chat: plan, P4/P5, review-findings-only scope, decision-7 order departure) <!-- name, YYYY-MM-DD; filled when approved -->
 Owner: phong.ngo.vn
 Created: 2026-11-03

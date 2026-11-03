@@ -14,8 +14,8 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 
 | | |
 |---|---|
-| Version | **0.5.0** (see `VERSION`) |
-| State | Usable. Last checked 2026-11-03 on branch `feat/003-usage-metrics`: `sdlc lint` is clean and 217 tests pass. Install, check and uninstall are verified on a fresh repo. |
+| Version | **0.6.0** (see `VERSION`) |
+| State | Usable. Last checked 2026-11-03 on `main` after the spec 003 merge: `sdlc lint` is clean and 228 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code and GitHub Copilot (Copilot is rendered but not eval-tested) |
 | Requirements | Python 3.9+, stdlib only, no network |
 | Evidence | Behaviour evals in `evals/` (one fresh `claude -p` per prompt via `evals/run.py`). Results are in `evals/results/`: n = 1 per arm, Sonnet 5.5 only. Usage metrics have a live check on real sessions, `evals/results/usage-live-check.md` |

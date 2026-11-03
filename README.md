@@ -15,11 +15,11 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 | | |
 |---|---|
 | Version | **0.5.0** (see `VERSION`) |
-| State | Usable. Last checked 2026-11-03 on `main` at `d196ea7`: `sdlc lint` is clean and 75 tests pass. Install, check and uninstall are verified on a fresh repo. |
+| State | Usable. Last checked 2026-11-03 on `main` after the spec 002 merge: `sdlc lint` is clean and 152 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code and GitHub Copilot (Copilot is rendered but not eval-tested) |
 | Requirements | Python 3.9+, stdlib only, no network |
 | Evidence | Behaviour evals in `evals/` (one fresh `claude -p` per prompt via `evals/run.py`). Results are in `evals/results/`: n = 1 per arm, Sonnet 5.5 only |
-| Not in the kit | The experimental "dense index" module. Spec 001 failed its evaluation gate and was rejected; spec 002 (a `find` redesign) is still a draft, and spec 003 (opt-in token and time usage per task, bug and finding) is agreed but not yet written |
+| Experimental | The opt-in `dense` module (spec 002, `find` instead of read) is built and independently reviewed, but its shop6 paired evaluation hasn't run. Don't enable it for real work until it passes. Spec 001's v1 was rejected (tag `exp/dense-v1`). Spec 003 (opt-in token and time usage per task, bug and finding) is a draft; its technique is being chosen |
 
 ## Capabilities
 
@@ -28,7 +28,7 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 - **17 core skills** across the lifecycle: setup, context, grill, specify, clarify, plan, tasks, analyze, implement, TDD, debug, review, converge, ship, handoff, retro, plus the router. Each has Rationalizations, Red flags and required Verification evidence.
 - **5 subagent roles** with per-role model routing (`adapters/models.json`, overridable per project).
 - **Workspace mode.** Install once over a folder of repos, map them with `sdlc discover` and `/sdlc-context`, and work in each repo under its own rules.
-- **Optional modules.** `qa` adds test-case planning and automation skills. A module can add rules to the always-loaded instructions.
+- **Optional modules.** `qa` adds test-case planning and automation skills. `dense` (experimental, unevaluated) adds a one-command lookup, `dap.py find`, over a source-pointed index of the workspace documents. A module can add rules to the always-loaded instructions.
 - **Self-checking kit.** `sdlc lint` enforces skill structure, valid `.sdlc/` references, and an unnamed-prompt eval for every skill the constitution names.
 - **Safe updates.** `update` skips files edited locally; project rules live in `.sdlc/config.json`, never in kit-owned files.
 
@@ -48,7 +48,7 @@ Known limits when sharing: the repo has no `LICENSE` file yet (add one before sh
 python3 ~/Projects/sdlc-kit/bin/sdlc install /path/to/repo
 ```
 
-Options: `--targets claude,copilot` (default: both), `--modules qa`, `--force` (overwrite conflicting unmanaged files). It needs only Python 3.9+ and no network.
+Options: `--targets claude,copilot` (default: both), `--modules qa` (and the experimental `dense`), `--force` (overwrite conflicting unmanaged files). It needs only Python 3.9+ and no network.
 
 Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.json` with the real build and test commands.
 

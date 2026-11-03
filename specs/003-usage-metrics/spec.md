@@ -107,7 +107,9 @@ As a user of the kit, I want the figures taken without anything I wrote or the a
 - **FR-007**: The start command MUST write a start mark holding the time and the session ID into the owning record. (S1)
 - **FR-008**: When a unit is resumed in another session, the start command MUST write a new start mark for that session, and the stop command MUST add up every segment of the unit. (S1)
 - **FR-009**: The usage line MUST show, as separate fields: uncached input tokens, cache-read tokens, cache-write tokens, output tokens, sub-agent usage, wall time labelled "wall", turns, and model. It MUST NOT show a cost and MUST NOT merge the token fields into one total. (S1)
-- **FR-010**: Sub-agent usage MUST be found from the sub-agents' own transcripts by matching their timestamps to the segment, and MUST be reported apart from the main session's token fields. (S1)
+- **FR-010**: Sub-agent usage MUST be found from the sub-agents' own transcripts (`<session-id>/subagents/agent-<id>.jsonl`) by matching their timestamps to the segment, and MUST be reported apart from the main session's token fields. (S1)
+- **FR-019**: The script MUST count each model response once: a transcript writes one response as several records, so records MUST be de-duplicated by `message.id`, keeping the last one, before summing (ADR-0002: a naive sum overcounted output by 43% and cache writes by 80% on a measured run). (S1)
+- **FR-020**: When a transcript record lacks the expected usage fields, the script MUST report the affected figures as "not available" with the reason "unexpected transcript format" and MUST NOT guess. (S2)
 - **FR-011**: Wall time MUST be the clock time from start mark to stop, summed over segments, and MUST be labelled "wall" in the line. (S1)
 - **FR-012**: A figure that cannot be found MUST be written as "not available" with a reason, and MUST NOT be written as 0. This includes the whole line on a target with no comparable transcript (today Copilot), a missing transcript, and a missing start mark. (S2)
 - **FR-013**: When some segments of a unit are found and others are not, the line MUST give the figures found, name each missing segment with its reason, and mark the totals as partial. (S2)
@@ -129,7 +131,8 @@ As a user of the kit, I want the figures taken without anything I wrote or the a
 No criterion is a measured threshold, so no value gate is needed for the plan (`core/templates/plan.md:86` asks for one only when an SC is a measured threshold).
 
 - **SC-001**: With the switch on, 100% of closed units in the test run (task, bug and finding) carry a usage line in the shared format. Measured by running the skills' recording steps on fixtures and counting lines.
-- **SC-002**: Every token, sub-agent, turn and wall-time figure in a usage line equals the value computed independently from the fixture transcripts, for single-segment, multi-segment and sub-agent fixtures. Exact match, measured by test.
+- **SC-002**: Every token, sub-agent, turn and wall-time figure in a usage line equals the value computed independently from the fixture transcripts, for single-segment, multi-segment and sub-agent fixtures, including a fixture with duplicated records for one response. Exact match, measured by test.
+- **SC-009**: On a recorded real `claude -p` run with a sub-agent, the four token fields of the usage line equal the CLI's own `result` figures (`usage` for the main session, `modelUsage` for all). Exact match, checked against a pinned fixture; re-checked when Claude Code's major version changes (ADR-0002).
 - **SC-003**: In 100% of no-data fixtures (no transcript, Copilot target, missing start mark, partial segments) the line says "not available" with a reason, and no figure is written as 0. Measured by test.
 - **SC-004**: With the switch off or absent, the files of an install equal those of a kit without the feature, except the files shipped by this feature, and no skill run produces a mark or a usage line. Measured by the kit's drift check and a run of each skill. (As spec 002 SC-006.)
 - **SC-005**: A sentinel string in a fixture transcript appears in 0 outputs and 0 written records after a stop. Measured by search after the run.
@@ -139,7 +142,8 @@ No criterion is a measured threshold, so no value gate is needed for the plan (`
 
 ## Assumptions & dependencies
 
-- Assumption: the Claude target exposes the session ID to the running session as `CLAUDE_CODE_SESSION_ID`, and writes the transcript to `~/.claude/projects/<encoded folder>/<session-id>.jsonl` with usage on every model turn and a timestamp on every event; sub-agents write `<session-id>/subagents/agent-<id>.jsonl` (verified 2026-10-30, decision record Context). If the layout changes, the figures become "not available", never wrong; the plan should add a fixture-based check so a change is noticed.
+- Technique: chosen in [ADR-0002](../../docs/adr/0002-usage-metric-technique.md) (2026-11-03) after comparing transcript parsing, hooks and native OpenTelemetry on a measured run: transcripts de-duplicated by `message.id`, between start and stop marks; hooks and OpenTelemetry not required.
+- Assumption: the Claude target exposes the session ID to the running session as `CLAUDE_CODE_SESSION_ID` (set in a measured desktop session, but not listed in the env-var docs; hooks and the status line document `session_id`, so the plan must say what the start command does when the variable is absent), and writes the transcript to `~/.claude/projects/<encoded folder>/<session-id>.jsonl` with usage on every model turn and a timestamp on every event; sub-agents write `<session-id>/subagents/agent-<id>.jsonl` (verified 2026-10-30, decision record Context). If the layout changes, the figures become "not available", never wrong; the plan should add a fixture-based check so a change is noticed.
 - Assumption: the Copilot target has no comparable transcript, so every usage line there is "not available".
 - Assumption: units are worked one at a time within a session. Overlapping open units in one session would double count; this is not supported and is not detected.
 - Assumption: "turns" counts the model turns that carry usage in the segment, main session only; sub-agent turns are not added to it.
@@ -161,6 +165,11 @@ No criterion is a measured threshold, so no value gate is needed for the plan (`
 - Q: What when there is no data? → A: "not available" with a reason, never 0.
 - Q: Where does it live? → A: Core (switch plus one script with the core skills); a module was rejected.
 - Q: In what order with spec 002? → A: Fix 002's analyze findings, then spec and build 003, then implement 002 so its tasks are measured.
+
+### Session 2026-11-03 (technique research, after spec writing)
+
+- Q: Which technique reads the figures? → A: Session transcripts, de-duplicated by `message.id`, between start and stop marks (ADR-0002). Measured exact against the CLI's own result on one run with a sub-agent. Hooks (no usage fields, no unit boundary), native OpenTelemetry (not enabled per project, nothing printed in the console test) and headless-per-unit runs: not chosen.
+- Q: Does the transcript's usage mean what it says? → A: Yes on the measured run: input and output tokens equal the CLI's figures; the community claim that they are placeholders did not hold. Records are duplicated per response, hence FR-019.
 
 ### Session 2026-11-03 (spec writing; no change to the decisions above)
 

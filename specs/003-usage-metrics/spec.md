@@ -27,13 +27,13 @@ Track: T3
 - Per-unit-type switches. One switch only.
 - Hooks or any background collection. The kit renders no hooks (`bin/sdlc` contains no `hooks` or `settings.json`, checked 2026-11-03), and this feature adds none.
 - Reading or storing what was said in a session. Only usage numbers, timestamps, the model name and the turn count are read.
-- Units other than a task, a bug and a fixed review or analyze finding (for example a whole spec or a whole session).
+- Units other than a task, a bug and a fixed review finding (for example a whole spec or a whole session). In particular a fix to an **analyze** finding is not measured: it is a document edit made in specify, plan or tasks, which this spec does not instrument. (This narrows the decision record, which said "review or analyze finding"; approval at H1.)
 
 ## Glossary terms used
 
-- **Resolved unit**: the thing a usage line describes. One of: a **task** (a task in a feature's task list), a **bug** (an investigated bug, closed by `sdlc-debug`), a **finding** (a review or analyze finding that was fixed). New.
+- **Resolved unit**: the thing a usage line describes. One of: a **task** (a task in a feature's task list), a **bug** (an investigated bug, closed by `sdlc-debug`), a **finding** (a review finding that was fixed). New.
 - **Owning record**: the document that already owns a unit: the task list's progress log for a task, the bug record for a bug, the fix note for a finding. New.
-- **Finding fix**: the work of fixing one review or analyze finding. Its unit id is `<pass>-<finding id>` (for example `review1-F3`, `analyze2-A5`). Analyze writes no record of its findings, so the progress-log line quotes the finding's one-line text; ids are not stable across passes. Its owning record is the Progress log of its feature's `tasks.md`; the independent review report stays untouched. Fixes are applied by `sdlc-implement`. New.
+- **Finding fix**: the work of fixing one **review** finding through `sdlc-implement`. Its unit id is `<pass>-<finding id>` (for example `review1-F3`). Its owning record is the Progress log of its feature's `tasks.md`, where `sdlc-implement` writes the finding's one-line text as the evidence bullet before the stop; the independent review report stays untouched. New.
 - **Start mark**: a record in the owning record of the time and the session ID at which work on a unit began or resumed. New.
 - **Segment**: the span from one start mark to the next stop, or to the end of that session; a unit has one segment per session it was worked in. New.
 - **Usage line**: the line, in one shared format, that gives a unit's figures. It is a bullet of its own in the owning record, written by the stop command. A figure is `0` only when the source was read and held nothing for it, and `not available (<reason>)` otherwise. New.
@@ -79,12 +79,12 @@ As a maintainer, I want the feature off by default and one setting to turn it on
 
 ### S4: Measure a bug and a fixed finding (P2)
 
-As a maintainer, I want bugs and fixed review or analyze findings to carry the same usage line, so that all three kinds of work are comparable.
+As a maintainer, I want bugs and fixed review findings to carry the same usage line, so that all three kinds of work are comparable.
 
 **Independent test:** With the switch on, run `sdlc-debug` on a fixture bug and apply one fix for a review finding; read the bug record and the fix note.
 
 1. **Given** the switch is on and `sdlc-debug` starts work on a bug, **When** it closes the bug, **Then** the bug record holds a usage line in the same format as a task's.
-2. **Given** the switch is on and a review or analyze finding is fixed, **When** its fix note is written, **Then** the note carries a usage line in the same format.
+2. **Given** the switch is on and a review finding is fixed, **When** its fix note is written, **Then** the note carries a usage line in the same format.
 3. **Given** a bug or finding that the user abandons before it is closed, **When** no stop runs, **Then** the start mark stays in the record and no usage line is written; nothing is invented for it.
 
 ### S5: Keep transcript content private (P1)
@@ -100,7 +100,7 @@ As a user of the kit, I want the figures taken without anything I wrote or the a
 
 - **FR-001**: The feature MUST be opt-in, controlled by one usage switch in `.sdlc/config.json`, off when the setting is absent. (S3)
 - **FR-002**: With the switch off or absent, no skill MUST ask for a start mark or a stop, nothing MUST write a usage line or mark, and installed files and behaviour MUST be identical to a kit without the feature, apart from the files the feature ships or edits (listed in the plan's Seams). (S3)
-- **FR-003**: With the switch on, the skills that resolve a unit (`sdlc-implement` for a task, `sdlc-debug` for a bug, and the skill that applies a review or analyze finding's fix) MUST record usage for that unit. (S1, S4)
+- **FR-003**: With the switch on, the skills that resolve a unit (`sdlc-implement` for a task, `sdlc-debug` for a bug, and `sdlc-implement` again for a fixed review finding) MUST record usage for that unit. (S1, S4)
 - **FR-004**: A usage line MUST be written in the owning record of the unit: a task and a finding in the Progress log of their feature's `tasks.md`, a bug in a `## Usage` section of its bug record. There MUST be no central log. (S1, S4)
 - **FR-005**: All three units MUST use one shared usage-line format. (S1, S4)
 - **FR-006**: Recording MUST be a named start command run at the start of the unit, and a named stop command run at its end. The skill text MUST give each command's exact name and arguments; a prose rule without a named command MUST NOT be the means of recording (spec 001 retro lesson L1, `specs/001-dense-agent-protocol/retro.md:27`). (S1, S4)
@@ -117,7 +117,7 @@ As a user of the kit, I want the figures taken without anything I wrote or the a
 - **FR-017**: The start and stop commands MUST be safe to run twice for the same unit state: a second stop on an already-closed unit MUST NOT change its usage line, and a second start in the same session for a unit with an open start mark MUST NOT add a duplicate mark. (S1)
 - **FR-018**: The kit's lint and drift checks MUST keep passing with the feature installed, with the switch on and off. (S3)
 - **FR-019**: The script MUST count each model response once: a transcript writes one response as several records, so records MUST be de-duplicated by `message.id`, keeping the last one, before summing (ADR-0002: a naive sum overcounted output by 43% and cache writes by 80% on a measured run). The last record's timestamp places the response in a window. (S1)
-- **FR-020**: When a transcript record lacks the expected fields (`message.id`, a parseable timestamp, or the four usage counters as integers), or when no response falls in a window, the script MUST report the affected figures as "not available" with the reason "unexpected transcript format" and MUST NOT guess or write 0. An unparsable last line is skipped (the file may be mid-write); any other unparsable line makes the figures of the segment that holds it "unexpected transcript format". (S2)
+- **FR-020**: When a counted transcript record (an `assistant` record with `message.usage`) lacks `message.id`, a parseable timestamp or one of the four usage counters as an integer, the script MUST report the affected figures as "not available" with the reason "unexpected transcript format" and MUST NOT guess or write 0. Other record types are ignored. An unparsable last line is skipped (the file may be mid-write); any other unparsable line makes the segment's figures "unexpected transcript format". When no response from a non-synthetic model falls in a window, the figures are "not available" with the reason "no response in window". (S2)
 - **FR-021**: When another unit in the same record has a start mark in the same session inside a unit's window, the unit's line MUST end with `· OVERLAP: <unit>` (several units, comma-separated; units in other records are not seen), because the figures then include the other unit's work. With the switch on, `sdlc-implement` MUST run `[P]` tasks one after another. (S1)
 - **FR-022**: A unit is **closed** when its usage line holds at least one token, sub-agent or turn figure. A `stop` on a closed unit MUST NOT change anything. A line without a token, sub-agent or turn figure does not close the unit: the next `stop` replaces it. A unit is matched by its exact id within its section (`T01` never matches `T012`). Rework after a stop is measured as a new unit id (for example `T012-r2`). (S1)
 
@@ -126,7 +126,7 @@ As a user of the kit, I want the figures taken without anything I wrote or the a
 - **NFR-001** (privacy): The script MUST NOT write, log or print any transcript content, and MUST send nothing anywhere: no network access, no upload. The only things it stores are the figures and marks in the owning records. Yes/no, tested with a sentinel in a fixture transcript and a run with network access blocked. (S5)
 - **NFR-002** (offline, non-interactive): Start and stop MUST run offline and without prompts, so an unattended agent session can run them. Yes/no, tested with no network and no terminal input. (S1, S3)
 - **NFR-003** (data kept local): The only source read is the session transcripts under `$CLAUDE_CONFIG_DIR` or the user's `~/.claude`, found from the session ID the running session exposes; the kit MUST NOT copy those transcripts. (S5)
-- **NFR-004** (containment): The record to write MUST resolve inside the project root (no `..`, no symlink out); the unit id MUST use letters, digits, `-`, `_` and `.` only; a session ID MUST be hex digits and `-` before it is used to find a file. Anything else exits with a usage error and writes nothing. (S5)
+- **NFR-004** (containment): The record to write MUST resolve inside the project root (no `..`, no symlink out) and exist; the unit id MUST use letters, digits, `-`, `_` and `.` only; a session ID is used to find a file only if it is hex digits and `-` (from the environment or from a mark; anything else is treated as unknown). A bad argument, record or unit id exits with a usage error and writes nothing. (S5)
 - Performance, availability and accessibility: not applicable (a one-shot local command per unit; no runtime service or UI).
 
 ## Success criteria
@@ -152,7 +152,7 @@ No criterion is a measured threshold, so no value gate is needed for the plan (`
 - Assumption: "turns" counts the distinct main-session model responses with usage in the window; sub-agent responses are not added to it.
 - Assumption: when a unit's segments used more than one model, the line lists each distinct model rather than one.
 - Assumption: wall time includes time waiting for the user (decision record, Defaults); the label "wall" tells the reader.
-- Assumption: finding fixes run through `sdlc-implement`, and analyze and review findings are numbered per pass, so the unit id carries the pass (`review1-F3`).
+- Assumption: review-finding fixes run through `sdlc-implement`, and review findings are numbered per pass, so the unit id carries the pass (`review1-F3`); `sdlc-implement` gains the finding step in this spec.
 - Dependency: `.sdlc/config.json` exists in an installed project (the kit creates it); `usage.py` reads the `usage` key itself, as `bin/sdlc` reads `spec_dir` (`bin/sdlc:511-512`).
 - Dependency: the kit's install and drift check, to show the switch-off install is unchanged (SC-004).
 - Dependency: spec 002's analyze findings are fixed before this spec is planned (decision 7); no content dependency on spec 002.

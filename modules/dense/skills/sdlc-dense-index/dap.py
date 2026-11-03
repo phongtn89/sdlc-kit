@@ -279,6 +279,22 @@ def redact(text):
     return any(r.search(text) for r in SECRET_RES) or bool(EMAIL_RE.search(text))
 
 
+def entry_lines(items, alias, slug, n, room):
+    """The result's entry lines: the first prefixed `[n]`, the rest indented, within `room` characters
+    (always at least the first); entries that don't fit are counted on one closing line."""
+    out, used = [], 0
+    for k, (_, _, e) in enumerate(items):
+        line = "%s %s / %s: %s @%s#%s" % (e[1].upper(), e[2], e[3], e[4], alias, slug)
+        line = "[redacted: read the source]" if redact(line) else clip(line)
+        line = ("[%d] %s" % (n, line)) if k == 0 else "    " + line
+        if k and used + len(line) + 1 > room:
+            out.append("    … %d more entries for this section" % (len(items) - k))
+            break
+        out.append(line)
+        used += len(line) + 1
+    return out
+
+
 def cut_line(rel, span):
     return "    … cut: read .sdlc/%s:%d-%d" % (rel, span[0], span[1])
 
@@ -362,10 +378,7 @@ def find(index, root, terms, stale=(), ignored=()):
         share = left // (len(ranked) - i)
         rel = srcs[alias]
         is_stale = any(x.split()[1] == alias for x in stale)
-        head = ["[%d] %s" % (i + 1, clip("%s %s / %s: %s @%s#%s" % (items[0][2][1].upper(), items[0][2][2], items[0][2][3],
-                                                                     items[0][2][4], alias, slug)))]
-        head += ["    " + clip("%s %s / %s: %s @%s#%s" % (e[1].upper(), e[2], e[3], e[4], alias, slug))
-                 for _, _, e in items[1:]]
+        head = entry_lines(items, alias, slug, i + 1, share // 3)
         full = source_path(root, rel)
         note = "(stale: %s changed since the index was built)" % rel
         if not full or not os.path.isfile(full):
@@ -407,7 +420,7 @@ def find_main(a):
     root = os.path.abspath(a.root) if a.root else find_root(a.index)
     errors, stale, _, _, _ = check(a.index, root, fresh_mode=True)
     if errors:
-        shown = [clip(e, 120) for e in errors[:MAX_ERRORS]]
+        shown = ["%s [redacted]" % e.split(":")[0] if redact(e) else clip(e, 120) for e in errors[:MAX_ERRORS]]
         if len(errors) > MAX_ERRORS:
             shown.append("… %d more; run dap.py validate %s" % (len(errors) - MAX_ERRORS, clip(a.index, 80)))
         print(guard("\n".join(["INVALID"] + shown)))

@@ -61,10 +61,10 @@ A **result** is one source section. Entries that point to the same source sectio
 - **Matching:** each usable term is matched case-insensitively as a substring against the entry's index section TYPE and ID, key, value and slug. An entry's score is the number of distinct terms it matches. A result's score is the best score of its entries. Ties go to more terms matched in a value, then index order. Results with score 0 are never returned.
 - **Excerpt:** the source section's heading line, then every line that contains a usable term, each with one line of context either side, numbered. If no line contains a term: the heading line and the section's next **5** lines. When the excerpt is not the whole source section, it ends with the cut line.
 - **Cut line:** always `… cut: read .sdlc/<source>:<start>-<end>`, one form everywhere.
-- **Budget share:** each result may use at most an even share of what is left of the 2,000 characters.
+- **Budget share:** each result may use at most an even share of what is left of the 2,000 characters. Its entry lines may use at most a third of that share (the first entry always shows); entries beyond it are counted on one line, `    … N more entries for this section`, so the excerpt and the cut line always fit.
 - **Stale source** (content changed): the result is returned, marked stale with the source named; the excerpt comes from the current file.
 - **Source renamed or deleted:** the result is returned, marked stale, and says `source not found: <source>` instead of an excerpt.
 - **Heading gone** from a changed source: the result says `no heading <slug> in <source>` instead of an excerpt.
-- **Redaction (NFR-001):** an excerpt line that matches the module's secret patterns or its e-mail pattern is printed as `<n>  [redacted: read the source]`.
+- **Redaction (NFR-001):** an excerpt line, or an entry line (its value or its heading slug), that matches the module's secret patterns or its e-mail pattern is printed as `<n>  [redacted: read the source]` (an entry line as `[redacted: read the source]`). An error line that matches is printed as `ERROR <line>: [redacted]`.
 - **Read-only (FR-015):** the lookup writes no file.
 - **Speed (NFR-002):** one lookup in under 2 s for a shop6-size workspace (300 KB of sources, 300 entries).

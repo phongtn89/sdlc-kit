@@ -37,26 +37,6 @@ user-invocable: true
 
 3. `python3 <skill folder>/dap.py fresh .sdlc/context/index.dap` prints `fresh <rev>` (exit 0), or `stale <rev>` with one `STALE <alias> <path>` line per changed source (exit 1), or `INVALID` and `ERROR` lines (exit 2). On stale, suggest **build**.
 
-**validate**: to check an index someone edited.
-- Not as evidence. The index tells you where to look; claims cite the source it points to.
-
-## Inputs
-
-- The index: `.sdlc/context/index.dap` in the project root. Its grammar: a `#dap 1 built YYYY-MM-DD` header, `src <alias> <path under .sdlc/> <sha12>` lines, then `[<type> <id>]` sections of `<key>: <value> @<alias>#<heading-slug>` entries.
-- The script `dap.py` next to this file. Its path depends on the install: `.claude/skills/sdlc-dense-index/dap.py`, or `.github/skills/sdlc-dense-index/dap.py` when Copilot is the only target. Use the one that exists.
-- The key list `keys.json` next to this file: the section types, the keys each may use, each key's meaning and value form.
-- For **build**, the sources: `.sdlc/workspace.md` (if present) and every `.sdlc/context/*.md`, plus any extra paths under `.sdlc/` passed as arguments (for example a PRD or an architecture view). On a rebuild, also every `src` path in the current index that still exists.
-
-## Process
-
-**fresh**
-
-1. From the project root: `python3 <skill folder>/dap.py fresh .sdlc/context/index.dap`.
-2. Act on the exit code:
-   - `0`, output `fresh <rev>`: read the index first and quote `<rev>`. For each entry you need, run `python3 <skill folder>/dap.py show .sdlc/context/index.dap @<alias>#<slug>`. It prints exactly that section, with line numbers, under a `.sdlc/<path>:<first>-<last>` line; cite those lines. Don't grep or read whole sources for facts the index covers.
-   - `1`, output `stale <rev>` and `STALE <alias> <path>` lines: say which sources are stale. Use the other entries; read the stale sources in full instead of their entries. Suggest **build**.
-   - `2`, output `INVALID` and `ERROR` lines, or no index: say so and use the full sources, as if this module weren't installed.
-
 **validate**
 
 4. `python3 <skill folder>/dap.py validate .sdlc/context/index.dap` prints `valid` or one `ERROR <line>: <reason>` per problem, and possibly a size `WARNING`.

@@ -569,13 +569,67 @@ class Find(Base):
     def test_redacts_secret_lines(self):
         secret = "sk-" + "a1B2c3D4" * 4
         self.write("context/f.md", FINDSRC.replace("The edge proxy forwards them.",
-                                                   "Routing token %s and mail ops@example.com." % secret))
-        idx = self.routing_index()  # built after the edit, so fresh
+                                                   "Routing token %s." % secret))
+        code, out = self.find(self.routing_index(), "routing")  # built after the edit, so fresh
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(secret, out)
+        self.assertRegex(out, r"\n\s+6\s+\[redacted: read the source\]")
+
+    def test_redacts_email_lines(self):
+        self.write("context/f.md", FINDSRC.replace("The edge proxy forwards them.", "Routing owner ops@example.com."))
+        code, out = self.find(self.routing_index(), "routing")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("ops@example.com", out)
+        self.assertRegex(out, r"\n\s+6\s+\[redacted: read the source\]")
+
+    def test_secret_in_a_heading_slug_is_not_echoed(self):
+        secret = "sk-" + "a1B2c3D4" * 4
+        self.write("context/f.md", FINDSRC.replace("## Routing", "## %s notes" % secret))
+        slug = (secret + " notes").lower().replace(" ", "-")
+        idx = self.build("[repo admin]\ndesc: tenant routing rules @f#%s" % slug)
         code, out = self.find(idx, "routing")
         self.assertEqual(code, 0, out)
         self.assertNotIn(secret, out)
-        self.assertNotIn("ops@example.com", out)
-        self.assertRegex(out, r"\n\s+6\s+\[redacted: read the source\]")
+        self.assertNotIn(secret.lower(), out)
+
+    def test_many_sibling_entries_keep_every_result_and_cut_line(self):
+        self.write("context/g.md", "# G\n\n## One\n\n" + "routing filler line\n" * 300 + "\n## Two\n\nrouting two\n")
+        keys = ["desc", "stack", "run", "runtime", "db", "owns", "scope", "consumers", "envs", "specs", "owner"]
+        body = "[repo big]\n" + "\n".join("%s: routing %s %s @g#one" % (k, k, "v" * 150) for k in keys)
+        body += "\n[repo two]\ndesc: routing two @g#two\n[repo three]\ndesc: routing three @f#routing"
+        idx = self.build(body, g=self.read_src("g"))
+        code, out = self.find(idx, "routing")
+        self.assertEqual(code, 0, out)
+        self.assertLessEqual(len(out), 2000)
+        self.assertEqual([l[:3] for l in out.split("\n") if l.startswith("[")], ["[1]", "[2]", "[3]"], out)
+        self.assertIn("… cut: read .sdlc/context/g.md:3-", out)
+        for line in out.rstrip("\n").split("\n"):
+            self.assertFalse(line.startswith("    … cut: read .sdlc/…"), line)
+
+    def read_src(self, name):
+        with open(self.path("context/%s.md" % name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_final_guard_keeps_the_closing_cut_line(self):
+        # The block budgets keep real output in bounds, so the guard is a backstop; test it on its own.
+        import importlib.util
+        keep = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True  # importing must not leave __pycache__ in the module folder
+        try:
+            spec = importlib.util.spec_from_file_location("dap_under_test", DAP)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+        finally:
+            sys.dont_write_bytecode = keep
+        short = "[1] a\n    .sdlc/x.md:1-2"
+        self.assertEqual(mod.guard(short), short)
+        cut = "    … cut: read .sdlc/x.md:1-2"
+        long = "[1] " + "x" * 5000 + "\n" + cut
+        out = mod.guard(long)
+        self.assertLess(len(out), 2000)
+        self.assertTrue(out.endswith(cut), out[-60:])
+        plain = mod.guard("y" * 5000)
+        self.assertLess(len(plain), 2000)
 
     def test_fast_on_large_workspace(self):
         import time

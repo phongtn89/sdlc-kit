@@ -357,6 +357,18 @@ class DenseModule(Base):
         for banned in ("return contract", "dense-return", "50% lower", "before the first action", "before first action"):
             self.assertNotIn(banned, t)
 
+    def test_skill_is_v2_and_well_formed(self):
+        run("install", self.d, "--modules", "dense", kit=self.KIT)
+        skill = self.read(".claude/%s/SKILL.md" % self.SKILL)
+        for h in ("## When to use", "## Inputs", "## Process", "## Rationalizations", "## Red flags", "## Verification",
+                  "## Principles applied"):
+            self.assertEqual(skill.count("\n" + h + "\n"), 1, h)
+        for banned in ("read the index first", "at the start of every track", "quote `<rev>`"):
+            self.assertNotIn(banned, skill)
+        steps = [int(l.split(".")[0]) for l in skill.split("\n") if l[:1].isdigit() and l.split(".")[0].isdigit()]
+        self.assertEqual(steps, list(range(1, len(steps) + 1)))
+        self.assertIn("dap.py find .sdlc/context/index.dap <term>", skill)
+
     def test_installed_find_runs(self):
         code, out, _ = run("install", self.d, "--targets", "copilot", "--modules", "dense", kit=self.KIT)
         self.assertEqual(code, 0, out)

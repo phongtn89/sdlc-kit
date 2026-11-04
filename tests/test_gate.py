@@ -215,6 +215,15 @@ class Digest(Proj):
                 self.edit(rel, old, new)
                 self.fails_naming(part)
 
+    def test_a_long_odd_status_token_does_not_hide_text(self):
+        self.after_approval()
+        self.edit("plan.md", "\u00b7 Status: draft \u00b7", "\u00b7 Status: draft-HIDDEN-x \u00b7")
+        self.fails_naming("plan")
+        self.setUp()
+        self.after_approval()
+        self.edit("spec.md", "Status: approved <!--", "Status: approved(HIDDEN) <!--")
+        self.assertEqual(self.approved()[0], 1)  # the status check itself refuses the odd word
+
     def test_text_hidden_on_status_and_approved_lines_is_not_ignored(self):
         self.after_approval()
         self.edit("spec.md", "Status: approved <!--", "Status: approved NEWREQ: the system shall X <!--")
@@ -628,7 +637,7 @@ class Ticks(GreenProj):
 
     def test_range_spellings(self):
         h = self.commits(1)
-        for spelling in ("T001\u2013T003", "T001-T003", "T001\u2013003", "T001 - T003"):
+        for spelling in ("T001\u2013T003", "T001-T003", "T001 - T003", "T001 \u2014 T003", "T001\u2014T003"):
             self.tasks("- [x] T002 b\n", "- `%s` %s done\n" % (h[0], spelling))
             self.assertEqual(self.ticks()[0], 0, spelling)
         self.tasks("- [x] T002 b\n", "- `%s` T003\u2013T001 done\n" % h[0])  # reversed: not a range, T002 not named
@@ -636,7 +645,8 @@ class Ticks(GreenProj):
 
     def test_a_dash_and_a_number_is_not_a_range(self):
         h = self.commits(1)
-        for text in ("T001 \u2014 57 tests pass", "T001 \u2013 2026-11-04", "T001-3 ok", "T001 - 12 passed", "T001 \u2013 003"):
+        for text in ("T001 \u2014 57 tests pass", "T001 \u2013 2026-11-04", "T001-3 ok", "T001 - 12 passed", "T001 \u2013 003",
+                     "T001-100 ms", "T001-404 error", "T001\u2013003"):
             self.tasks("- [x] T002 b\n- [x] T003 c\n", "- `%s` %s\n" % (h[0], text))
             code, out, _ = self.ticks()
             self.assertEqual(code, 1, text)

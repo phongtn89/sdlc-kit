@@ -69,7 +69,7 @@ def normalise(kind, raw):
         end = header_end(lines)
         si, ai = first_index(lines, "Status:", end), first_index(lines, "Approved:", end)
         if si is not None:
-            lines[si] = re.sub(r"^Status:[ \t]*\S+", "Status:", lines[si], count=1)  # the word only; a comment stays covered
+            lines[si] = re.sub(r"^Status:[ \t]*[A-Za-z]+", "Status:", lines[si], count=1)  # the word only; a comment stays covered
         if ai is not None:
             comment = re.search(r"<!--.*-->\s*$", lines[ai])
             lines[ai] = "Approved:" + (" " + comment.group(0).rstrip() if comment else "")
@@ -77,7 +77,7 @@ def normalise(kind, raw):
         prefix = "Spec:" if kind == "plan" else "Inputs:"
         for i, l in enumerate(lines):
             if l.startswith(prefix):
-                lines[i] = re.sub(r"· Status: \S+", "· Status:", l, count=1)
+                lines[i] = re.sub(r"· Status: [A-Za-z]+", "· Status:", l, count=1)
                 break
     if kind == "tasks":
         lines = [re.sub(r"^([ \t]*[-*] )\[[xX]\]", r"\1[ ]", l) for l in lines]
@@ -288,15 +288,14 @@ def check_green(base):
 TICK_RE = re.compile(r"^[ \t]*[-*] \[[xX]\](?P<rest>.*)$")
 ID_RE = re.compile(r"^[ \t]*(?P<id>[A-Z]+\d+[a-z]?)(?![0-9A-Za-z_])")
 HASH_RE = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
-RANGE_FULL = re.compile(r"(?<![0-9A-Za-z_])([A-Z]+)(\d+)[ \t]*[\u2013\u2014-][ \t]*\1(\d+)(?![0-9A-Za-z_])")
-RANGE_BARE = re.compile(r"(?<![0-9A-Za-z_])([A-Z]+)(\d+)[\u2013\u2014-](\d+)(?![0-9A-Za-z_])")
+RANGE = re.compile(r"(?<![0-9A-Za-z_])([A-Z]+)(\d+)[ \t]*[\u2013\u2014-][ \t]*\1(\d+)(?![0-9A-Za-z_])")
 
 
 def ranges(line):
-    """(prefix, lo, hi) for `T001-T004` (blanks allowed) and the bare `T001-004` (no blanks, same width)."""
-    out = list(RANGE_FULL.findall(line))
-    out += [(p, lo, hi) for p, lo, hi in RANGE_BARE.findall(line) if len(lo) == len(hi)]
-    return out
+    """(prefix, lo, hi) for `T001-T004`: the prefix is repeated; blanks around the dash are allowed."""
+    return RANGE.findall(line)
+
+
 COMMIT_LINE = re.compile(r"^[0-9a-f]{40} commit \d+$")
 TOKEN_CAP = 2000
 

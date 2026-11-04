@@ -22,14 +22,15 @@ Track: T3
 
 - Blocking anything: a gate only reports. Hooks (E1.4) and CI (E1.5) act on its exit code.
 - Authenticating the approver. `approve` records the name it is given; it is a record, not a signature (the same stated limit as spec 004's record).
-- Specs approved before this feature (002, 003, 004 have no digest): `gate approved` reports them as having none; there is no migration.
+- Specs approved before this feature: 002, 003 and 004 have no digest, so `gate approved` reports them as having none; and spec 004's progress log lacks hashes for T015–T017 and H1, so `gate evidence-for-ticks` fails on it. There is no migration. Spec 005's own approval line is written by hand at H1 (the command does not exist yet) and replaced by `approve` before the merge (task T013).
+- Task text added after the progress log: not covered by the digest.
 - Review-record validation (`gate review`, E2.3), value gates (E6.3), budgets (E1.6).
 - Judging whether the evidence a log line cites is true; only that a line naming the task and a real revision exists.
 
 ## Glossary terms used
 
 - **Approval digest**: a SHA-256 over the normalised text of `spec.md`, `plan.md` and `tasks.md`, recorded on the spec's `Approved` line.
-- **Normalised**: with status lines, task checkboxes and the progress log removed, so ordinary work (ticking tasks, logging, marking the spec implemented) doesn't change the digest but any change to requirements, plan text or task text does.
+- **Normalised**: with status lines, task checkboxes in bullet lists and the tasks file's progress log removed, so ordinary work (ticking tasks, logging, marking the spec implemented) doesn't change the digest but any change to requirements, plan text or task text does.
 - **Evidence for a tick**: a progress-log line that names the task and a revision that exists in the repository.
 - **Green at HEAD**: as defined by spec 004.
 
@@ -85,16 +86,16 @@ As a reader of `tasks.md`, I want every ticked task to point to a revision, so t
 - **FR-002**: `approved`, `evidence-for-ticks` and `approve` MUST take `--spec <NNN or folder>` naming a feature folder under the project's `spec_dir` (default `specs`); a missing or ambiguous spec is exit 2. (S1, S2, S4)
 - **FR-003**: `<dir>` is the project root, as for every `sdlc` command. Exit codes MUST be 0 when the gate passes, 1 when it fails, 2 for usage or config errors, an unreadable or malformed document, or a refused `approve`. (all)
 - **FR-004**: Every gate MUST print one line per problem and a last line `gate <name>: PASS` or `gate <name>: FAIL (<n> problems)`. (all)
-- **FR-005**: The approval digest MUST be a SHA-256 combining the SHA-256 of each of the normalised `spec.md`, `plan.md` and `tasks.md`, and the `Approved` line MUST also record a short prefix of each file's own SHA-256, so a mismatch can name the files; normalisation removes `Status:` and `Approved:` lines and the inline `Status:` field of the `Inputs` line, turns every checked task box into an unchecked one, and removes the `## Progress log` section and everything after it. (S1)
+- **FR-005**: The approval digest MUST be a SHA-256 combining the SHA-256 of each of the normalised `spec.md`, `plan.md` and `tasks.md`, and the `Approved` line MUST also record a short prefix of each file's own SHA-256, so a mismatch can name the files; normalisation (contract) ignores only the spec's own `Status:` and `Approved:` header lines, the inline `Status:` field of the `Spec:` or `Inputs:` line, checked boxes in bullet lists of `tasks.md`, and the progress log of `tasks.md`. Nothing in `spec.md` or `plan.md` may be ignored beyond those lines. (S1)
 - **FR-006**: `approved` MUST pass only when the spec's status is `approved` or `implemented`, its `Approved` line holds a name, a `YYYY-MM-DD` date and `digest sha256:<64 hex>`, and the digest equals the one computed now; on a mismatch it MUST name each of the three files whose normalised text changed since approval. (S1)
 - **FR-007**: `approved` on a spec without a digest, or in draft, MUST fail with the reason. (S1)
 - **FR-008**: `approve --by <name>` MUST require a non-empty name, accept only a spec whose status is `draft` or `approved` and whose `plan.md` and `tasks.md` exist, and write the status `approved` and `Approved: <name>, <today UTC>, digest sha256:<hex>`; it MUST NOT change any other line, and MUST write atomically (a failure leaves the file as it was, exit 2). (S2)
-- **FR-009**: `green-at-head` MUST read the evidence record of spec 004 (`.sdlc/evidence/verify.json`, or the repo's own with `--repo`), compare it with the current `HEAD`, and pass only under spec 004's green-at-HEAD definition **and** only if the working tree is still clean now (ignoring `.sdlc/evidence/`), so edits made after the check can't ride on it; a failure MUST say which condition failed (no record, unreadable, other revision, record dirty, tree changed since, no revision, a failed command). It MUST NOT run any command from the record. (S3)
-- **FR-010**: `evidence-for-ticks` MUST treat each checked task or human-step box in `tasks.md` as needing evidence: a line in the `## Progress log` section that names the id (as a whole token, alone, in a list, or inside a range such as `T001–T012`) and a hexadecimal revision of 7 to 40 characters that exists in the repository as a commit; each task without it MUST be reported. (S4)
+- **FR-009**: `green-at-head` MUST read the evidence record of spec 004 (`.sdlc/evidence/verify.json`, or the repo's own with `--repo`), compare it with the current `HEAD`, and pass only under spec 004's green-at-HEAD definition **and** only if the working tree is still clean now (ignoring `.sdlc/evidence/`), so edits made after the check can't ride on it; a failure MUST say which condition failed (no record, unreadable record, git not found, HEAD unresolved, other revision, record dirty, tree changed since, no revision, no commands, a failed command, git status failed). The record is not a "document": a missing or unreadable record is exit 1, not 2. It MUST NOT run any command from the record. (S3)
+- **FR-010**: `evidence-for-ticks` MUST treat each checked task or human-step box in `tasks.md` as needing evidence: a line in the `## Progress log` section that names the id (as a whole token, alone, in a list, or inside a range such as `T001–T012`) and a hexadecimal revision of 7 to 40 characters that exists in the repository as a commit; each task without it MUST be reported, and a checked box without an id MUST be reported too. (S4)
 - **FR-011**: A gate MUST NOT write anywhere except `approve` writing the one spec file; it MUST NOT run any command from the project's config or records, and MUST NOT write outside the project root. (all)
 - **FR-012**: Git questions MUST be asked with read-only git (no optional locks, no fsmonitor) and a failed or timed-out git call MUST make the gate fail (exit 1, with the reason), never pass. (S3, S4)
-- **FR-013**: In a workspace, `--repo <name>` MUST resolve the repo's path and `spec_dir` as the other commands do; an unknown repo or a path leaving the project root is exit 2. (S5)
-- **FR-014**: `sdlc-analyze` MUST tell the agent to run `approve --by <name>` only after the human's explicit approval in chat, with the name they gave; `sdlc-implement`'s readiness gate MUST run `gate approved`, and its finish step and `sdlc-ship` MUST run `gate evidence-for-ticks` and `gate green-at-head`, quoting each gate's last line; the constitution MUST carry one matching rule. (S5)
+- **FR-013**: In a workspace, `--repo <name>` MUST resolve the repo's path, its `spec_dir` (falling back to the top-level one, then `specs`) and its own evidence record as the contract says; an unknown repo, a non-string path or `spec_dir`, or a path leaving the project root is exit 2. `--spec` MUST name a folder inside that `spec_dir`; an absolute or outside path is exit 2. (S5)
+- **FR-014**: `sdlc-analyze` MUST tell the agent to run `approve --by <name>` only after the human's explicit approval in chat, with the name they gave; `sdlc-implement`'s readiness gate MUST run `gate approved` (for a legacy spec that reports no digest it asks the human instead of proceeding), its finish step MUST run `gate evidence-for-ticks`, and `sdlc-ship` MUST run `gate evidence-for-ticks` and, after the post-commit `verify`, `gate green-at-head`, each quoting the gate's last line (`green-at-head` is not run at implement's finish, where the tree is still dirty); the constitution MUST carry one matching rule. (S5)
 
 ## Non-functional
 
@@ -112,7 +113,7 @@ As a reader of `tasks.md`, I want every ticked task to point to a revision, so t
 ## Assumptions & dependencies
 
 - Assumption: the approval, in the kit's flow, is the human's explicit yes in chat to the T3 gate; the agent passes their name to `approve`.
-- Assumption: progress-log lines in the form of specs 002–004 (`- 2026-11-04 \`<sha>\` — T001 done …`) are the evidence format; the plan adds it to the tasks template.
+- Assumption: progress-log lines in the form of specs 002 and 003 (`- 2026-11-04 \`<sha>\` — T001 done …`, ranges allowed) are the evidence format; spec 004's log does not always carry a hash, so the gate fails on it (Out of scope). The tasks template states the format. A squash or rebase merge that makes the cited commits unreachable, or a shallow CI checkout, makes the gate fail; both are stated limits.
 - Dependency: spec 004 (`verify`, the record and its green-at-HEAD definition), ADR-0003.
 
 ## Clarifications

@@ -3,7 +3,7 @@
 Feature: gate-command
 Number: 005
 Status: approved <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
-Approved: phong.ngo.vn, 2026-11-04 (H1, in chat, after two analyze passes; hand-written because `gate approve` does not exist yet, replaced in T012) <!-- name, YYYY-MM-DD; filled when approved -->
+Approved: phong.ngo.vn, 2026-11-04, digest sha256:104928ddbb0fd8b443e5d149faaa736aed99539579c35b2a390ac8cd1b4c7a19 (spec 87ab0751fbb8, plan 519dc9ca4ed2, tasks d0f1f018c92c, contracts 4d902ac5d19c) <!-- name, YYYY-MM-DD; filled when approved -->
 Owner: phong.ngo.vn
 Created: 2026-11-04
 Track: T3

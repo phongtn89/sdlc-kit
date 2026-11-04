@@ -689,5 +689,99 @@ class Ticks(GreenProj):
         self.assertEqual(run("gate", "evidence-for-ticks", ROOT, "--spec", "003")[0], 0)
 
 
+class Cli(GreenProj):
+    def listing(self, d):
+        return sorted(os.path.join(r, f) for r, _, fs in os.walk(d) for f in fs)
+
+    def test_repo_resolution_spec_dir_lookup_and_type_errors(self):
+        child = os.path.join(self.d, "api")
+        os.makedirs(os.path.join(child, "docs", "005-demo"))
+        for name in ("spec.md", "plan.md", "tasks.md"):
+            shutil.copy(os.path.join(self.f, name), os.path.join(child, "docs", "005-demo", name))
+        def cfg(**repo):
+            os.makedirs(os.path.join(self.d, ".sdlc"), exist_ok=True)
+            with open(os.path.join(self.d, ".sdlc", "config.json"), "w") as f:
+                json.dump({"repos": {"api": dict({"path": "api"}, **repo)}}, f)
+        cfg(spec_dir="docs")
+        code, out, err = run("gate", "approve", self.d, "--repo", "api", "--spec", "005", "--by", "A")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("Approved: A,", open(os.path.join(child, "docs", "005-demo", "spec.md")).read())
+        self.assertNotIn("Approved: A,", self.get("spec.md"))
+        self.assertEqual(run("gate", "approved", self.d, "--repo", "api", "--spec", "docs/005-demo/")[0], 0)
+        cfg(spec_dir="/docs/")  # slashes are stripped
+        self.assertEqual(run("gate", "approved", self.d, "--repo", "api", "--spec", "005")[0], 0)
+        cfg(spec_dir="")  # empty falls back to specs: the child has none
+        self.assertEqual(run("gate", "approved", self.d, "--repo", "api", "--spec", "005")[0], 2)
+        for bad in ({"spec_dir": 5}, {"path": 5}, {"path": "../x"}, {"path": "/tmp"}, {"path": "nope"}):
+            os.makedirs(os.path.join(self.d, ".sdlc"), exist_ok=True)
+            with open(os.path.join(self.d, ".sdlc", "config.json"), "w") as f:
+                json.dump({"repos": {"api": dict({"path": "api"}, **bad)}}, f)
+            self.assertEqual(run("gate", "approved", self.d, "--repo", "api", "--spec", "005")[0], 2, bad)
+        self.assertEqual(run("gate", "approved", self.d, "--repo", "ghost", "--spec", "005")[0], 2)
+        with open(os.path.join(self.d, ".sdlc", "config.json"), "w") as f:
+            json.dump({"spec_dir": 5}, f)
+        self.assertEqual(self.approved()[0], 2)  # a non-string spec_dir is exit 2, not a traceback
+
+    def test_green_at_head_uses_the_repos_own_record(self):
+        child = os.path.join(self.d, "api")
+        os.makedirs(child)
+        with open(os.path.join(child, "x.txt"), "w") as f:
+            f.write("x")
+        git(child, "init", "-q")
+        git(child, "add", "-A")
+        git(child, "commit", "-q", "-m", "i")
+        os.makedirs(os.path.join(self.d, ".sdlc"), exist_ok=True)
+        with open(os.path.join(self.d, ".sdlc", "config.json"), "w") as f:
+            json.dump({"repos": {"api": {"path": "api", "commands": {"test": "%s -c pass" % sys.executable}}}}, f)
+        self.assertEqual(run("verify", self.d, "--repo", "api")[0], 0)
+        self.assertEqual(run("gate", "green-at-head", self.d, "--repo", "api")[0], 0)
+        self.assertEqual(self.green()[0], 1)  # the workspace root has no record
+
+    def test_last_line_grammar(self):
+        self.approve()
+        for args, last in (((("approved", "--spec", "005")), "gate approved: PASS"),):
+            self.assertEqual(run("gate", args[0], self.d, *args[1:])[1].strip().split("\n")[-1], last)
+        self.edit("plan.md", "How.", "Else.")
+        out = self.approved()[1].strip().split("\n")
+        self.assertEqual(out[-1], "gate approved: FAIL (1 problems)")
+
+    def test_hostile_environment_runs_nothing_and_gates_write_nothing_but_approve_writes_only_the_spec(self):
+        marker = os.path.join(self._tmp.name, "pwned")
+        env = {k: "touch " + marker for k in ("SDLC_GATE_COMMAND", "COMMANDS_TEST", "GIT_EXTERNAL_DIFF")}
+        before = self.listing(self._tmp.name)
+        self.assertEqual(self.gate("approve", "--spec", "005", "--by", "A", env=env)[0], 0)
+        after = self.listing(self._tmp.name)
+        self.assertEqual(before, after)  # approve only rewrote spec.md: no new file
+        self.approved()
+        self.gate("evidence-for-ticks", "--spec", "005", env=env)
+        self.green(env=env)
+        self.assertEqual(self.listing(self._tmp.name), after)
+        self.assertFalse(os.path.exists(marker))
+
+    def test_runs_through_a_symlink_and_writes_no_bytecode(self):
+        link = os.path.join(self._tmp.name, "sdlc-link")
+        os.symlink(CLI, link)
+        self.approve()
+        self.assertEqual(run("gate", "approved", self.d, "--spec", "005", cli=link)[0], 0)
+        self.assertFalse(os.path.isdir(os.path.join(ROOT, "bin", "__pycache__")))
+
+    def test_the_module_imports_only_the_standard_library_and_sdlc_verify(self):
+        import ast
+        allowed = {"datetime", "hashlib", "json", "os", "re", "stat", "tempfile", "sdlc_verify"}
+        with open(os.path.join(ROOT, "bin", "sdlc_gate.py"), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        names = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names |= {a.name.split(".")[0] for a in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                names.add((node.module or "").split(".")[0])
+        self.assertEqual(names - allowed, set())
+
+    def test_no_directory_and_unknown_options_are_exit_2(self):
+        self.assertEqual(run("gate", "approved", os.path.join(self._tmp.name, "nope"), "--spec", "005")[0], 2)
+        self.assertEqual(self.gate("approved", "--spec", "005", "--bogus")[0], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

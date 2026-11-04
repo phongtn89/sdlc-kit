@@ -73,6 +73,7 @@ Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.js
 | `sdlc check <dir>` | Report drift (`MODIFIED`, `MISSING`, `DRIFT`), duplicate spec numbers, and an outdated lock. Exits 1 on drift, so it can run in CI. |
 | `sdlc uninstall <dir>` | Remove everything the kit wrote; keeps `config.json` and local edits |
 | `sdlc next-spec <dir>` | Next free `NNN` spec prefix |
+| `sdlc gate <name> <dir> --spec <NNN> [--repo <name>] [--by <name>]` | Mechanical readiness checks. `approve --by <name>` records the human's approval with a digest of spec, plan, tasks and contracts; `sdlc gate approved` passes only while those documents are unchanged since; `green-at-head` passes only for a clean, current, all-pass `verify` record on a still-clean tree; `evidence-for-ticks` needs a progress-log line with a real commit for every ticked task. Exit 0 pass, 1 fail, 2 usage error. They report; hooks and CI (later stories) act on the exit code. |
 | `sdlc verify <dir> [--repo <name>]` | Run the configured `commands` once each and write `.sdlc/evidence/verify.json` (revision, dirty flag, exit codes, no output). Exits 0 only if everything that ran passed. Last line: `verify: PASSED at <hash> (clean tree)` is the only verified-at-HEAD result. POSIX only; no lock if two runs overlap. `uninstall` keeps `.sdlc/evidence/` (the record is local state: add it to `.gitignore` if you don't want it committed). |
 | `sdlc discover <dir> [--json]` | Read-only inventory of the git repos in a workspace folder |
 | `sdlc lint` | Validate the kit itself |

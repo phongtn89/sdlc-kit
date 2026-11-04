@@ -36,7 +36,7 @@ user-invocable: true
    Don't inflate.
 4. **Report** in chat (write nothing to disk before approval): the findings table (at most 40 rows; aggregate the rest), the coverage percentage, and the counts by severity. For each finding, give the **smallest fix** and which skill applies it.
 5. **Gate**: with any CRITICAL finding, recommend fixing before approval. With none, list what the human approver should check, then ask for approval to run `sdlc-implement`.
-6. **Record approval**: when the human approves, set `Status: approved` in `spec.md` and add `Approved: <name>, YYYY-MM-DD` beneath it. This is the only edit this skill makes, and only after explicit approval. A later session's readiness gate relies on it.
+6. **Record approval**: only after the human's explicit approval in chat, run `python3 <kit_path>/bin/sdlc gate approve . --spec <NNN> --by "<name>"` (`kit_path` from `.sdlc/lock.json`; the name is the one the human gave; add `--repo <repo>` in a workspace) and quote its PASS line. It sets `Status: approved` and writes the `Approved` line with a digest of the spec, plan, tasks and contracts. This is the only edit this skill makes. If any of those documents is edited afterwards, the approval no longer holds: ask the human and run `approve` again.
 
 ## Rationalizations
 

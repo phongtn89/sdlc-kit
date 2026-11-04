@@ -591,6 +591,17 @@ def cmd_next_spec(a, kit):
     return 0, ["%03d" % (max(nums) + 1 if nums else 1)]
 
 
+def cmd_verify(a, kit):
+    sys.dont_write_bytecode = True  # the kit folder must stay unwritten
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    import sdlc_verify
+    try:
+        target = check_target(a.dir)
+        return sdlc_verify.run(target, read_config(target), a.repo, safe_path)
+    except (SdlcError, sdlc_verify.VerifyError) as e:
+        return 2, ["sdlc: error: %s" % e]
+
+
 # ---------------------------------------------------------------- discover
 
 LOCKFILES = ["bun.lockb", "bun.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
@@ -900,6 +911,8 @@ def build_parser():
     add("check", cmd_check, "Report drift, duplicate specs and outdated installs.")
     add("uninstall", cmd_uninstall, "Remove unmodified managed files and blocks; keep config.json.")
     add("next-spec", cmd_next_spec, "Print the next free 3-digit spec prefix.")
+    sp = add("verify", cmd_verify, "Run the configured commands once and write .sdlc/evidence/verify.json.")
+    sp.add_argument("--repo", help="workspace repo name (uses repos.<name>.commands)")
     sp = add("discover", cmd_discover, "List the git repos directly under a workspace folder (read-only).")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     add("lint", cmd_lint, "Validate the kit itself.", dir_=False)

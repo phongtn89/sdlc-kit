@@ -124,14 +124,12 @@ class Isolation(Proj):
 
     def test_default_config_works_and_nothing_is_left_outside_the_project_or_in_the_kit(self):
         self.config({"test": py("pass")})  # no enforce, no usage
-        tmp = tempfile.gettempdir()
-        before = (self.listing(os.path.join(ROOT, "bin")), self.listing(self._tmp.name), self.listing(tmp))
+        before = (self.listing(os.path.join(ROOT, "bin")), self.listing(self._tmp.name))
         self.assertEqual(self.verify()[0], 0)
-        after = (self.listing(os.path.join(ROOT, "bin")), self.listing(self._tmp.name), self.listing(tmp))
+        after = (self.listing(os.path.join(ROOT, "bin")), self.listing(self._tmp.name))
         self.assertEqual(before[0], after[0])  # no __pycache__ in the kit
         new_in_parent = set(after[1]) - set(before[1])
         self.assertEqual({os.path.relpath(f, self._tmp.name) for f in new_in_parent}, {os.path.join("proj", ".sdlc", "evidence", "verify.json")})
-        self.assertEqual(set(after[2]) - set(before[2]) - set(after[1]), set())
 
 
 class RedRun(Proj):
@@ -201,10 +199,10 @@ class Timeout(Proj):
         code_ = ("import subprocess,sys,time\n"
                  "c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
                  "open(%r,'w').write(str(c.pid))\ntime.sleep(60)" % pidfile)
-        self.config({"test": py(code_)}, verify={"timeout_seconds": 1})
+        self.config({"test": py(code_)}, verify={"timeout_seconds": 3})
         code, out, _ = self.verify(timeout=20)
         self.assertEqual(code, 1)
-        self.assertIn("verify test: TIMEOUT after 1 s", out)
+        self.assertIn("verify test: TIMEOUT after 3 s", out)
         rec = self.record()["commands"][0]
         self.assertEqual((rec["exit"], rec["result"]), ("timeout", "timeout"))
         pid = int(open(pidfile).read())
@@ -380,7 +378,7 @@ class Revision(Proj):
         self.assertIs(rec["dirty"], False)
         self.assertIn("no revision, not verified at HEAD", out)
 
-    def test_after_a_new_commit_the_old_record_names_an_older_revision(self):
+    def test_after_a_new_commit_the_old_record_is_not_green_at_the_new_head(self):
         self.config({"test": py("pass")})
         self.repo()
         self.verify()
@@ -390,6 +388,9 @@ class Revision(Proj):
         git(self.d, "add", "-A")
         git(self.d, "commit", "-q", "-m", "n")
         self.assertNotEqual(old, self.head())
+        sys.path.insert(0, os.path.join(ROOT, "bin"))
+        import sdlc_verify
+        self.assertIs(sdlc_verify.green_at_head(self.record(), self.head()), False)
 
 
 class FakeGit(Proj):

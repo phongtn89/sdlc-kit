@@ -693,6 +693,20 @@ class VerifySkills(Base):
         role = self.read(".claude/agents/sdlc-reviewer.md")
         self.assertIn("tools: Read, Grep, Glob", role)
 
+    def test_ship_gate_runs_the_suite_once_and_review_gets_the_head_from_the_caller(self):
+        ship = self.skill("sdlc-ship").split("\n")
+        step2 = [l for l in ship if l.startswith("2. ")][0]
+        self.assertIn("step 4", step2)
+        self.assertNotIn("each run once", step2)
+        review = [l for l in self.skill("sdlc-review").split("\n") if ".sdlc/evidence/verify.json" in l][0]
+        self.assertIn("the caller", review)
+        self.assertIn("head", review)
+
+    def test_readme_says_uninstall_keeps_the_evidence_folder(self):
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("uninstall` keeps `.sdlc/evidence/`", readme)
+
     def test_constitution_carries_one_matching_rule(self):
         rule = [l for l in managed_block(self.read("AGENTS.md")).split("\n") if "sdlc verify" in l]
         self.assertEqual(len(rule), 1, rule)

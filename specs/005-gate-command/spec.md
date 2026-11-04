@@ -62,8 +62,8 @@ As a reviewer, I want a command that says whether the last `verify` result descr
 
 **Independent test:** after a new commit, the same record fails.
 
-1. **Given** a green `verify` record at the current `HEAD` on a clean tree, **When** I run `sdlc gate green-at-head`, **Then** it passes.
-2. **Given** a new commit, a dirty tree, a failed command or no record, **When** I run it, **Then** it fails and names which.
+1. **Given** a green `verify` record at the current `HEAD` and a tree that is still clean, **When** I run `sdlc gate green-at-head`, **Then** it passes.
+2. **Given** a new commit, a record that was dirty, a tree changed since the record, a failed command or no record, **When** I run it, **Then** it fails and names which.
 
 ### S4: Ticks carry evidence (P1)
 
@@ -83,23 +83,23 @@ As a reader of `tasks.md`, I want every ticked task to point to a revision, so t
 
 - **FR-001**: `sdlc gate <name> <dir>` MUST support `approved`, `green-at-head`, `evidence-for-ticks` and `approve`; an unknown name is exit 2. (S1–S4)
 - **FR-002**: `approved`, `evidence-for-ticks` and `approve` MUST take `--spec <NNN or folder>` naming a feature folder under the project's `spec_dir` (default `specs`); a missing or ambiguous spec is exit 2. (S1, S2, S4)
-- **FR-003**: Exit codes MUST be 0 when the gate passes, 1 when it fails, 2 for usage or config errors, an unreadable or malformed document, or a refused `approve`. (all)
+- **FR-003**: `<dir>` is the project root, as for every `sdlc` command. Exit codes MUST be 0 when the gate passes, 1 when it fails, 2 for usage or config errors, an unreadable or malformed document, or a refused `approve`. (all)
 - **FR-004**: Every gate MUST print one line per problem and a last line `gate <name>: PASS` or `gate <name>: FAIL (<n> problems)`. (all)
-- **FR-005**: The approval digest MUST be SHA-256 over the normalised `spec.md`, `plan.md` and `tasks.md`, in that order, each prefixed by its name; normalisation removes `Status:` and `Approved:` lines and the inline `Status:` field of the `Inputs` line, turns every checked task box into an unchecked one, and removes the `## Progress log` section and everything after it. (S1)
+- **FR-005**: The approval digest MUST be a SHA-256 combining the SHA-256 of each of the normalised `spec.md`, `plan.md` and `tasks.md`, and the `Approved` line MUST also record a short prefix of each file's own SHA-256, so a mismatch can name the files; normalisation removes `Status:` and `Approved:` lines and the inline `Status:` field of the `Inputs` line, turns every checked task box into an unchecked one, and removes the `## Progress log` section and everything after it. (S1)
 - **FR-006**: `approved` MUST pass only when the spec's status is `approved` or `implemented`, its `Approved` line holds a name, a `YYYY-MM-DD` date and `digest sha256:<64 hex>`, and the digest equals the one computed now; on a mismatch it MUST name each of the three files whose normalised text changed since approval. (S1)
 - **FR-007**: `approved` on a spec without a digest, or in draft, MUST fail with the reason. (S1)
 - **FR-008**: `approve --by <name>` MUST require a non-empty name, accept only a spec whose status is `draft` or `approved` and whose `plan.md` and `tasks.md` exist, and write the status `approved` and `Approved: <name>, <today UTC>, digest sha256:<hex>`; it MUST NOT change any other line, and MUST write atomically (a failure leaves the file as it was, exit 2). (S2)
-- **FR-009**: `green-at-head` MUST read the evidence record of spec 004 (`.sdlc/evidence/verify.json`, or the repo's own with `--repo`), compare it with the current `HEAD`, and pass only under spec 004's green-at-HEAD definition; a failure MUST say which condition failed (no record, unreadable, other revision, dirty tree, no revision, a failed command). It MUST NOT run any command from the record. (S3)
+- **FR-009**: `green-at-head` MUST read the evidence record of spec 004 (`.sdlc/evidence/verify.json`, or the repo's own with `--repo`), compare it with the current `HEAD`, and pass only under spec 004's green-at-HEAD definition **and** only if the working tree is still clean now (ignoring `.sdlc/evidence/`), so edits made after the check can't ride on it; a failure MUST say which condition failed (no record, unreadable, other revision, record dirty, tree changed since, no revision, a failed command). It MUST NOT run any command from the record. (S3)
 - **FR-010**: `evidence-for-ticks` MUST treat each checked task or human-step box in `tasks.md` as needing evidence: a line in the `## Progress log` section that names the id (as a whole token, alone, in a list, or inside a range such as `T001–T012`) and a hexadecimal revision of 7 to 40 characters that exists in the repository as a commit; each task without it MUST be reported. (S4)
 - **FR-011**: A gate MUST NOT write anywhere except `approve` writing the one spec file; it MUST NOT run any command from the project's config or records, and MUST NOT write outside the project root. (all)
-- **FR-012**: Git questions MUST be asked with read-only git (no optional locks, no fsmonitor) and a failed or timed-out git call MUST make the gate fail, never pass. (S3, S4)
+- **FR-012**: Git questions MUST be asked with read-only git (no optional locks, no fsmonitor) and a failed or timed-out git call MUST make the gate fail (exit 1, with the reason), never pass. (S3, S4)
 - **FR-013**: In a workspace, `--repo <name>` MUST resolve the repo's path and `spec_dir` as the other commands do; an unknown repo or a path leaving the project root is exit 2. (S5)
 - **FR-014**: `sdlc-analyze` MUST tell the agent to run `approve --by <name>` only after the human's explicit approval in chat, with the name they gave; `sdlc-implement`'s readiness gate MUST run `gate approved`, and its finish step and `sdlc-ship` MUST run `gate evidence-for-ticks` and `gate green-at-head`, quoting each gate's last line; the constitution MUST carry one matching rule. (S5)
 
 ## Non-functional
 
 - **NFR-001**: Python 3.9+ standard library only, no network, no prompts.
-- **NFR-002**: A gate runs git at most three times and reads at most the three documents, the record and the progress log; time does not depend on repository size.
+- **NFR-002**: A gate runs git at most three times, however many tasks or log lines there are; it reads only the three documents and the record.
 - **NFR-003**: The digest is reproducible: the same three documents give the same digest on any machine, including with different line endings (`\r\n` is treated as `\n`).
 
 ## Success criteria

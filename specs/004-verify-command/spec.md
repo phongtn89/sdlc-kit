@@ -52,7 +52,7 @@ As a reviewer, I want a missing, hanging or unrunnable check to read as not gree
 
 1. **Given** no command is configured, **When** I run `sdlc verify`, **Then** it exits 2, says nothing was verified and writes no record claiming green.
 2. **Given** a command runs longer than its time limit, **When** `verify` waits, **Then** the command is stopped, recorded as timed out and counted as a failure.
-3. **Given** a command can't start (missing executable), **When** I run `sdlc verify`, **Then** it is recorded as failed with the reason, not skipped.
+3. **Given** a command's executable doesn't exist (the shell answers "not found", exit 127) or the command can't be launched at all, **When** I run `sdlc verify`, **Then** it is recorded as failed, with the exit code or the launch error, not skipped.
 
 ### S3: The record says which revision it is about (P1)
 
@@ -79,7 +79,7 @@ As an owner of a multi-repo workspace, I want to verify one repo with that repo'
 - **FR-002**: Each command MUST run non-interactively: no input is available to it, and no prompt can wait for an answer. (S1, S2)
 - **FR-003**: `verify` MUST continue after a failing command and run the rest. (S1)
 - **FR-004**: Each command MUST have a time limit, default 600 seconds, overridable by `verify.timeout_seconds` in `.sdlc/config.json`; a command over the limit MUST be stopped, recorded as timed out and counted as failed. (S2)
-- **FR-005**: A command that can't start MUST be recorded as failed with the reason. (S2)
+- **FR-005**: A command that exits 127 (not found) or can't be launched MUST be recorded as failed, with its exit code or launch error as the reason. (S2)
 - **FR-006**: The exit code MUST be 0 only when at least one command ran and every command that ran exited 0; 1 when any command failed or timed out; 2 for bad arguments, an unreadable config, or no command configured. (S1, S2)
 - **FR-007**: With no command configured, `verify` MUST say so and MUST NOT write a record. (S2)
 - **FR-008**: `verify` MUST write the evidence record atomically to `.sdlc/evidence/verify.json`, replacing the previous one. It holds: format version, UTC start and end time, the revision (`HEAD` as a full hash, or none), whether the tree was dirty, and per command its name, text, exit code (or `timeout` or `not started`), duration and result. (S1, S3)

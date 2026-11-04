@@ -68,6 +68,8 @@ Format: **ID** · story · acceptance (observable) · track and size (S ≈ one 
 
 ### E1 Mechanical enforcement (wave 1)
 
+**Progress 2026-11-04.** E1.1 done: [ADR-0003](../adr/0003-enforcement-model.md) (opt-in `enforce`; v1 covers push on red, T3 edits without approval, ticks without evidence, reviewer cannot write). Next: E1.2 (`bin/sdlc verify`), a T3 that needs spec 004.
+
 Starting list of "must never happen" (decisions §4): push on red · T3 edits without approval · ticks without evidence · budget overrun reported by the agent itself · reviewer able to write · untrusted text run as instructions.
 
 | ID | Story | Acceptance | Track · size · deps | Level / evidence |

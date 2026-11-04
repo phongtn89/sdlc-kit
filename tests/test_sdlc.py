@@ -300,6 +300,15 @@ class RealKitRules(Base):
             self.assertIn(needle, readme)
         self.assertNotIn("no `LICENSE` file", readme)
 
+    def test_adr_0003_fixes_the_enforcement_model(self):
+        with open(os.path.join(ROOT, "docs", "adr", "0003-enforcement-model.md"), encoding="utf-8") as f:
+            adr = f.read()
+        self.assertIn("Status: accepted", adr)
+        for needle in ("| Push while tests are red |", "| Source edit on a T3 feature without approval |",
+                       "| Task ticked without evidence |", "| Reviewer able to write |",
+                       "`enforce`", "off by default", "| Claude Code |", "| GitHub Copilot |", "Level 6"):
+            self.assertIn(needle, adr)
+
     def test_real_kit_lints_clean(self):
         code, out, _ = run("lint", kit=ROOT)
         self.assertEqual(code, 0, out)

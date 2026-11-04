@@ -4,6 +4,7 @@ Imported by `bin/sdlc` inside `cmd_gate` only. Contract: specs/005-gate-command/
 """
 import datetime
 import hashlib
+import json
 import os
 import re
 import stat
@@ -240,6 +241,103 @@ def resolve_spec(base, spec_dir, spec, safe_path):
     return path
 
 
+RECORD_MAX = 1024 * 1024
+GIT_REASONS = {"nogit": "git not found", "timeout": "git timed out"}
+
+
+def read_record(base):
+    """(record, None) or (None, reason). The record is not a document: problems are exit 1, never 2."""
+    path = os.path.join(base, sdlc_verify.RECORD)
+    if not os.path.lexists(path):
+        return None, "no record"
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) > RECORD_MAX:
+            return None, "unreadable record"
+        with open(path, "rb") as f:
+            return json.loads(f.read().decode("utf-8")), None
+    except (OSError, ValueError):
+        return None, "unreadable record"
+
+
+def check_green(base):
+    """List of problems (empty = pass): the record is green at HEAD and the tree is still clean."""
+    record, err = read_record(base)
+    if err:
+        return [err]
+    status, out = sdlc_verify.git_run(base, "rev-parse", "HEAD")
+    if status != "ok" or not out.strip():
+        return [GIT_REASONS.get(status, "HEAD unresolved (no repository or no commit)")]
+    reason = sdlc_verify.green_reason(record, out.strip())
+    if reason:
+        return [reason]
+    status, out = sdlc_verify.git_run(base, "status", "--porcelain", "--untracked-files=normal", "--", ".",
+                                      sdlc_verify.EXCLUDE)
+    if status != "ok":
+        return [GIT_REASONS.get(status, "git status failed")]
+    return ["tree changed since the record"] if out.strip() else []
+
+
+TICK_RE = re.compile(r"^[ \t]*[-*] \[[xX]\](?P<rest>.*)$")
+ID_RE = re.compile(r"^[ \t]*(?P<id>[A-Z]+\d+[a-z]?)(?![0-9A-Za-z_])")
+HASH_RE = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
+RANGE_RE = re.compile(r"(?<![0-9A-Za-z_])([A-Z]+)(\d+)[ \t]*[\u2013\u2014-][ \t]*(?:\1)?(\d+)(?![0-9A-Za-z_])")
+COMMIT_LINE = re.compile(r"^[0-9a-f]{40} commit \d+$")
+TOKEN_CAP = 2000
+
+
+def names_id(line, tid):
+    if re.search(r"(?<![0-9A-Za-z_])%s(?![0-9A-Za-z_])" % re.escape(tid), line):
+        return True
+    m = re.fullmatch(r"([A-Z]+)(\d+)", tid)
+    if not m:
+        return False
+    for prefix, lo, hi in RANGE_RE.findall(line):
+        if prefix == m.group(1) and int(lo) <= int(hi) and int(lo) <= int(m.group(2)) <= int(hi):
+            return True
+    return False
+
+
+def check_ticks(folder, base):
+    """List of problems (empty = pass)."""
+    lines = unify(read_doc(os.path.join(folder, "tasks.md"), "tasks.md")).split("\n")
+    ticks, problems = [], []
+    for n, l in enumerate(lines, 1):
+        m = TICK_RE.match(l)
+        if not m:
+            continue
+        im = ID_RE.match(m.group("rest"))
+        if im:
+            ticks.append((n, im.group("id")))
+        else:
+            problems.append((n, "line %d: checked box without an id" % n))
+    log = []
+    for i, l in enumerate(lines):
+        if l.rstrip() == "## Progress log":
+            for l2 in lines[i + 1:]:
+                if l2.startswith("## "):
+                    break
+                log.append(l2)
+            break
+    tokens = sorted({h for l in log for h in HASH_RE.findall(l)})
+    if ticks and len(tokens) > TOKEN_CAP:
+        return ["too many revisions to check (%d distinct, at most %d)" % (len(tokens), TOKEN_CAP)]
+    commits, shallow = set(), ""
+    if ticks and tokens:
+        status, out = sdlc_verify.git_run(base, "cat-file", "--batch-check", input="".join(t + "^{commit}\n" for t in tokens))
+        if status != "ok":
+            return [GIT_REASONS.get(status, "git failed")]
+        answers = out.split("\n")
+        commits = {tok for tok, a in zip(tokens, answers) if COMMIT_LINE.match(a)}
+        if len(commits) < len(tokens):
+            status, out = sdlc_verify.git_run(base, "rev-parse", "--is-shallow-repository")
+            if status == "ok" and out.strip() == "true":
+                shallow = " (shallow repository: history may be missing)"
+    for n, tid in ticks:
+        if not any(names_id(l, tid) and any(h in commits for h in HASH_RE.findall(l)) for l in log):
+            problems.append((n, "%s: no progress-log line with this task and an existing commit%s" % (tid, shallow)))
+    return [text for _, text in sorted(problems)]
+
+
 def verdict(name, problems):
     lines = list(problems)
     lines.append("gate %s: %s" % (name, "PASS" if not problems else "FAIL (%d problems)" % len(problems)))
@@ -264,4 +362,8 @@ def run(target, cfg, args, safe_path):
         return 0, [approve(resolve_spec(base, spec_dir, args.spec, safe_path), args.by)]
     if name == "approved":
         return verdict(name, check_approved(resolve_spec(base, spec_dir, args.spec, safe_path)))
+    if name == "green-at-head":
+        return verdict(name, check_green(base))
+    if name == "evidence-for-ticks":
+        return verdict(name, check_ticks(resolve_spec(base, spec_dir, args.spec, safe_path), base))
     raise GateError("gate %s is not implemented yet" % name)

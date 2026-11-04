@@ -35,15 +35,27 @@ def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+GIT_TIMEOUT = 20
+
+
+def git_run(workdir, *args, input=None):
+    """(status, stdout) with status `ok`, `fail`, `timeout` or `nogit`; `input` goes to standard input."""
+    try:
+        p = subprocess.run(GIT + ["-C", workdir] + list(args), capture_output=True, text=True,
+                           timeout=GIT_TIMEOUT, input=input, stdin=None if input is not None else subprocess.DEVNULL)
+    except FileNotFoundError:
+        return "nogit", ""
+    except subprocess.TimeoutExpired:
+        return "timeout", ""
+    except OSError:
+        return "fail", ""
+    return ("ok" if p.returncode == 0 else "fail"), (p.stdout if p.returncode == 0 else "")
+
+
 def git_call(workdir, *args):
     """(ok, stdout). A failed or timed-out call is ok=False; no git at all is (None, "")."""
-    try:
-        p = subprocess.run(GIT + ["-C", workdir] + list(args), capture_output=True, text=True, timeout=20)
-    except FileNotFoundError:
-        return None, ""
-    except (OSError, subprocess.TimeoutExpired):
-        return False, ""
-    return p.returncode == 0, p.stdout
+    status, out = git_run(workdir, *args)
+    return (None if status == "nogit" else status == "ok"), out
 
 
 def git_state(workdir):
@@ -220,17 +232,30 @@ def _run(cmds, workdir, timeout):
     return (0 if ok else 1), lines
 
 
-def green_at_head(record, head):
-    """The definition E1.3 reads: a current, clean, all-pass record. Never raises on a malformed one."""
+def green_reason(record, head):
+    """None when the record is green at `head`, else the first reason it is not. Never raises."""
     try:
         if not isinstance(record, dict) or record.get("version") != 1:
-            return False
+            return "record shape or version wrong"
         rev, dirty, cmds = record.get("revision"), record.get("dirty"), record.get("commands")
-        if not isinstance(rev, str) or not rev or rev != head or dirty is not False:
-            return False
-        if not isinstance(cmds, list) or not cmds:
-            return False
-        return all(isinstance(c, dict) and isinstance(c.get("name"), str) and c.get("exit") == 0 and c.get("result") == "pass"
-                   for c in cmds)
+        if not (rev is None or isinstance(rev, str)) or not isinstance(dirty, bool) or not isinstance(cmds, list) \
+                or not all(isinstance(c, dict) for c in cmds):
+            return "record shape or version wrong"
+        if not rev:
+            return "record has no revision"
+        if rev != head:
+            return "record is for another revision"
+        if dirty:
+            return "record was dirty"
+        if not cmds:
+            return "no commands in the record"
+        if not all(isinstance(c.get("name"), str) and c.get("exit") == 0 and c.get("result") == "pass" for c in cmds):
+            return "a command did not pass"
+        return None
     except Exception:
-        return False
+        return "record shape or version wrong"
+
+
+def green_at_head(record, head):
+    """The definition E1.3 reads: a current, clean, all-pass record."""
+    return green_reason(record, head) is None

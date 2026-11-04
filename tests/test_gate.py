@@ -421,5 +421,273 @@ class ApproveRefusals(Proj):
         self.assertEqual(self.approved()[0], 0)
 
 
+class GreenProj(Proj):
+    """A project with a configured test command and real git, plus helpers for `verify` records."""
+    def setup_repo(self, test_cmd=None):
+        cmd = test_cmd or "%s -c pass" % sys.executable
+        os.makedirs(os.path.join(self.d, ".sdlc"), exist_ok=True)
+        with open(os.path.join(self.d, ".sdlc", "config.json"), "w") as f:
+            json.dump({"commands": {"test": cmd}}, f)
+        self.repo()
+
+    def verify(self):
+        return run("verify", self.d)
+
+    def green(self, *extra, **kw):
+        return run("gate", "green-at-head", self.d, *extra, **kw)
+
+    def reason_lines(self, out):
+        return [l for l in out.strip().split("\n")[:-1]]
+
+    def record_path(self):
+        return os.path.join(self.d, ".sdlc", "evidence", "verify.json")
+
+    def fake_git(self, body, name="fakebin"):
+        d = os.path.join(self._tmp.name, name)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "git"), "w") as f:
+            f.write("#!/bin/sh\n" + body + "\n")
+        os.chmod(os.path.join(d, "git"), 0o755)
+        return {"PATH": d + os.pathsep + os.environ["PATH"]}
+
+
+class GreenAtHead(GreenProj):
+    def test_passes_for_a_clean_current_green_record(self):
+        self.setup_repo()
+        self.assertEqual(self.verify()[0], 0)
+        code, out, _ = self.green()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out.strip(), "gate green-at-head: PASS")
+
+    def test_each_failure_names_its_reason(self):
+        self.setup_repo()
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["no record"]))
+        self.verify()
+        with open(os.path.join(self.d, "new.txt"), "w") as f:
+            f.write("x")
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["tree changed since the record"]))
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "n")
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["record is for another revision"]))
+        with open(os.path.join(self.d, "more.txt"), "w") as f:
+            f.write("x")
+        self.verify()  # taken on a dirty tree
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["record was dirty"]))
+
+    def test_a_failed_command_in_the_record(self):
+        self.setup_repo("%s -c 'import sys; sys.exit(1)'" % sys.executable)
+        self.assertEqual(self.verify()[0], 1)
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["a command did not pass"]))
+
+    def test_unreadable_records_are_exit_1_and_never_hang(self):
+        self.setup_repo()
+        os.makedirs(os.path.dirname(self.record_path()), exist_ok=True)
+        with open(self.record_path(), "w") as f:
+            f.write("{not json")
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["unreadable record"]))
+        os.remove(self.record_path())
+        os.mkfifo(self.record_path())
+        code, out, _ = self.green(timeout=10)
+        self.assertEqual((code, self.reason_lines(out)), (1, ["unreadable record"]))
+        os.remove(self.record_path())
+        with open(self.record_path(), "w") as f:
+            f.write("[" + " " * (1024 * 1024 + 10) + "]")
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["unreadable record"]))
+        os.remove(self.record_path())
+        with open(self.record_path(), "w") as f:
+            json.dump({"version": 2}, f)
+        self.assertEqual(self.reason_lines(self.green()[1]), ["record shape or version wrong"])
+
+    def test_no_repository_and_no_commit_are_head_unresolved(self):
+        os.makedirs(os.path.join(self.d, ".sdlc"))
+        with open(os.path.join(self.d, ".sdlc", "config.json"), "w") as f:
+            json.dump({"commands": {"test": "%s -c pass" % sys.executable}}, f)
+        self.verify()
+        code, out, _ = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["HEAD unresolved (no repository or no commit)"]))
+        git(self.d, "init", "-q")
+        self.assertEqual(self.reason_lines(self.green()[1]), ["HEAD unresolved (no repository or no commit)"])
+
+    def test_the_commands_in_a_record_are_never_run(self):
+        self.setup_repo()
+        self.verify()
+        marker = os.path.join(self._tmp.name, "pwned")
+        with open(self.record_path()) as f:
+            rec = json.load(f)
+        rec["commands"][0]["command"] = "touch " + marker
+        with open(self.record_path(), "w") as f:
+            json.dump(rec, f)
+        self.assertEqual(self.green()[0], 0)
+        self.assertFalse(os.path.exists(marker))
+
+    def test_git_failures_fail_closed_with_their_reason(self):
+        self.setup_repo()
+        self.verify()
+        env = {"PATH": os.path.join(self._tmp.name, "nowhere")}
+        code, out, _ = self.green(env=env)
+        self.assertEqual((code, self.reason_lines(out)), (1, ["git not found"]))
+        env = self.fake_git("exit 1")
+        code, out, _ = self.green(env=env)
+        self.assertEqual((code, self.reason_lines(out)), (1, ["HEAD unresolved (no repository or no commit)"]))
+        real = subprocess.run(["git", "-C", self.d, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        env = self.fake_git('case "$*" in *rev-parse*) echo %s;; *status*) exit 1;; esac' % real)
+        code, out, _ = self.green(env=env)
+        self.assertEqual((code, self.reason_lines(out)), (1, ["git status failed"]))
+
+    def test_a_timed_out_git_call_has_its_own_reason(self):
+        import sdlc_gate, sdlc_verify
+        from unittest import mock
+        self.setup_repo()
+        self.verify()
+        with mock.patch.object(sdlc_verify, "git_run", return_value=("timeout", "")):
+            problems = sdlc_gate.check_green(self.d)
+        self.assertEqual(problems, ["git timed out"])
+
+    def test_two_git_calls(self):
+        self.setup_repo()
+        self.verify()
+        log = os.path.join(self._tmp.name, "calls.log")
+        real = subprocess.run(["git", "-C", self.d, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        env = self.fake_git('echo "$*" >> %s\ncase "$*" in *rev-parse*) echo %s;; esac' % (log, real))
+        self.assertEqual(self.green(env=env)[0], 0)
+        self.assertEqual(len(open(log).read().strip().split("\n")), 2)
+
+
+class Ticks(GreenProj):
+    def commits(self, n):
+        """n real commits; returns their short hashes."""
+        self.repo()
+        out = []
+        for i in range(n):
+            git(self.d, "commit", "-q", "--allow-empty", "-m", "c%d" % i)
+            out.append(subprocess.run(["git", "-C", self.d, "rev-parse", "--short=9", "HEAD"], capture_output=True,
+                                      text=True).stdout.strip())
+        return out
+
+    def tasks(self, body, log):
+        self.put("tasks.md", "# Tasks\n\nInputs: x \u00b7 Status: approved \u00b7 y\n\n" + body + "\n## Progress log\n\n" + log)
+
+    def ticks(self, **kw):
+        return run("gate", "evidence-for-ticks", self.d, "--spec", "005", **kw)
+
+    def problems(self, out):
+        return out.strip().split("\n")[:-1]
+
+    def test_single_ids_lists_ranges_and_human_steps_are_evidence(self):
+        h = self.commits(4)
+        self.tasks("- [x] T001 a\n- [x] T002 b\n- [X] T003 c\n- [x] T004 d\n- [x] T005 e\n- [x] T006b f\n- [x] H1 g\n- [ ] T009 open\n",
+                   "- 2026-11-04 `%s` \u2014 T001 done\n- `%s`+ T002, T003 done\n- %s: T004\u2013T005 done\n- %s T006b and H1\n" % (h[0], h[1], h[2], h[3]))
+        code, out, _ = self.ticks()
+        self.assertEqual((code, out.strip()), (0, "gate evidence-for-ticks: PASS"), out)
+
+    def test_range_spellings(self):
+        h = self.commits(1)
+        for spelling in ("T001\u2013T003", "T001-T003", "T001\u2013003", "T001 - T003"):
+            self.tasks("- [x] T002 b\n", "- `%s` %s done\n" % (h[0], spelling))
+            self.assertEqual(self.ticks()[0], 0, spelling)
+        self.tasks("- [x] T002 b\n", "- `%s` T003\u2013T001 done\n" % h[0])  # reversed: not a range, T002 not named
+        self.assertEqual(self.ticks()[0], 1)
+
+    def test_each_kind_of_missing_evidence_is_one_line(self):
+        h = self.commits(1)
+        self.tasks("- [x] T001 a\n- [x] T002 b\n- [x] T003 c\n- [x] no id here\n- [x] T0011 near\n",
+                   "- `%s` T001 done\n- T002 done without a hash\n- `abcdef0123` T003 done\n- `%s` T0011x\n" % (h[0], h[0]))
+        code, out, _ = self.ticks()
+        self.assertEqual(code, 1)
+        want = ["T002: no progress-log line with this task and an existing commit",
+                "T003: no progress-log line with this task and an existing commit",
+                "line 8: checked box without an id",
+                "T0011: no progress-log line with this task and an existing commit"]
+        self.assertEqual(self.problems(out), want)
+        self.assertEqual(out.strip().split("\n")[-1], "gate evidence-for-ticks: FAIL (4 problems)")
+
+    def test_a_non_commit_object_is_not_a_commit(self):
+        self.commits(1)
+        blob = subprocess.run(["git", "-C", self.d, "rev-parse", "--short=9", "HEAD:specs/005-demo/plan.md"], capture_output=True, text=True).stdout.strip()
+        self.tasks("- [x] T001 a\n", "- `%s` T001 done\n" % blob)
+        self.assertEqual(self.ticks()[0], 1)
+
+    def test_no_ticks_passes_with_no_git_call_even_outside_git(self):
+        self.tasks("- [ ] T001 open\n", "- no hashes\n")
+        log = os.path.join(self._tmp.name, "calls.log")
+        env = self.fake_git('echo "$*" >> %s' % log)
+        self.assertEqual(self.ticks(env=env)[0], 0)
+        self.assertFalse(os.path.exists(log))
+
+    def test_no_progress_log_heading_fails_every_tick(self):
+        h = self.commits(1)
+        self.put("tasks.md", "# Tasks\n\n- [x] T001 a\n\nT001 done `%s`\n" % h[0])
+        self.assertEqual(self.ticks()[0], 1)
+
+    def test_exactly_one_cat_file_call_and_a_shallow_probe_only_when_a_token_is_missing(self):
+        h = self.commits(2)
+        self.tasks("- [x] T001 a\n- [x] T002 b\n", "- `%s` T001\n- `%s` T002\n" % (h[0], h[1]))
+        log = os.path.join(self._tmp.name, "calls.log")
+        real = subprocess.run(["which", "git"], capture_output=True, text=True).stdout.strip()
+        env = self.fake_git('echo "$*" >> %s\nexec %s "$@"' % (log, real))
+        self.assertEqual(self.ticks(env=env)[0], 0)
+        calls = open(log).read().strip().split("\n")
+        self.assertEqual(len([c for c in calls if "cat-file" in c]), 1, calls)
+        self.assertEqual(len(calls), 1)
+        os.remove(log)
+        self.tasks("- [x] T001 a\n", "- `deadbeef12` T001\n")
+        self.assertEqual(self.ticks(env=env)[0], 1)
+        calls = open(log).read().strip().split("\n")
+        self.assertEqual(len(calls), 2)
+        self.assertIn("--is-shallow-repository", calls[1])
+
+    def test_git_failures_fail_closed(self):
+        h = self.commits(1)
+        self.tasks("- [x] T001 a\n", "- `%s` T001\n" % h[0])
+        for env, want in ((self.fake_git("exit 1"), "git failed"),
+                          ({"PATH": os.path.join(self._tmp.name, "nowhere")}, "git not found")):
+            code, out, _ = self.ticks(env=env)
+            self.assertEqual(code, 1, out)
+            self.assertIn(want, out)
+
+    def test_more_than_2000_distinct_tokens_is_a_failure(self):
+        self.commits(1)
+        log = "\n".join("- %07x T001" % (0x1000000 + i) for i in range(2001)) + "\n"
+        self.tasks("- [x] T001 a\n", log)
+        code, out, _ = self.ticks()
+        self.assertEqual(code, 1)
+        self.assertIn("too many revisions to check", out)
+
+    def test_snapshots_of_specs_002_003_004_against_a_rebuilt_history(self):
+        for n, want in (("002", []), ("003", []), ("004", ["T015", "T016", "T017", "H1"])):
+            with self.subTest(spec=n):
+                self.setUp()
+                with open(os.path.join(ROOT, "tests", "fixtures", "gate", "tasks-%s.md" % n), encoding="utf-8") as f:
+                    text = f.read()
+                log = text[text.index("## Progress log"):]
+                toks = sorted(set(re.findall(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])", log)))
+                self.repo()
+                real = {}
+                for tok in toks:
+                    git(self.d, "commit", "-q", "--allow-empty", "-m", tok)
+                    real[tok] = subprocess.run(["git", "-C", self.d, "rev-parse", "--short=9", "HEAD"], capture_output=True, text=True).stdout.strip()
+                head, tail = text.split("## Progress log", 1)
+                tail = re.sub(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])", lambda m: real.get(m.group(0), m.group(0)), tail)
+                self.put("tasks.md", head + "## Progress log" + tail)
+                code, out, _ = self.ticks()
+                got = [l.split(":")[0] for l in self.problems(out)]
+                self.assertEqual(got, want, out)
+                self.assertEqual(code, 1 if want else 0)
+
+    def test_live_files_smoke(self):
+        shallow = subprocess.run(["git", "-C", ROOT, "rev-parse", "--is-shallow-repository"], capture_output=True, text=True).stdout.strip()
+        if shallow != "false":
+            self.skipTest("shallow or non-git checkout")
+        self.assertEqual(run("gate", "evidence-for-ticks", ROOT, "--spec", "002")[0], 0)
+        self.assertEqual(run("gate", "evidence-for-ticks", ROOT, "--spec", "003")[0], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

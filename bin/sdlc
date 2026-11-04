@@ -602,6 +602,19 @@ def cmd_verify(a, kit):
         return 2, ["sdlc: error: %s" % e]
 
 
+def cmd_gate(a, kit):
+    sys.dont_write_bytecode = True  # the kit folder must stay unwritten
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    import sdlc_gate
+    try:
+        target = check_target(a.dir)
+        code, lines = sdlc_gate.run(target, read_config(target), a, safe_path)
+    except (SdlcError, sdlc_gate.GateError, OSError, UnicodeDecodeError, ValueError) as e:
+        return 2, ["sdlc: error: %s" % e]
+    enc = sys.stdout.encoding or "utf-8"
+    return code, [l.encode(enc, "replace").decode(enc) for l in lines]  # an encoding problem can't follow a write
+
+
 # ---------------------------------------------------------------- discover
 
 LOCKFILES = ["bun.lockb", "bun.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
@@ -913,6 +926,12 @@ def build_parser():
     add("next-spec", cmd_next_spec, "Print the next free 3-digit spec prefix.")
     sp = add("verify", cmd_verify, "Run the configured commands once and write .sdlc/evidence/verify.json.")
     sp.add_argument("--repo", help="workspace repo name (uses repos.<name>.commands)")
+    sp = add("gate", cmd_gate, "Mechanical readiness checks: approved, approve, green-at-head, evidence-for-ticks.", dir_=False)
+    sp.add_argument("name", help="approved | approve | green-at-head | evidence-for-ticks")
+    sp.add_argument("dir", help="project directory (must exist)")
+    sp.add_argument("--spec", help="feature: NNN or a folder inside spec_dir")
+    sp.add_argument("--repo", help="workspace repo name")
+    sp.add_argument("--by", help="approver's name (approve only)")
     sp = add("discover", cmd_discover, "List the git repos directly under a workspace folder (read-only).")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     add("lint", cmd_lint, "Validate the kit itself.", dir_=False)

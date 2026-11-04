@@ -182,7 +182,7 @@ The original decision list follows.
 1. Scaffold the folders, constitution and principles.
 2. Write the 16 skills, starting with the `sdlc` router, `grill`, `specify`, `tasks`, `implement`, `review` and `converge`, then the rest.
 3. Write the checklists, templates and roles.
-4. Write `bin/sdlc` (install, update, check, uninstall, next-spec), a skill linter and tests.
+4. Write `bin/sdlc` (install, update, check, uninstall, next-spec; `verify` added by spec 004, with its logic in `bin/sdlc_verify.py`), a skill linter and tests.
 5. Validate: install into a scratch copy of a repo, run `check`, and verify both Claude and Copilot outputs load (frontmatter and paths).
 6. Port the QA module.
 7. Write the README. Keep the evals as written scenarios for now.

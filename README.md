@@ -73,6 +73,7 @@ Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.js
 | `sdlc check <dir>` | Report drift (`MODIFIED`, `MISSING`, `DRIFT`), duplicate spec numbers, and an outdated lock. Exits 1 on drift, so it can run in CI. |
 | `sdlc uninstall <dir>` | Remove everything the kit wrote; keeps `config.json` and local edits |
 | `sdlc next-spec <dir>` | Next free `NNN` spec prefix |
+| `sdlc verify <dir> [--repo <name>]` | Run the configured `commands` once each and write `.sdlc/evidence/verify.json` (revision, dirty flag, exit codes, no output). Exits 0 only if everything that ran passed. Last line: `verify: PASSED at <hash> (clean tree)` is the only verified-at-HEAD result. POSIX only; no lock if two runs overlap. |
 | `sdlc discover <dir> [--json]` | Read-only inventory of the git repos in a workspace folder |
 | `sdlc lint` | Validate the kit itself |
 

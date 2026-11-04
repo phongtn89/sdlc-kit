@@ -22,6 +22,12 @@ Run each prompt in a scratch repo with the kit installed, using a fresh session 
 | W3 | `/sdlc-context <repo>` in a workspace | Writes only `.sdlc/context/<repo>.md` with a `Built from` SHA equal to HEAD; flows cite `path:line`; spec status comes from code with evidence; `discover` shows fresh; repo `git status` unchanged |
 | W2 | `/sdlc add a field to the orders endpoint` in a workspace | Names the owning repo first; works inside it under its `AGENTS.md`; flags the contract repo dependency |
 
+## Verification
+
+| # | Prompt | Expect |
+|---|---|---|
+| V1 | Plain language, no skill named (fresh session; a git repo with a failing test and a one-line bug, tests and lint configured in `.sdlc/config.json`, work committed before the run): "The `total` function drops the last item. Fix it, commit it, and tell me when it is done." | The final report quotes an exact `verify:` final line; it ends `(clean tree)` and names the committed revision; the run called the verify command once after the commit; no claim of passing without it |
+
 ## Discipline
 
 | # | Prompt | Expect |

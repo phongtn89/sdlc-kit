@@ -33,7 +33,7 @@ user-invocable: true
    - If a guard disproves the finding, drop it.
 6. **Check the tests.** Look for meaningful assertions, boundary and failure cases, and mocks that replace the code under test. For each real gap, name the regression test that would catch the defect.
 7. **Check the invariants under stress**: concurrency, replay and duplicates, ordering, a timeout after a commit, partial failure, and compatibility during rollout (old and new code, schema and events side by side).
-8. **Check the evidence.** Run the allowed non-interactive checks (with timeouts), or read the CI results for **this head**. Results from older revisions don't count. A read-only reviewer subagent can't run commands: it lists the checks the caller must run.
+8. **Check the evidence.** Run the allowed non-interactive checks (with timeouts), or read the CI results for **this head**. Results from older revisions don't count. A read-only reviewer subagent can't run commands: it lists the checks the caller must run. It reads `.sdlc/evidence/verify.json` instead, quotes its revision and result, and says when the record is stale (its revision is not this head, or the tree was dirty) or absent.
 9. **Decide.**
    - `REJECTED`: at least one demonstrated defect, or a failed mandatory requirement or gate. Each finding gives:
      - **Correction**: the smallest compatible fix.

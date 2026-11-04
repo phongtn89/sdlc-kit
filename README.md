@@ -14,7 +14,7 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 
 | | |
 |---|---|
-| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order |
+| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order, `sdlc verify` |
 | State | Usable. Last checked 2026-11-03 on `main` after the spec 003 merge: `sdlc lint` is clean and 228 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code (first-class) and GitHub Copilot (rendered, not evaluated); see [Supported hosts](#supported-hosts) |
 | Requirements | Python 3.9+, stdlib only, no network |
@@ -73,6 +73,7 @@ Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.js
 | `sdlc check <dir>` | Report drift (`MODIFIED`, `MISSING`, `DRIFT`), duplicate spec numbers, and an outdated lock. Exits 1 on drift, so it can run in CI. |
 | `sdlc uninstall <dir>` | Remove everything the kit wrote; keeps `config.json` and local edits |
 | `sdlc next-spec <dir>` | Next free `NNN` spec prefix |
+| `sdlc verify <dir> [--repo <name>]` | Run the configured `commands` once each and write `.sdlc/evidence/verify.json` (revision, dirty flag, exit codes, no output). Exits 0 only if everything that ran passed. Last line: `verify: PASSED at <hash> (clean tree)` is the only verified-at-HEAD result. POSIX only; no lock if two runs overlap. `uninstall` keeps `.sdlc/evidence/` (the record is local state: add it to `.gitignore` if you don't want it committed). |
 | `sdlc discover <dir> [--json]` | Read-only inventory of the git repos in a workspace folder |
 | `sdlc lint` | Validate the kit itself |
 

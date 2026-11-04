@@ -659,6 +659,61 @@ class UsageSkill(Base):
             self.assertIn(needle, text)
 
 
+class VerifySkills(Base):
+    def skill(self, name):
+        return self.read(".claude/skills/%s/SKILL.md" % name)
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+
+    def check_writer(self, name):
+        text = self.skill(name)
+        line = [l for l in text.split("\n") if "bin/sdlc verify" in l]
+        self.assertEqual(len(line), 1, (name, line))
+        for needle in ("<kit_path>/bin/sdlc verify .", "--repo <repo>", "final line", "(clean tree)", "tool timeout"):
+            self.assertIn(needle, line[0], (name, needle))
+
+    def test_implement_debug_and_ship_run_verify_and_quote_the_final_line(self):
+        for name in ("sdlc-implement", "sdlc-debug", "sdlc-ship"):
+            self.check_writer(name)
+
+    def test_ship_runs_it_after_the_commit_and_before_any_push(self):
+        line = [l for l in self.skill("sdlc-ship").split("\n") if "bin/sdlc verify" in l][0]
+        self.assertIn("after the commit", line)
+        self.assertIn("before any push or PR", line)
+
+    def test_review_reads_the_record_and_never_runs_the_command(self):
+        text = self.skill("sdlc-review")
+        line = [l for l in text.split("\n") if ".sdlc/evidence/verify.json" in l]
+        self.assertEqual(len(line), 1, line)
+        for needle in ("revision", "stale", "absent"):
+            self.assertIn(needle, line[0])
+        self.assertNotIn("bin/sdlc verify", text)
+        role = self.read(".claude/agents/sdlc-reviewer.md")
+        self.assertIn("tools: Read, Grep, Glob", role)
+
+    def test_ship_gate_runs_the_suite_once_and_review_gets_the_head_from_the_caller(self):
+        ship = self.skill("sdlc-ship").split("\n")
+        step2 = [l for l in ship if l.startswith("2. ")][0]
+        self.assertIn("step 4", step2)
+        self.assertNotIn("each run once", step2)
+        review = [l for l in self.skill("sdlc-review").split("\n") if ".sdlc/evidence/verify.json" in l][0]
+        self.assertIn("the caller", review)
+        self.assertIn("head", review)
+
+    def test_readme_says_uninstall_keeps_the_evidence_folder(self):
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("uninstall` keeps `.sdlc/evidence/`", readme)
+
+    def test_constitution_carries_one_matching_rule(self):
+        rule = [l for l in managed_block(self.read("AGENTS.md")).split("\n") if "sdlc verify" in l]
+        self.assertEqual(len(rule), 1, rule)
+        for needle in ("final line", "(clean tree)"):
+            self.assertIn(needle, rule[0])
+
+
 class EvalRows(unittest.TestCase):
     def rows(self):
         with open(os.path.join(ROOT, "evals", "scenarios.md"), encoding="utf-8") as f:
@@ -673,6 +728,24 @@ class EvalRows(unittest.TestCase):
             self.assertNotIn("sdlc-usage", prompt, key)
             self.assertNotIn("usage.py", prompt, key)
             self.assertNotIn("usage", prompt.lower().replace("usage metrics", ""), key)
+
+    def test_v1_exists_names_no_skill_or_command_and_expects_the_final_line(self):
+        row = self.rows()["V1"]
+        prompt, expect = re.findall(r'"([^"]+)"', row.split("|")[2])[-1], row.split("|")[-2]
+        for word in ("sdlc", "verify", "skill"):
+            self.assertNotIn(word, prompt.lower(), word)
+        self.assertIn("verify:", expect)
+        self.assertIn("(clean tree)", expect)
+
+    def test_readme_and_rendering_document_the_verify_command(self):
+        for rel in ("README.md", os.path.join("adapters", "RENDERING.md")):
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("verify", text, rel)
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("POSIX", readme)
+        self.assertIn(".sdlc/evidence/verify.json", readme)
 
 
 class CheckUpdateTests(Base):
@@ -879,6 +952,13 @@ class LintTests(Base):
         k = self.kit()
         with open(self.rules(k), "a") as f:
             f.write("- Record results in `.sdlc/evals/sample/results.md`.\n")
+        code, out = self.lint(k)
+        self.assertEqual(code, 0, out)
+
+    def test_runtime_evidence_folder_may_be_referenced(self):
+        k = self.kit()
+        with open(self.rules(k), "a") as f:
+            f.write("- Read `.sdlc/evidence/verify.json` for the last verify result.\n")
         code, out = self.lint(k)
         self.assertEqual(code, 0, out)
 

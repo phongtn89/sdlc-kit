@@ -56,7 +56,7 @@ Format: **ID** · story · acceptance (observable) · track and size (S ≈ one 
 
 ### E0 Foundations (wave 0)
 
-**Progress 2026-11-04.** D decisions taken in chat: E0.1 model-invocable flag; E0.3 MIT and scrub internal names; E0.4 park. Done: E0.2, E0.3 (history still holds the old names), E0.4, E0.5 (text and tests). E0.1 is changed and lint-guarded, but its acceptance (R6 and R7 at n=3 on two models) and E0.5's (U2 at n=3) are live evals not yet run, so those two stay open.
+**Progress 2026-11-04.** D decisions taken in chat: E0.1 model-invocable flag; E0.3 MIT and scrub internal names; E0.4 park. Done: E0.2, E0.3 (history still holds the old names), E0.4, E0.5 (text and tests). Live evals ran the same day (`evals/results/wave0-live.md`): E0.5 met (U2 3/3); E0.1 not met (R7 6/6, but R6 loads `sdlc` first in 0/6, the matching skill `sdlc-debug` goes first), so E0.1 stays open pending an owner choice.
 
 | ID | Story | Acceptance | Track · size · deps | Level / evidence |
 |---|---|---|---|---|

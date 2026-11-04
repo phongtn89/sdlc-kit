@@ -12,10 +12,10 @@ Add a `verify` subcommand to `bin/sdlc` whose logic lives in a sibling module `b
 - Key dependencies: `git` on PATH for the revision (absent git means "no revision", never a crash).
 - Storage: `.sdlc/evidence/verify.json`, one file, replaced atomically.
 - Testing: `unittest` driving `bin/sdlc verify` as a subprocess in temp projects (black-box, as the existing tests do); fixture commands are `python3 -c` one-liners so tests are portable.
-- Constraints: POSIX process groups (`start_new_session=True`, `os.killpg`); Windows is not a supported host (T012 adds that line to the README; today it only says Python 3.9+).
+- Constraints: POSIX process groups (`start_new_session=True`, `os.killpg`); Windows is not a supported host (T014 adds that line to the README; today it only says Python 3.9+).
 - Errors: `main()` turns any `SdlcError` into exit 1 (`bin/sdlc`), so `cmd_verify` catches `SdlcError` around config reading, `--repo` lookup, folder check and record write and returns `(2, [message])` itself; `cmd_*` already return `(code, lines)`.
-- Import: `cmd_verify` imports `sdlc_verify` inside the function after setting `sys.dont_write_bytecode = True`, so other commands never depend on it and the kit stays unwritten (FR-013). Running `bin/sdlc` by path or through a symlink puts the real `bin/` first on `sys.path` (test T001b).
-- Git: the module copies `git_read`'s flags (`--no-optional-locks -c core.fsmonitor=false`); it can't import them from `bin/sdlc` without a cycle. A repository with no commit counts as no revision.
+- Import: `cmd_verify` imports `sdlc_verify` inside the function after setting `sys.dont_write_bytecode = True`, so other commands never depend on it and the kit stays unwritten (FR-013); the module itself can't set it (too late for its own bytecode), so tests set it before their import. Running `bin/sdlc` by path or through a symlink puts the real `bin/` first on `sys.path` (test T002).
+- Git: the module copies `git_read`'s flags (`--no-optional-locks -c core.fsmonitor=false`); it can't import them from `bin/sdlc` without a cycle. A repository with no commit counts as no revision. `git_read` returns None on a failed or timed-out call: the module treats a failed `status` as dirty (fail closed) and a failed `rev-parse` as no revision. `status` runs with `--untracked-files=normal`.
 
 ## Constitution check
 
@@ -56,8 +56,12 @@ The record and the final line are read by a helper `green_at_head(record, head)`
 | Failure | Handling |
 |---|---|
 | Command hangs | `Popen.wait(timeout)`; on expiry the group is killed and `verify` stops waiting; recorded `timeout`; counted failed |
-| Command spawns children that outlive it | The group kill covers them. A child that leaves the group (daemonises) isn't killed, but because output goes to a file and `verify` never waits on a pipe, `verify` can't hang on it (test T005) |
-| `verify` is interrupted | SIGINT and SIGTERM handlers kill the running group, then exit |
+| Command spawns children that outlive it | The group kill covers them. A child that leaves the group (daemonises) isn't killed, but because output goes to a file and `verify` never waits on a pipe, `verify` can't hang on it (test T006) |
+| `verify` is interrupted | SIGINT and SIGTERM handlers kill the running group, write no record, print `verify: interrupted, no record written` on standard error, exit 1 |
+| Background child after a normal exit | The group is killed after every command, not only on timeout; a child in a new session is a stated limit |
+| Output file location | OS temp folder, unlinked right after opening (FR-013's carve-out); it grows up to the time limit, which is accepted; only its tail is read |
+| Config of the wrong shape (a list, non-object `commands`, `verify`, `repos`, `repos.<name>`; non-string path) | Exit 2 with a message; `null`, empty and whitespace-only commands count as not configured |
+| `git status` fails or times out | `dirty: true` (fail closed); test with a fake `git` on PATH |
 | Command changes files or commits | Dirty is read again after the last command; a moved `HEAD` means no revision (FR-011) |
 | Command reads stdin | Stdin is `/dev/null`, so it sees end of input |
 | Huge output | It goes to a temporary file; only the last 8 KB are read and cut to 20 lines of 400 characters; the file is deleted |
@@ -84,9 +88,11 @@ The record and the final line are read by a helper `green_at_head(record, head)`
 | record shape, no output (SC-002) | read the record | integration | `python3 -m unittest tests.test_verify.Record -v` |
 | failed write keeps the old record, removes the temp file (NFR-003) | call `write_record` with an injected failing replace | unit | `python3 -m unittest tests.test_verify.WriteFailure -v` |
 | hostile environment and arguments run nothing (FR-014); nothing written outside the root (FR-013); default config works | black-box with `SDLC_VERIFY_COMMAND` etc. set, stat before and after | integration | `python3 -m unittest tests.test_verify.Isolation -v` |
-| `green_at_head` truth table (SC-003) | helper | unit | `python3 -m unittest tests.test_verify.GreenAtHead -v` |
+| `green_at_head` truth table, including malformed records (SC-003) | helper | unit | `python3 -m unittest tests.test_verify.GreenAtHead -v` |
 | revision, dirty, no revision, stale (SC-003) | temp git repos | integration | `python3 -m unittest tests.test_verify.Revision -v` |
-| config errors | invalid config files | integration | `python3 -m unittest tests.test_verify.ConfigErrors -v` |
+| git call count (NFR-004: at most 4 in a repo, 1 with no commit, 0 without git) and failed `status` reads as dirty | fake `git` on PATH that logs and can fail | integration | `python3 -m unittest tests.test_verify.GitCalls -v` |
+| interrupt and daemonised child (FR-004) | signal a running `verify`; fixture that starts a new-session child | integration | `python3 -m unittest tests.test_verify.Timeout -v` |
+| config errors | invalid config files, wrong shapes | integration | `python3 -m unittest tests.test_verify.ConfigErrors -v` |
 | `--repo` in a workspace | temp workspace | integration | `python3 -m unittest tests.test_verify.Workspace -v` |
 | skills and rule text (FR-015) | rendered install | unit | `python3 -m unittest tests.test_sdlc.VerifySkills -v` |
 

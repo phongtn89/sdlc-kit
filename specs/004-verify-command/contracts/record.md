@@ -12,15 +12,15 @@ python3 <kit_path>/bin/sdlc verify <dir> [--repo <name>]
 
 ## Commands run
 
-`commands.test`, `lint`, `typecheck`, `build`, `integration`, in that order; empty or absent entries are skipped. Each runs through the shell in the project root (or repo path), standard input closed (`/dev/null`), standard output and error merged, in its own process group. Time limit: `verify.timeout_seconds` (positive integer, default 600); on expiry the whole group is killed. Only the last 20 lines (at most 2,000 characters) of each command's output are kept in memory, to print on failure.
+`commands.test`, `lint`, `typecheck`, `build`, `integration`, in that order; empty or absent entries are skipped. Each runs through the shell in the project root (or repo path), standard input closed (`/dev/null`), standard output and error merged into a temporary file, in its own process group. Time limit: `verify.timeout_seconds` (positive integer, not a boolean, default 600); on expiry the group is killed and `verify` stops waiting, even if a child that left the group still holds the file. After the command ends only the last 20 lines (cut to 400 characters each, at most 2,000 characters in all, decoded with replacement) are read from the file, to print on failure; the file is then deleted. `commands.*` values must be strings without NUL, else exit 2. A SIGINT or SIGTERM to `verify` kills the running group before it exits.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | at least one command ran and all that ran exited 0 |
-| 1 | any command exited non-zero, timed out or could not be launched |
-| 2 | bad arguments, unreadable or invalid config, unknown `--repo`, or no command configured (no record is written) |
+| 1 | any command exited non-zero, timed out or could not be launched (even if the record then could not be written; the results are printed first) |
+| 2 | bad arguments, missing `<dir>`, unreadable or invalid config, unknown `--repo` or a repo path outside the root, or no command configured (no record is written); also a record that could not be written when no command had failed |
 
 ## Printed output
 
@@ -31,7 +31,15 @@ verify lint: FAIL exit 1 (3.1 s)
 verify: FAILED at 3b8e173 (clean tree)
 ```
 
-Final line: `verify: PASSED at <short hash> (clean tree)`, or `FAILED`; the revision part reads `(dirty tree)` or `(no revision)` when so. `PASSED` on a dirty tree or without a revision also says `not green at HEAD` after the revision part.
+Final line, exactly one of (hash: first 7 characters; `PASSED` or `FAILED` as the exit code says):
+
+```text
+verify: PASSED at 3b8e173 (clean tree)
+verify: PASSED at 3b8e173 (dirty tree, not verified at HEAD)
+verify: PASSED (no revision, not verified at HEAD)
+```
+
+and the same three with `FAILED`. The text never contains the word "green".
 
 ## Record: `.sdlc/evidence/verify.json`
 
@@ -49,8 +57,9 @@ Final line: `verify: PASSED at <short hash> (clean tree)`, or `FAILED`; the revi
 }
 ```
 
-- `revision`: full `HEAD` hash, or `null` outside a git repository. `dirty`: `git status --porcelain` is non-empty; with no revision, `dirty` is `false` and the record is never green.
-- `exit`: integer, or `"timeout"`, or `"not started"` (with `"error"` giving the launch error text, which holds no command output). `result`: `pass` (exit 0), `fail`, `timeout`.
+- `started`, `finished`: UTC, `YYYY-MM-DDTHH:MM:SSZ`. `revision`: full `HEAD` hash read before the first command, or `null` outside a git repository, with no commit, or when `HEAD` changed during the run. `dirty`: `git status --porcelain -- . ':(exclude).sdlc/evidence'` was non-empty before the first command or after the last; with no revision, `dirty` is `false` and the record is never green. Git runs with `--no-optional-locks -c core.fsmonitor=false` (as `git_read` in `bin/sdlc` does), at most four calls.
+- `exit`: integer (negative when a signal ended the command), or `"timeout"`, or `"not started"` (with `"error"` giving the launch error text, which holds no command output). `result`: `pass` (exit 0), `fail` (any other exit, and `not started`), `timeout`.
 - **Green at HEAD** (the definition E1.3 reads): `revision` equals the current `HEAD`, `dirty` is false, `commands` is not empty and every `result` is `pass`.
-- Written to a temporary file in the same folder, then renamed over the record; `.sdlc/evidence/` is created if absent. A failed write leaves the old record and exits 2.
+- Written to a temporary file in the same folder, then renamed over the record; `.sdlc/evidence/` is created if absent. A failed write removes the temporary file, leaves the old record, prints the results and exits per the table above.
+- The module sets `sys.dont_write_bytecode` before it is imported, so nothing is written in the kit.
 - No field holds command output.

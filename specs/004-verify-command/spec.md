@@ -24,13 +24,13 @@ Track: T3
 - Running a project's tests in parallel, retrying a failed command, or fixing what fails.
 - Choosing which commands a project has. They stay in `.sdlc/config.json` (`commands`).
 - Keeping command output. The record holds no output (NFR-002).
-- Defending against an agent that edits the project's config to change the commands (stated limit; the config is the project's own file).
+- Defending against an agent that edits the project's config to change the commands, or writes `.sdlc/evidence/verify.json` by hand: the record carries no signature, so level 5 raises the cost of a false claim but does not close it (stated limit; E1.3 and CI, level 6, are the backstop).
 - Copilot hooks. The command itself works on any host; only Claude Code gets a hook (ADR-0003).
 
 ## Glossary terms used
 
 - **Evidence record**: the file `verify` writes (`.sdlc/evidence/verify.json`) with what ran, the exit codes and the revision.
-- **Green at HEAD**: the record's revision equals the repository's current `HEAD`, the tree was clean, and every command that ran exited 0.
+- **Green at HEAD**: the record's revision equals the repository's current `HEAD`, the tree was clean (ignoring `.sdlc/evidence/`), at least one command ran and every command that ran exited 0.
 - **Stale**: a record whose revision is not the current `HEAD`.
 
 ## User scenarios
@@ -60,9 +60,11 @@ As a gate, I want to know whether the record describes the code that exists now,
 
 **Independent test:** after a commit the record reads as stale; a run on a dirty tree is recorded as dirty.
 
-1. **Given** a record taken at revision A on a clean tree, **When** `HEAD` becomes B, **Then** the record's revision (A) differs from `HEAD`, so any reader can see it is stale without re-running anything.
+1. **Given** a record taken at revision A on a clean tree, **When** `HEAD` becomes B, **Then** the record's revision (A) differs from `HEAD`, so a reader applying the green-at-HEAD definition finds it not green without re-running anything.
 2. **Given** uncommitted changes exist, **When** I run `sdlc verify`, **Then** the record says the tree was dirty, and a dirty record is never green at HEAD.
-3. **Given** the directory is not a git repository, **When** I run `sdlc verify`, **Then** the checks run and the record says there is no revision, which is never green at HEAD.
+3. **Given** the directory is not a git repository (or has no commit yet), **When** I run `sdlc verify`, **Then** the checks run and the record says there is no revision, which is never green at HEAD.
+4. **Given** a clean repository, **When** I run `sdlc verify` twice in a row, **Then** the second record is clean too: the first record's own file does not make the tree dirty.
+5. **Given** a command changes files or makes a commit, **When** `verify` finishes, **Then** the record says dirty (or no revision if `HEAD` moved), because the revision was not the one that was checked.
 
 ### S4: Workspaces and skills (P2)
 
@@ -71,7 +73,7 @@ As an owner of a multi-repo workspace, I want to verify one repo with that repo'
 **Independent test:** in a workspace, `verify --repo <name>` uses `repos.<name>.commands` and writes the record in that repo.
 
 1. **Given** a workspace config with per-repo commands, **When** I run `sdlc verify --repo api`, **Then** it runs from that repo's folder with its commands and writes its record there.
-2. **Given** the kit's skills for implementing, reviewing and shipping, **When** they ask for a result, **Then** they tell the agent to run `sdlc verify` and quote its summary and record revision.
+2. **Given** the kit's skills for implementing, debugging, reviewing and shipping, **When** they ask for a test result, **Then** the writing skills tell the agent to run `sdlc verify` and quote its final line, and the read-only review skill tells the reviewer to read and quote the existing record and say when it is stale or absent.
 
 ## Requirements
 
@@ -79,31 +81,31 @@ As an owner of a multi-repo workspace, I want to verify one repo with that repo'
 - **FR-002**: Each command MUST run non-interactively: no input is available to it, and no prompt can wait for an answer. (S1, S2)
 - **FR-003**: `verify` MUST continue after a failing command and run the rest. (S1)
 - **FR-004**: Each command MUST have a time limit, default 600 seconds, overridable by `verify.timeout_seconds` in `.sdlc/config.json`; a command over the limit MUST be stopped, recorded as timed out and counted as failed. (S2)
-- **FR-005**: A command that exits 127 (not found) or can't be launched MUST be recorded as failed, with its exit code or launch error as the reason. (S2)
-- **FR-006**: The exit code MUST be 0 only when at least one command ran and every command that ran exited 0; 1 when any command failed or timed out; 2 for bad arguments, an unreadable config, or no command configured. (S1, S2)
+- **FR-005**: A command that exits 127 (not found) MUST be recorded as failed with that code; a command that can't be launched (an operating-system error at launch) MUST be recorded as `not started` with the error text, result `fail`. A non-string command, or one containing a NUL character, is a config error (exit 2). (S2)
+- **FR-006**: The exit code MUST be 0 only when at least one command ran and every command that ran exited 0; 1 when any command failed or timed out; 2 for bad arguments, a missing project folder, an unreadable or invalid config, a repo path outside the project root, or no command configured. If the record can't be written after the commands ran, `verify` MUST still print every result, then exit 1 when a command had failed and 2 otherwise. (S1, S2)
 - **FR-007**: With no command configured, `verify` MUST say so and MUST NOT write a record. (S2)
-- **FR-008**: `verify` MUST write the evidence record atomically to `.sdlc/evidence/verify.json`, replacing the previous one. It holds: format version, UTC start and end time, the revision (`HEAD` as a full hash, or none), whether the tree was dirty, and per command its name, text, exit code (or `timeout` or `not started`), duration and result. (S1, S3)
+- **FR-008**: `verify` MUST write the evidence record atomically to `.sdlc/evidence/verify.json`, replacing the previous one. It holds: format version, UTC start and end time, the revision (`HEAD` as a full hash, or none), whether the tree was dirty, and per command its name, text, exit code (an integer, negative when a signal ended it, or `timeout`, or `not started`), duration, result (`pass`, `fail` or `timeout`) and, for `not started`, the launch error text. Times are UTC, `YYYY-MM-DDTHH:MM:SSZ`. (S1, S3)
 - **FR-009**: The record MUST NOT contain command output (NFR-002). (S1)
-- **FR-010**: `verify` MUST print one summary line per command (name, result, duration), then one final line saying passed or failed and giving the revision and dirty state; for a failed command it MUST print the last 20 lines of that command's combined output, at most 2,000 characters. (S1)
-- **FR-011**: The record MUST state whether the tree was dirty and MUST state "no revision" outside a git repository; a dirty or revision-less record MUST NOT be described as green at HEAD in the final line. (S3)
+- **FR-010**: `verify` MUST print one summary line per command (name, result, duration), then one final line, exactly one of `verify: PASSED at <7-char hash> (clean tree)`, `verify: PASSED at <7-char hash> (dirty tree, not verified at HEAD)`, `verify: PASSED (no revision, not verified at HEAD)`, or the same three with `FAILED`; for a failed command it MUST print the last 20 lines of that command's combined output, at most 2,000 characters. (S1)
+- **FR-011**: The revision and the dirty state MUST be read before the first command and the dirty state again after the last; the record is dirty if either read was dirty, and has no revision if `HEAD` changed in between or there is no git repository or commit. The dirty state ignores `.sdlc/evidence/`, so a first record does not make the next run dirty. A dirty or revision-less run MUST NOT be reported as verified at HEAD (final-line grammar in FR-010). (S3)
 - **FR-012**: In a workspace, `verify --repo <name>` MUST use `repos.<name>.commands`, run from that repo's path, and write that repo's record; an unknown repo name is exit 2. (S4)
-- **FR-013**: `verify` MUST work when `enforce` and `usage` are off, and MUST NOT read or write any file outside the project root except the commands' own side effects. (S1)
-- **FR-014**: The commands MUST come only from `.sdlc/config.json`; `verify` MUST NOT accept a command from its arguments or the environment. (S1)
-- **FR-015**: The kit's skills that report test results (`sdlc-implement` convergence step, `sdlc-review`, `sdlc-ship`, `sdlc-debug` verification) MUST tell the agent to run `sdlc verify` and quote its final line and revision, and the rendered `AGENTS.md` rule MUST say the same. (S4)
+- **FR-013**: `verify` MUST work when `enforce` and `usage` are off, and MUST NOT write any file outside the project root (not even bytecode in the kit) except the commands' own side effects; a repo path from the config that leaves the project root is exit 2. (S1, S4)
+- **FR-014**: The commands MUST come only from `.sdlc/config.json`; `verify` MUST NOT run a command taken from its arguments or the environment. (S1)
+- **FR-015**: `sdlc-implement` (its final gate, informational because the tree is still dirty), `sdlc-debug` (its verification) and `sdlc-ship` (after the commit, before any push or PR) MUST tell the agent to run `sdlc verify` and quote its exact final line in the report; `sdlc-review`, which is read-only, MUST tell the reviewer to read `.sdlc/evidence/verify.json`, quote its revision and result, and say when it is stale or absent. The constitution MUST carry one rule saying the same. (S4)
 
 ## Non-functional
 
 - **NFR-001**: Python 3.9+ standard library only, no network, no prompts (the kit's constraints).
-- **NFR-002**: The record is content-free: names, commands as configured, numbers and a revision, never output.
+- **NFR-002**: The record is content-free: names, commands as configured, numbers, a revision and a launch error text, never command output.
 - **NFR-003**: A failed write leaves the previous record unchanged.
-- **NFR-004**: `verify` adds no more than 1 second of its own time to the commands' time on a repository of 1,000 files.
+- **NFR-004**: `verify` runs `git` a fixed number of times (at most four calls), independent of the repository's size.
 
 ## Success criteria
 
 - **SC-001**: A red and a green fixture command give exit codes 1 and 0 and the matching record, and removing the record-writing or the exit-code logic makes at least one test fail — measured by unit tests plus a mutation check.
 - **SC-002**: The record of any run contains no byte of command output — measured by a test that runs a command printing a marker string and searches the record.
-- **SC-003**: After a new commit, a reader comparing the record's revision with `HEAD` finds it stale in 100% of test cases (clean, dirty, no repository) — measured by unit tests.
-- **SC-004**: In a live eval (new row V1, n = 3 on two models) an agent told to finish a small fix and report runs `sdlc verify` and quotes its final line in at least 5 of 6 runs — measured from the transcripts.
+- **SC-003**: A helper implementing the green-at-HEAD definition returns false for a record after a new commit, for a dirty record, for a revision-less record and for a record with a failed command, and true only for a clean, current, all-pass record, in 100% of test cases — measured by unit tests.
+- **SC-004**: In a live eval (new row V1, n = 3 on two models) an agent told to finish a small fix and report runs `sdlc verify` and the exact final line appears in its report in at least 5 of 6 runs — measured from the transcripts.
 
 ## Assumptions & dependencies
 

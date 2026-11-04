@@ -22,14 +22,14 @@ Track: T3
 
 - Blocking anything: a gate only reports. Hooks (E1.4) and CI (E1.5) act on its exit code.
 - Authenticating the approver. `approve` records the name it is given; it is a record, not a signature (the same stated limit as spec 004's record).
-- Specs approved before this feature: 002, 003 and 004 have no digest, so `gate approved` reports them as having none; and spec 004's progress log lacks hashes for T015–T017 and H1, so `gate evidence-for-ticks` fails on it. There is no migration. Spec 005's own approval line is written by hand at H1 (the command does not exist yet) and replaced by `approve` before the merge (task T013).
+- Specs approved before this feature: 002, 003 and 004 have no digest, so `gate approved` reports them as having none; and spec 004's progress log lacks hashes for T015–T017 and H1, so `gate evidence-for-ticks` fails on it. There is no migration. Spec 005's own approval line is written by hand at H1 (the command does not exist yet) and replaced by `approve` before the merge (task T012).
 - Task text added after the progress log: not covered by the digest.
 - Review-record validation (`gate review`, E2.3), value gates (E6.3), budgets (E1.6).
 - Judging whether the evidence a log line cites is true; only that a line naming the task and a real revision exists.
 
 ## Glossary terms used
 
-- **Approval digest**: a SHA-256 over the normalised text of `spec.md`, `plan.md` and `tasks.md`, recorded on the spec's `Approved` line.
+- **Approval digest**: a SHA-256 over the normalised text of `spec.md`, `plan.md` and `tasks.md` and the text of the feature's `contracts/*.md` and `data-model.md`, recorded on the spec's `Approved` line.
 - **Normalised**: with status lines, task checkboxes in bullet lists and the tasks file's progress log removed, so ordinary work (ticking tasks, logging, marking the spec implemented) doesn't change the digest but any change to requirements, plan text or task text does.
 - **Evidence for a tick**: a progress-log line that names the task and a revision that exists in the repository.
 - **Green at HEAD**: as defined by spec 004.
@@ -43,7 +43,7 @@ As a maintainer, I want to know mechanically that the spec, plan and tasks are t
 **Independent test:** a spec with a recorded digest passes; changing one requirement, plan line or task text makes it fail; ticking a task or adding a log line doesn't.
 
 1. **Given** a spec approved with a digest, **When** I run `sdlc gate approved`, **Then** it passes (exit 0) when the status is approved or implemented and the digest matches.
-2. **Given** a requirement is edited after approval, **When** I run it, **Then** it fails (exit 1) and says which file changed since approval.
+2. **Given** a requirement, plan line, contract or task text is edited after approval, **When** I run it, **Then** it fails (exit 1) and says which part changed since approval.
 3. **Given** a task is ticked and a progress-log line added, **When** I run it, **Then** it still passes.
 4. **Given** a draft spec, or an approved one with no digest, **When** I run it, **Then** it fails and says why.
 
@@ -85,12 +85,12 @@ As a reader of `tasks.md`, I want every ticked task to point to a revision, so t
 - **FR-001**: `sdlc gate <name> <dir>` MUST support `approved`, `green-at-head`, `evidence-for-ticks` and `approve`; an unknown name is exit 2. (S1–S4)
 - **FR-002**: `approved`, `evidence-for-ticks` and `approve` MUST take `--spec <NNN or folder>` naming a feature folder under the project's `spec_dir` (default `specs`); a missing or ambiguous spec is exit 2. (S1, S2, S4)
 - **FR-003**: `<dir>` is the project root, as for every `sdlc` command. Exit codes MUST be 0 when the gate passes, 1 when it fails, 2 for usage or config errors, an unreadable or malformed document, or a refused `approve`. (all)
-- **FR-004**: Every gate MUST print one line per problem and a last line `gate <name>: PASS` or `gate <name>: FAIL (<n> problems)`. (all)
-- **FR-005**: The approval digest MUST be a SHA-256 combining the SHA-256 of each of the normalised `spec.md`, `plan.md` and `tasks.md`, and the `Approved` line MUST also record a short prefix of each file's own SHA-256, so a mismatch can name the files; normalisation (contract) ignores only the spec's own `Status:` and `Approved:` header lines, the inline `Status:` field of the `Spec:` or `Inputs:` line, checked boxes in bullet lists of `tasks.md`, and the progress log of `tasks.md`. Nothing in `spec.md` or `plan.md` may be ignored beyond those lines. (S1)
-- **FR-006**: `approved` MUST pass only when the spec's status is `approved` or `implemented`, its `Approved` line holds a name, a `YYYY-MM-DD` date and `digest sha256:<64 hex>`, and the digest equals the one computed now; on a mismatch it MUST name each of the three files whose normalised text changed since approval. (S1)
+- **FR-004**: Every gate MUST print one line per problem and a last line `gate <name>: PASS` or `gate <name>: FAIL (<n> problems)`; the exceptions are a successful `approve` (its own PASS line naming the approver, date and digest) and exit 2 (one `sdlc: error:` line, no gate line). (all)
+- **FR-005**: The approval digest MUST be a SHA-256 combining the SHA-256 of each of four parts (the normalised `spec.md`, `plan.md` and `tasks.md`, and the feature's contract files), and the `Approved` line MUST also record a short prefix of each part's own SHA-256, so a mismatch can name the part; normalisation (contract) ignores only the spec's own `Status:` and `Approved:` header lines, the inline `Status:` field of the `Spec:` or `Inputs:` line, checked boxes in bullet lists of `tasks.md`, and the progress log of `tasks.md`. Nothing in `spec.md`, `plan.md` or the contract files may be ignored beyond those lines. An intended edit to an approved document needs a re-approval by the human. (S1)
+- **FR-006**: `approved` MUST pass only when the spec's status is `approved` or `implemented`, its `Approved` line holds a name, a `YYYY-MM-DD` date and `digest sha256:<64 hex>`, and the digest equals the one computed now; on a mismatch it MUST name each part (spec, plan, tasks, contracts) whose normalised text changed since approval. A spec with no `Status:` line fails. (S1)
 - **FR-007**: `approved` on a spec without a digest, or in draft, MUST fail with the reason. (S1)
 - **FR-008**: `approve --by <name>` MUST require a non-empty name, accept only a spec whose status is `draft` or `approved` and whose `plan.md` and `tasks.md` exist, and write the status `approved` and `Approved: <name>, <today UTC>, digest sha256:<hex>`; it MUST NOT change any other line, and MUST write atomically (a failure leaves the file as it was, exit 2). (S2)
-- **FR-009**: `green-at-head` MUST read the evidence record of spec 004 (`.sdlc/evidence/verify.json`, or the repo's own with `--repo`), compare it with the current `HEAD`, and pass only under spec 004's green-at-HEAD definition **and** only if the working tree is still clean now (ignoring `.sdlc/evidence/`), so edits made after the check can't ride on it; a failure MUST say which condition failed (no record, unreadable record, git not found, HEAD unresolved, other revision, record dirty, tree changed since, no revision, no commands, a failed command, git status failed). The record is not a "document": a missing or unreadable record is exit 1, not 2. It MUST NOT run any command from the record. (S3)
+- **FR-009**: `green-at-head` MUST read the evidence record of spec 004 (`.sdlc/evidence/verify.json`, or the repo's own with `--repo`), compare it with the current `HEAD`, and pass only under spec 004's green-at-HEAD definition **and** only if the working tree is still clean now (ignoring `.sdlc/evidence/`), so edits made after the check can't ride on it; a failure MUST say which condition failed (no record, unreadable record, record shape or version wrong, git not found, git timed out, HEAD unresolved, other revision, record dirty, tree changed since, no revision, no commands, a failed command, git status failed). The record is not a "document": a missing or unreadable record is exit 1, not 2. It MUST NOT run any command from the record. (S3)
 - **FR-010**: `evidence-for-ticks` MUST treat each checked task or human-step box in `tasks.md` as needing evidence: a line in the `## Progress log` section that names the id (as a whole token, alone, in a list, or inside a range such as `T001–T012`) and a hexadecimal revision of 7 to 40 characters that exists in the repository as a commit; each task without it MUST be reported, and a checked box without an id MUST be reported too. (S4)
 - **FR-011**: A gate MUST NOT write anywhere except `approve` writing the one spec file; it MUST NOT run any command from the project's config or records, and MUST NOT write outside the project root. (all)
 - **FR-012**: Git questions MUST be asked with read-only git (no optional locks, no fsmonitor) and a failed or timed-out git call MUST make the gate fail (exit 1, with the reason), never pass. (S3, S4)
@@ -99,13 +99,13 @@ As a reader of `tasks.md`, I want every ticked task to point to a revision, so t
 
 ## Non-functional
 
-- **NFR-001**: Python 3.9+ standard library only, no network, no prompts.
-- **NFR-002**: A gate runs git at most three times, however many tasks or log lines there are; it reads only the three documents and the record.
+- **NFR-001**: Python 3.9+ standard library only, no network, no prompts (checked by a test that scans the module's imports).
+- **NFR-002**: A gate runs git at most three times, however many tasks or log lines there are; it reads only the config, the spec folder's documents and contract files, and the record.
 - **NFR-003**: The digest is reproducible: the same three documents give the same digest on any machine, including with different line endings (`\r\n` is treated as `\n`).
 
 ## Success criteria
 
-- **SC-001**: For the document edits {a requirement, a plan line, a task description, a new task} `approved` fails after approval in 100% of test cases, and for {tick a box, add a log line, set the status to implemented} it passes in 100% — measured by unit tests.
+- **SC-001**: For the document edits {a requirement, a plan line, a contract line, a task description, a new task} `approved` fails after approval in 100% of test cases, and for {tick a box, add a log line, set the status to implemented} it passes in 100% — measured by unit tests.
 - **SC-002**: `green-at-head` agrees with spec 004's definition on the same truth table (current clean pass; new commit; dirty; no revision; failed command; no record) — measured by unit tests.
 - **SC-003**: `evidence-for-ticks` reports exactly the ticked ids without evidence on fixtures covering single ids, lists, ranges, a missing commit and a revision that doesn't exist — measured by unit tests.
 - **SC-004**: Removing the digest comparison, the commit-exists check, or the record read makes at least one test fail each — measured by mutation checks.

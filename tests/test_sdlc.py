@@ -910,6 +910,15 @@ class LintTests(Base):
         code, out = self.lint(k)
         self.assertEqual(code, 0, out)
 
+    def test_router_is_told_to_load_first_in_description_and_constitution(self):
+        with open(os.path.join(ROOT, "core", "skills", "sdlc", "SKILL.md"), encoding="utf-8") as f:
+            desc = [l for l in f.read().split("\n") if l.startswith("description:")][0]
+        self.assertIn("Load this first, before any other sdlc- skill", desc)
+        with open(os.path.join(ROOT, "core", "constitution.md"), encoding="utf-8") as f:
+            line = [l for l in f.read().split("\n") if "`sdlc` skill" in l][0]
+        for needle in ("before any other skill", "bug, change or feature", "skill tool", "typo"):
+            self.assertIn(needle, line)
+
     def test_real_router_is_model_invocable_and_user_invocable(self):
         with open(os.path.join(ROOT, "core", "skills", "sdlc", "SKILL.md"), encoding="utf-8") as f:
             head = f.read().split("---")[1]

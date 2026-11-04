@@ -1,6 +1,6 @@
 # sdlc-kit constitution
 
-This repository uses **sdlc-kit**. Start any non-trivial task with the `sdlc` skill. It picks the track and the skills to use.
+This repository uses **sdlc-kit**. For any bug, change or feature, load the `sdlc` skill first with the skill tool, before any other skill and before editing anything, even when the request doesn't name it: it picks the track and hands off to the skills for it. Skip it only for a typo, comment or rename.
 
 ## Principles
 

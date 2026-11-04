@@ -117,7 +117,7 @@ After install and `/sdlc-setup`, you can just say what you want. You don't need 
 | "Pause here, I'll continue tomorrow" / "Pick up where we left off" | `sdlc-handoff` writes or reads a compact handoff (not yet eval-tested in plain language) |
 | "What did we learn from this feature?" | `sdlc-retro` turns the corrections into proposed changes (not yet eval-tested in plain language) |
 
-**For a bigger or unclear task, just describe it, or start with `/sdlc <task>`, in words like "/sdlc add sorting to the categories list".** The router skill is model-invocable (unreleased, after 0.6.0), so a non-trivial plain-language request should open it and a one-line typo should not; eval rows R6 and R7 checked that on 2026-11-04: a typo never loads it (6/6), but a plain-language bug goes straight to `sdlc-debug` and `sdlc` rarely loads first (see `evals/results/wave0-live.md`), so `/sdlc` stays the reliable way. It investigates, tells you which track (T0 to T4) it chose and why, and opens the steps as a todo list.
+**For a bigger or unclear task, just describe it, or start with `/sdlc <task>`, in words like "/sdlc add sorting to the categories list".** The router skill is model-invocable (unreleased, after 0.6.0), so a non-trivial plain-language request should open it and a one-line typo should not; eval rows R6 and R7 checked that on 2026-11-04 with n = 3 on two models: a plain-language bug loaded `sdlc` first in 6/6 runs, a typo never did (6/6); see `evals/results/wave0-live.md`. `/sdlc` still works as before. It investigates, tells you which track (T0 to T4) it chose and why, and opens the steps as a todo list.
 
 Tips:
 

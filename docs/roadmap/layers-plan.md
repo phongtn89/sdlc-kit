@@ -56,7 +56,7 @@ Format: **ID** · story · acceptance (observable) · track and size (S ≈ one 
 
 ### E0 Foundations (wave 0)
 
-**Progress 2026-11-04.** D decisions taken in chat: E0.1 model-invocable flag; E0.3 MIT and scrub internal names; E0.4 park. Done: E0.2, E0.3 (history still holds the old names), E0.4, E0.5 (text and tests). Live evals ran the same day (`evals/results/wave0-live.md`): E0.5 met (U2 3/3); E0.1 not met (R7 6/6, but R6 loads `sdlc` first in 0/6, the matching skill `sdlc-debug` goes first), so E0.1 stays open pending an owner choice.
+**Progress 2026-11-04.** D decisions taken in chat: E0.1 model-invocable flag; E0.3 MIT and scrub internal names; E0.4 park. Done: E0.2, E0.3 (history still holds the old names), E0.4, E0.5 (text and tests). Live evals ran the same day (`evals/results/wave0-live.md`): E0.5 met (U2 3/3); E0.1 first failed (R6 `sdlc` first 0/6), then met after strengthening the router wording (R6 6/6, R7 6/6). Wave 0 is complete.
 
 | ID | Story | Acceptance | Track · size · deps | Level / evidence |
 |---|---|---|---|---|

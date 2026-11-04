@@ -280,6 +280,26 @@ class RealKitRules(Base):
         for needle in ["`sdlc-review`", "`VERDICT: APPROVED`", "`VERDICT: REJECTED`", "not under `.sdlc/`"]:
             self.assertIn(needle, rule[0])
 
+    def test_spec_002_evaluation_has_a_recorded_status_and_readme_matches(self):
+        with open(os.path.join(ROOT, "specs", "002-dense-find-command", "tasks.md"), encoding="utf-8") as f:
+            self.assertRegex(f.read().split("\n")[2], r"Status: parked \(.+, \d{4}-\d{2}-\d{2}\)")
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("parked", readme)
+        self.assertNotIn("hasn't run. Don't enable", readme)
+
+    def test_license_is_mit_and_readme_support_table_names_each_host(self):
+        with open(os.path.join(ROOT, "LICENSE"), encoding="utf-8") as f:
+            lic = f.read()
+        self.assertTrue(lic.startswith("MIT License"))
+        self.assertRegex(lic, r"Copyright \(c\) 2026 \S+")
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        for needle in ("| Claude Code | first-class", "| GitHub Copilot | rendered, not evaluated",
+                       "internal to Claude Code", "`--resume` keeps the session id", "no concurrency lock"):
+            self.assertIn(needle, readme)
+        self.assertNotIn("no `LICENSE` file", readme)
+
     def test_real_kit_lints_clean(self):
         code, out, _ = run("lint", kit=ROOT)
         self.assertEqual(code, 0, out)
@@ -599,6 +619,16 @@ class UsageSkill(Base):
                        "usage.enabled", "bugs/<slug>.md", "create the bug record"):
             self.assertIn(needle, text)
 
+    def test_debug_starts_usage_in_step_one_before_any_run(self):
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+        text = self.read(".claude/skills/sdlc-debug/SKILL.md")
+        steps = text[text.index("\n## Process\n"):]
+        one = steps[steps.index("\n1. "):steps.index("\n2. ")]
+        two = steps[steps.index("\n2. "):steps.index("\n3. ")]
+        self.assertIn("usage.py start <slug> --record", one)
+        self.assertIn("before you run the failing test", one)
+        self.assertNotIn("usage.py start", two)
+
     def test_implement_names_the_exact_commands_for_a_finding(self):
         self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
         text = self.read(".claude/skills/sdlc-implement/SKILL.md")
@@ -866,6 +896,25 @@ class LintTests(Base):
     def test_unnamed_eval_row_satisfies_the_rule(self):
         code, out = self.lint(self.trigger_kit("| X1 | Login returns 500, fix it | Loads `debug` with the skill tool first |"))
         self.assertEqual(code, 0, out)
+
+    def test_constitution_skill_the_model_may_not_invoke_is_an_error(self):
+        k = self.trigger_kit("| X1 | Login returns 500, fix it | Loads `debug` with the skill tool first |")
+        self.sub(self.sk(k), "description:", "disable-model-invocation: true\ndescription:")
+        code, out = self.lint(k)
+        self.assertEqual(code, 1, out)
+        self.assertIn("core/skills/debug/SKILL.md: named in core/constitution.md but disable-model-invocation is true", out)
+
+    def test_skill_the_constitution_does_not_name_may_block_the_model(self):
+        k = self.kit()
+        self.sub(self.sk(k), "description:", "disable-model-invocation: true\ndescription:")
+        code, out = self.lint(k)
+        self.assertEqual(code, 0, out)
+
+    def test_real_router_is_model_invocable_and_user_invocable(self):
+        with open(os.path.join(ROOT, "core", "skills", "sdlc", "SKILL.md"), encoding="utf-8") as f:
+            head = f.read().split("---")[1]
+        self.assertNotIn("disable-model-invocation: true", head)
+        self.assertIn("user-invocable: true", head)
 
     def test_hyphenated_skill_name_does_not_name_its_prefix(self):
         k = self.trigger_kit("| X1 | Run debug-extra on the login 500 | Loads `debug` first |")

@@ -1,6 +1,6 @@
 # T010 evidence: tracer (spec S1)
 
-Workspace: scratch `dense-ws` (kit 0.5.0, `--modules dense`), index `7e2a10ca8399` (hand-written, 22 entries). Claude Code v2.1.310, model `claude-sonnet-5-5`, one fresh session per run. Transcripts: `~/.claude/projects/-private-tmp-claude-502--Users-phong-ngo-vn-Projects-shop6-cf485b2f-e590-4bbd-844c-ccb27bfaaa18-scratchpad-dense-ws/`.
+Workspace: scratch `dense-ws` (kit 0.5.0, `--modules dense`), index `7e2a10ca8399` (hand-written, 22 entries). Claude Code v2.1.310, model `claude-sonnet-5-5`, one fresh session per run. Transcripts: `<scratch>/dense-ws/`.
 
 An earlier session in this workspace (`3e0bdfd6…`) only ran `/model` and talked about an update. It isn't a run, and it's excluded.
 
@@ -13,9 +13,9 @@ Tool calls, in order:
 1. `Bash` `python3 .claude/skills/sdlc-dense-index/dap.py fresh .sdlc/context/index.dap; echo "exit $?"` → `fresh 7e2a10ca8399 | exit 0`
 2. `Read` `.sdlc/context/index.dap` (2,714 chars)
 3. `Bash` `cd .sdlc/context && grep -n -i -E "orders|system of record|…" context/…` → wrong relative path, "No such file or directory"
-4. `Bash` `grep -n -i -E "orders|system of record|hand.?over|checkout/orders|x-hostname|x-tenant-id" .sdlc/context/jtl-platform-shop-erp-connector.md .sdlc/context/jtl-platform-shop-storefront.md | head -40` → 13,364 chars
+4. `Bash` `grep -n -i -E "orders|system of record|hand.?over|checkout/orders|x-hostname|x-tenant-id" .sdlc/context/erp-connector.md .sdlc/context/storefront.md | head -40` → 13,364 chars
 
-Answer excerpts: "(index `7e2a10ca8399`, fresh)"; "Sources: `jtl-platform-shop-erp-connector.md:12,57-59`, …"; "Which caller invokes it is unverified (`jtl-platform-shop-erp-connector.md:19`)".
+Answer excerpts: "(index `7e2a10ca8399`, fresh)"; "Sources: `erp-connector.md:12,57-59`, …"; "Which caller invokes it is unverified (`erp-connector.md:19`)".
 
 | Check | Result | Note |
 |---|---|---|
@@ -30,16 +30,16 @@ Context loaded before answering: about 16.3K chars of tool output, against about
 
 ## Run B: stale source (`b2f6fc60-8205-46d2-b71c-e33f90fbc1a0.jsonl`)
 
-Setup (done by the main session): appended `<!-- touched for T010 run B -->` to the scratch `jtl-platform-shop-erp-connector.md`. Before the run, `dap.py fresh` printed `stale 7e2a10ca8399 / STALE e …`, exit 1. Same prompt as Run A. It was pasted twice in the session; the first answer is scored, and the second (no tool calls) agrees with it.
+Setup (done by the main session): appended `<!-- touched for T010 run B -->` to the scratch `erp-connector.md`. Before the run, `dap.py fresh` printed `stale 7e2a10ca8399 / STALE e …`, exit 1. Same prompt as Run A. It was pasted twice in the session; the first answer is scored, and the second (no tool calls) agrees with it.
 
 Tool calls, in order:
 
-1. `Bash` `dap.py fresh …` → `stale 7e2a10ca8399 | STALE e context/jtl-platform-shop-erp-connector.md | exit 1`. Then it said: "Stale on the connector context; read the index, then that source in full."
+1. `Bash` `dap.py fresh …` → `stale 7e2a10ca8399 | STALE e context/erp-connector.md | exit 1`. Then it said: "Stale on the connector context; read the index, then that source in full."
 2. `Read` `.sdlc/context/index.dap`
-3. `Read` `.sdlc/context/jtl-platform-shop-erp-connector.md` (whole file, 34,857 chars)
-4. `Bash` `grep -n -i -A14 "guest checkout" jtl-platform-shop-storefront.md` (3,150 chars), the section the storefront checkout entries point to
+3. `Read` `.sdlc/context/erp-connector.md` (whole file, 34,857 chars)
+4. `Bash` `grep -n -i -A14 "guest checkout" storefront.md` (3,150 chars), the section the storefront checkout entries point to
 
-Answer excerpts: "The index was stale for that file, so I read it in full."; citations `jtl-platform-shop-erp-connector.md:10-12,92`, `:57-59,133-140`, `jtl-platform-shop-storefront.md:133-137`.
+Answer excerpts: "The index was stale for that file, so I read it in full."; citations `erp-connector.md:10-12,92`, `:57-59,133-140`, `storefront.md:133-137`.
 
 | Check | Result | Note |
 |---|---|---|
@@ -59,7 +59,7 @@ Tool calls, in order:
 1. `Bash` `dap.py fresh …; cat .sdlc/config.json | head -50; ls` → `INVALID | ERROR 0: index not found: .sdlc/context/index.dap | exit 2`. Then it said: "The index is missing (exit 2), so I'm working from the full sources."
 2. `Bash` `ls -la …; grep -rIil "order" …`
 3. `Bash` `grep -n -i -E "system of record|source of truth|checkout|order" workspace.md`
-4. `Bash` `sed -n 36,44p workspace.md; grep … jtl-platform-shop-erp-connector.md`
+4. `Bash` `sed -n 36,44p workspace.md; grep … erp-connector.md`
 
 Answer excerpt: "**Caveat:** the dense index is missing (`dap.py fresh` exited 2), so I read the context docs directly." Citations: `.sdlc/workspace.md:41-42,220`.
 
@@ -80,9 +80,9 @@ Tool calls, in order:
 
 1. `Bash` `dap.py fresh …` → `fresh 7e2a10ca8399 | exit 0`
 2. `Bash` `cat .sdlc/context/index.dap | head -80`
-3. `Bash` `for a in @e#data @e#purpose-and-boundaries @s#guest-checkout-identify--delivery--draft-order-partial; do python3 .claude/skills/sdlc-dense-index/dap.py show .sdlc/context/index.dap $a | head -25; …; done` → `.sdlc/context/jtl-platform-shop-erp-connector.md:88-100 | 88	## Data | …`
+3. `Bash` `for a in @e#data @e#purpose-and-boundaries @s#guest-checkout-identify--delivery--draft-order-partial; do python3 .claude/skills/sdlc-dense-index/dap.py show .sdlc/context/index.dap $a | head -25; …; done` → `.sdlc/context/erp-connector.md:88-100 | 88	## Data | …`
 
-Answer excerpts: "(`.sdlc/context/jtl-platform-shop-erp-connector.md:12,92`)", "(`.sdlc/context/jtl-platform-shop-storefront.md:135`)" … ":139", "Which caller invokes handover is unverified (`…erp-connector.md:19`)", "I read the dense index first (fresh, rev `7e2a10ca8399`) and cited the context documents it points to, not the index."
+Answer excerpts: "(`.sdlc/context/erp-connector.md:12,92`)", "(`.sdlc/context/storefront.md:135`)" … ":139", "Which caller invokes handover is unverified (`…erp-connector.md:19`)", "I read the dense index first (fresh, rev `7e2a10ca8399`) and cited the context documents it points to, not the index."
 
 | Check | Result | Note |
 |---|---|---|

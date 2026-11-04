@@ -6,7 +6,7 @@
 
 ## Context
 
-The dense index is read by agents, so size matters (headroom), and checked by a validator, so it must parse deterministically. The kit needs only Python 3.9+ and no network (`README.md:19`), so there is no third-party parser. Measured on the shop6 prototype (`.sdlc/manifest.yaml`, 2026-10-26):
+The dense index is read by agents, so size matters (headroom), and checked by a validator, so it must parse deterministically. The kit needs only Python 3.9+ and no network (`README.md:19`), so there is no third-party parser. Measured on the pilot prototype (`.sdlc/manifest.yaml`, 2026-10-26):
 
 | Format | Bytes | Notes |
 |---|---|---|

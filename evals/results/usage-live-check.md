@@ -23,6 +23,6 @@ Date: 2026-11-03. Kit: branch `feat/003-usage-metrics` at `5b08af9`. Claude Code
 
 ## Follow-ups (none blocks the spec)
 
-1. **U2 start order.** The agent ran the reproduction before `start`. Candidate change, test-first: in `sdlc-debug`, run `start` as step 1 ("Restate the symptom"), before any command that runs the failing test. Not changed here; recorded for the retro.
+1. **U2 start order.** The agent ran the reproduction before `start`. Candidate change, test-first: in `sdlc-debug`, run `start` as step 1 ("Restate the symptom"), before any command that runs the failing test. Not changed here; recorded for the retro. **Changed after 0.6.0 (E0.5):** `start` now sits in step 1 of `sdlc-debug`, with a test; the live re-check (U2 at n=3) is pending.
 2. The contract's resume rule matches reality (`already started` for the same id), but the README should say that `--resume` keeps the session id.
 3. Re-run this check, or UR1, on a Claude Code major-version change.

@@ -1,9 +1,8 @@
 ---
 name: sdlc
-description: "Entry point for any non-trivial engineering task: investigates briefly, picks the delivery track (T0 trivial to T4 initiative), and opens that track's steps as a todo list. Use when the user starts a task, asks 'how should we do this', or says /sdlc."
+description: "Entry point for any non-trivial engineering task: investigates briefly, picks the delivery track (T0 trivial to T4 initiative), and opens that track's steps as a todo list. Use when the user starts a task, asks 'how should we do this', or says /sdlc. Skip it for a one-line typo, comment or rename."
 argument-hint: "Describe the task, bug or feature"
 user-invocable: true
-disable-model-invocation: true
 ---
 
 # sdlc: route the task

@@ -6,7 +6,7 @@ VERDICT: APPROVED
 
 ## Scope
 
-- Repository: /Users/phong.ngo.vn/Projects/sdlc-kit
+- Repository: <kit>
 - Revision: `main..16a23a4` (branch feat/003-usage-metrics); the fixes are `a02249a..16a23a4`
 - Role: implementation (correctness, security, tests)
 - Agent: sdlc-reviewer (independent, read-only; experiments in scratch copies under review003/)
@@ -56,7 +56,7 @@ Run on a scratch copy of 16a23a4: `python3 -m unittest tests.test_usage tests.te
 
 | Command / check | Revision | Outcome |
 |---|---|---|
-| `cd /Users/phong.ngo.vn/Projects/sdlc-kit && python3 -m unittest discover -s tests -t . && python3 bin/sdlc lint` | 16a23a4 | `Ran 228 tests … OK`; `lint: ok` |
+| `cd <kit> && python3 -m unittest discover -s tests -t . && python3 bin/sdlc lint` | 16a23a4 | `Ran 228 tests … OK`; `lint: ok` |
 | Re-run of F1-F5, A1, A2, A4 reproductions (scratch projects under review003/) | 16a23a4 | all fixed (table above) |
 | Regression probes: `## Progress log` as last line with no newline; CRLF with fenced heading and heading with trailing spaces; indented ``` fence; fence inside the section; two usage lines for a unit; `insert` and `section_text` agreement (marks and lines land in the same section); `--at` check order vs `usage off`; `--at` on `start` | 16a23a4 | no regression; only A1b and A5 above |
 | Randomized comparison against an independent computation (150 cases) | a02249a (the numeric code is unchanged apart from the guarded changes) | 0 mismatches; the figures in the probes above are unchanged on 16a23a4 |

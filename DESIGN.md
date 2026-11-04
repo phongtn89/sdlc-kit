@@ -5,7 +5,7 @@ Targets: Claude Code, GitHub Copilot. Location: `~/Projects/sdlc-kit` (one folde
 
 ## 1. Problem
 
-The Shop 6 fleet runs Spec Kit and a shared agent policy, but the copies have drifted:
+The the pilot workspace fleet runs Spec Kit and a shared agent policy, but the copies have drifted:
 
 - Spec Kit is at **four versions** (0.12.4, 0.12.8, 0.12.12.dev0, plus storefront's own fork); current upstream is **1.2.2**.
 - The same skill exists on 3 surfaces (`.claude/skills`, `.agents/skills`, `.github/agents`) and **every Claude copy differs from its Antigravity copy**. Some `.github/agents` and `impl-reviewer` copies diverge between repos.
@@ -79,7 +79,7 @@ sdlc-kit/
       subtract-before-adding.md  root-causes.md  thin-vertical-slices.md
       guard-context.md  fail-safe-keep-work.md  encode-lessons.md  evidence-over-claims.md
     skills/                   # Agent Skills format: SKILL.md + optional references/
-      sdlc/        (router, user-only)   grill/       specify/     clarify/
+      sdlc/        (router)              grill/       specify/     clarify/
       plan/        tasks/       analyze/      implement/   tdd/
       debug/       review/      converge/     ship/        handoff/
       retro/       setup/
@@ -110,7 +110,7 @@ sdlc-kit/
 name: implement
 description: Execute approved tasks.md with TDD vertical slices... Use when the user says "implement", "build task", or an approved tasks.md exists.
 user-invocable: true            # Claude; mapped to a Copilot prompt
-disable-model-invocation: false # true only for the router
+disable-model-invocation: false # true only for a skill the constitution does not name (lint rejects it on the router)
 ---
 ## When to use / not use
 ## Inputs (files read automatically: AGENTS.md, glossary, ADRs, active spec)
@@ -157,7 +157,7 @@ Each SKILL.md stays under about 150 lines. Detail goes in `references/`.
 | `speckit-checklist`, `speckit-taskstoissues`, `speckit-constitution` | `analyze` + checklist · `tasks --issues` · `setup` |
 | `speckit-qa-*` (admin, storefront) | `modules/qa` |
 | `create-implementation-issue` (Shop Standards) | `tasks --issues` + `templates/` issue body |
-| `.claude/agents/jtl-*`, `.codex/agents/*`, `.github/agents/jtl-*` | `core/roles/*` rendered (`.codex` dropped while Codex is out of scope; **decision**) |
+| `.claude/agents/<prefix>-*`, `.codex/agents/*`, `.github/agents/<prefix>-*` | `core/roles/*` rendered (`.codex` dropped while Codex is out of scope; **decision**) |
 | AGENTS.md policy block (decision ladder, readiness gate, fail-fast, AIC) | `core/constitution.md` + principles + `implement`. AGENTS.md shrinks to repo facts + managed block |
 | `docs/review-method.md`, `review-governance.md` | `review` skill + `references/review-method.md` (kept verbatim at first) |
 | `doc-coauthoring`, `i-have-adhd`, `vercel-react-best-practices`, caveman lock | out of core; keep per repo if wanted (origin unverified) |
@@ -174,7 +174,7 @@ The original decision list follows.
 1. **Spec Kit CLI: replace or layer?** *Recommend replace.* The kit owns lean skills that write the same `specs/` layout, so there's no Python CLI and no 0.12.x drift. The alternative is to keep Spec Kit 1.2.2 as the engine and ship the kit as a Spec Kit preset and extension: less to write, but the verbose generated skills stay and it adds an upgrade dependency.
 2. **Verdict vocabulary.** *Recommend* `APPROVED | REJECTED`, which matches the policy. Concerns go in an advisory section, so `PASS_WITH_CONCERNS` is retired.
 3. **Codex / Antigravity:** out of scope now (your choice). The adapter design leaves room to add them back. `.codex/agents` and `.agents/skills` in the repos would then be unmanaged until an adapter exists.
-4. **Home:** start as `~/Projects/sdlc-kit` (local git repo). Later it could move into `jtl-platform-shop-standards`, which already syncs policy. Confirm, or name the owner.
+4. **Home:** start as `~/Projects/sdlc-kit` (local git repo). Later it could move into `a shared standards repository`, which already syncs policy. Confirm, or name the owner.
 5. **AIC:** keep the line and turn bounds and drop the token estimates. OK?
 
 ## 10. Build plan (after approval)
@@ -191,5 +191,5 @@ Estimated size: about 2.5–3.5k lines of markdown plus about 400 lines of Pytho
 
 ## Sources
 
-Spec Kit https://github.com/github/spec-kit (v1.2.2, 2026-10-19) · Böckeler critique https://martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html · BMad https://github.com/bmad-code-org/BMAD-METHOD, https://docs.bmad-method.org/plan/choose-a-planning-path/ · Matt Pocock https://github.com/mattpocock/skills · Addy Osmani https://github.com/addyosmani/agent-skills · pstack https://github.com/cursor/plugins/tree/main/pstack · Fleet inventory: `~/Projects/shop6-learning/governance/`.
+Spec Kit https://github.com/github/spec-kit (v1.2.2, 2026-10-19) · Böckeler critique https://martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html · BMad https://github.com/bmad-code-org/BMAD-METHOD, https://docs.bmad-method.org/plan/choose-a-planning-path/ · Matt Pocock https://github.com/mattpocock/skills · Addy Osmani https://github.com/addyosmani/agent-skills · pstack https://github.com/cursor/plugins/tree/main/pstack · Fleet inventory: `~/Projects/pilot-learning/governance/`.
 Research was gathered by sub-agents from READMEs and docs. Counts and versions should be re-checked at build time.

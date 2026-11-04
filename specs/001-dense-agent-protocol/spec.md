@@ -2,7 +2,7 @@
 
 Feature: dense-agent-protocol
 Number: 001
-Status: rejected (2026-10-26: failed the shop6 paired-evaluation gate, SC-002 median context -17% vs -50% required; see tasks.md "D4 result") <!-- draft | approved | implemented | superseded by NNN. sdlc-analyze sets approved; sdlc-ship sets implemented. -->
+Status: rejected (2026-10-26: failed the pilot paired-evaluation gate, SC-002 median context -17% vs -50% required; see tasks.md "D4 result") <!-- draft | approved | implemented | superseded by NNN. sdlc-analyze sets approved; sdlc-ship sets implemented. -->
 Approved: phong.ngo.vn, 2026-10-26
 Owner: phong.ngo.vn
 Created: 2026-10-26
@@ -10,15 +10,15 @@ Track: T3
 
 > **Not adopted.** This spec is kept as a record. The implementation (`modules/dense`, its tests) is preserved at tag `exp/dense-v1` and is **not** on `main`. The generic parts it needed (module rules in the always-loaded instructions, FR-019; the `__pycache__` skip; lint for module `rules.md`) are on `main`.
 
-<!-- Source of the decisions: shop6 workspace, .sdlc/decisions/2026-10-26-dense-agent-protocol.md (grill, play-back confirmed 2026-10-26). The prototype index is shop6 .sdlc/manifest.yaml (hand-written reference). -->
+<!-- Source of the decisions: pilot workspace, .sdlc/decisions/2026-10-26-dense-agent-protocol.md (grill, play-back confirmed 2026-10-26). The prototype index is pilot .sdlc/manifest.yaml (hand-written reference). -->
 
 ## Intent
 
-**Problem:** Before an agent can act in a workspace, it reads long context documents. In the shop6 workspace that is about 307 KB of PRD, architecture view, workspace map and per-repo context. Sub-agents then return prose summaries that use up more of the parent's context. Long tracks hit the context budget early and need extra handoffs. The kit has no compact form for either.
+**Problem:** Before an agent can act in a workspace, it reads long context documents. In the pilot workspace that is about 307 KB of PRD, architecture view, workspace map and per-repo context. Sub-agents then return prose summaries that use up more of the parent's context. Long tracks hit the context budget early and need extra handoffs. The kit has no compact form for either.
 
 **Who:** Agents that run sdlc tracks on both supported targets, and the maintainers who install the kit into a workspace or repo.
 
-**Why now:** A hand-written prototype index for shop6 is about 40 times smaller than its sources, but it isn't tracked for freshness, has no key list and no citations. Before compact context spreads by copy-paste, it needs to be a governed, measurable, opt-in capability.
+**Why now:** A hand-written prototype index for pilot is about 40 times smaller than its sources, but it isn't tracked for freshness, has no key list and no citations. Before compact context spreads by copy-paste, it needs to be a governed, measurable, opt-in capability.
 
 ## Out of scope
 
@@ -122,15 +122,15 @@ As a maintainer, I want to switch the module on and off without touching core ki
 ## Non-functional
 
 - **NFR-001**: The index MUST NOT copy secrets, credentials or personal data from its sources. A source that holds them is referenced by pointer only.
-- **NFR-002**: The index SHOULD be no larger than 5% of its sources' combined size. The shop6 prototype is about 2.4%.
-- **NFR-003**: Validation and the freshness check MUST run offline, non-interactively, and finish within 10 s for a workspace the size of shop6.
+- **NFR-002**: The index SHOULD be no larger than 5% of its sources' combined size. The pilot prototype is about 2.4%.
+- **NFR-003**: Validation and the freshness check MUST run offline, non-interactively, and finish within 10 s for a workspace the size of pilot.
 - Performance of agents, availability and accessibility: not applicable (no runtime service or UI).
 
 ## Success criteria
 
-- **SC-001**: On the shop6 evaluation set, the success rate with the module is ≥ the success rate with full context. Measured via the S4 result record.
+- **SC-001**: On the pilot evaluation set, the success rate with the module is ≥ the success rate with full context. Measured via the S4 result record.
 - **SC-002**: Median context used before the first action is ≥ 50% lower with the module. Measured via the S4 result record.
-- **SC-003**: 100% of index entries in the shop6 index pass validation, including resolving source pointers. Measured by running the validator.
+- **SC-003**: 100% of index entries in the pilot index pass validation, including resolving source pointers. Measured by running the validator.
 - **SC-004**: In 100% of tested cases (at least one per source type), changing a source makes the next freshness check report the index stale. Measured by test.
 - **SC-005**: ≥ 90% of sub-agent returns in the evaluation follow the return contract without a reformat. Measured from the evaluation transcripts.
 - **SC-006**: After installing and removing the module, the hashes of all core-managed files, and the always-loaded instructions, equal those of a module-free install. Measured by the kit's drift check.
@@ -138,17 +138,17 @@ As a maintainer, I want to switch the module on and off without touching core ki
 ## Assumptions & dependencies
 
 - Assumption: context documents keep their `Built from` revision line, and sources keep stable headings that section pointers can target.
-- Assumption: one workspace index summarises the workspace-level documents (PRD, architecture view, workspace map) and all per-repo context documents; the shop6 prototype has this shape.
+- Assumption: one workspace index summarises the workspace-level documents (PRD, architecture view, workspace map) and all per-repo context documents; the pilot prototype has this shape.
 - Assumption: "context used before the first action" can be read from session usage figures on both targets. The method is chosen in the plan.
-- Assumption: the v1 gate is judged on a shop6 evaluation set, kept outside the shop6 workspace (`~/Projects/shop6-evals/dense/`) and drawn from real shop6 work. A run counts as passed when every Expect item is observable, as in the existing kit evals.
+- Assumption: the v1 gate is judged on a pilot evaluation set, kept outside the pilot workspace (`~/Projects/pilot-evals/dense/`) and drawn from real pilot work. A run counts as passed when every Expect item is observable, as in the existing kit evals.
 - Dependency: the kit's freshness check (`discover`) and drift check (`check`).
-- Dependency: the shop6 workspace as the first target and evaluation ground; the existing prototype index is the reference fixture.
+- Dependency: the pilot workspace as the first target and evaluation ground; the existing prototype index is the reference fixture.
 - Dependency: the module mechanism. Today modules add skills, roles, templates and checklists, and their skills are listed in the always-loaded index, but they can't add rules (kit `bin/sdlc:27,212-235,245-260`). FR-019 is the one generic kit change this feature needs.
 - Assumption: agents follow module rules less strictly than skill steps. S4's evaluation measures whether this matters (SC-001, SC-005); if it fails, revisit step hooks in core skills (the option rejected in the 2026-10-26 clarify session).
 
 ## Clarifications
 
-### Session 2026-10-26 (grill, recorded in shop6 `.sdlc/decisions/2026-10-26-dense-agent-protocol.md`)
+### Session 2026-10-26 (grill, recorded in pilot `.sdlc/decisions/2026-10-26-dense-agent-protocol.md`)
 
 - Q: Goal? → A: Context headroom; accuracy first.
 - Q: Surfaces in v1? → A: Workspace/repo context index and sub-agent returns.
@@ -162,7 +162,7 @@ As a maintainer, I want to switch the module on and off without touching core ki
 
 - Q: Modules can't change core behaviour. How does the module make the context build produce the index and briefs carry the return contract? → A: **Module rules in the always-loaded instructions.** A small, generic kit change lets any module contribute rules in their own section (FR-019). The dense module ships its own index-building step and return-contract template, and its rules require: build the index after a context build, load it at track start, include the contract in every brief. Core skills and roles stay untouched. Rejected: step hooks in core skills (edits core skills, against grill decision 6); explicit module skills only (weakens FR-009 and FR-012); workspace-only rules (not reusable or lock-tracked, against grill decision 3). Changed: glossary, FR-003, FR-009, FR-012, FR-017, new FR-019, SC-006, assumptions and dependencies.
 
-- Q: The module ships the evaluation set, but the tasks come from shop6. Where does it live? → A: **The kit ships the method** (procedure, record format, task template); **the 6 concrete tasks and their results live in the shop6 workspace**, and the gate is judged there. Rejected: all in the kit (JTL-specific content in a generic kit); synthetic fixture tasks only (they don't prove the gain at real scale). Changed: FR-016, SC-001, assumptions.
+- Q: The module ships the evaluation set, but the tasks come from pilot. Where does it live? → A: **The kit ships the method** (procedure, record format, task template); **the 6 concrete tasks and their results live in the pilot workspace**, and the gate is judged there. Rejected: all in the kit (JTL-specific content in a generic kit); synthetic fixture tasks only (they don't prove the gain at real scale). Changed: FR-016, SC-001, assumptions.
 
 ### Session 2026-10-26 (implementation, T021)
 
@@ -170,7 +170,7 @@ As a maintainer, I want to switch the module on and off without touching core ki
 
 ### Session 2026-10-26 (D4 baseline, finding)
 
-- Q: The first shop6 baseline run (E1) found the task set at `.sdlc/evals/dense/tasks.md` with a workspace-wide grep and read its Expect items. Where must the evaluation set live? → A: **Outside the working tree of the agents under test** (shop6: a sibling `~/Projects/shop6-evals/dense/`, not linked from the workspace), plus a leak check before each arm. That run is invalid. Rejected: splitting prompts and answers (two places to keep consistent); moving the folder aside during runs (one slip contaminates a run). Changed: FR-016, assumptions, `dense-eval.md`, eval row M1.
+- Q: The first pilot baseline run (E1) found the task set at `.sdlc/evals/dense/tasks.md` with a workspace-wide grep and read its Expect items. Where must the evaluation set live? → A: **Outside the working tree of the agents under test** (pilot: a sibling `~/Projects/pilot-evals/dense/`, not linked from the workspace), plus a leak check before each arm. That run is invalid. Rejected: splitting prompts and answers (two places to keep consistent); moving the folder aside during runs (one slip contaminates a run). Changed: FR-016, assumptions, `dense-eval.md`, eval row M1.
 
 ## Open questions
 

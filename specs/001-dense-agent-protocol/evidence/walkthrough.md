@@ -5,15 +5,15 @@ Spec 001 at kit `632e894` (code `0801055`). These runs show **agent behaviour**,
 ## The scratch workspace
 
 ```bash
-cd /private/tmp/claude-502/-Users-phong-ngo-vn-Projects-shop6/cf485b2f-e590-4bbd-844c-ccb27bfaaa18/scratchpad/dense-ws
+cd <scratch>/dense-ws
 ```
 
 - Kit 0.5.0 installed with `--modules dense` (67 files; `sdlc check` → ok). `AGENTS.md` carries `## Module rules / ### dense`.
-- Sources: `.sdlc/workspace.md` and three real shop6 context documents (admin, erp-connector, storefront), about 144 KB.
+- Sources: `.sdlc/workspace.md` and three real pilot context documents (admin, erp-connector, storefront), about 144 KB.
 - `.sdlc/context/index.dap`: a hand-written index of 22 entries in 8 sections over the three context docs, revision **`7e2a10ca8399`**, 2.6 KB.
 - It's a git repo with one commit (`scratch baseline`). **Reset after every run:** `git checkout -- . && git clean -fdq .sdlc`.
 
-**Every command below assumes you are in this folder. New terminal tabs open in `~/Projects/shop6`, so always run the `cd` above first.** In particular, the Run B edit must never touch the real shop6 file. Start each run with `claude` in this folder and paste the prompt **exactly**. Use a new session for each run (exit, then start again), so earlier context can't leak into the next run.
+**Every command below assumes you are in this folder. New terminal tabs open in `~/Projects/pilot`, so always run the `cd` above first.** In particular, the Run B edit must never touch the real pilot file. Start each run with `claude` in this folder and paste the prompt **exactly**. Use a new session for each run (exit, then start again), so earlier context can't leak into the next run.
 
 ## T010: tracer (spec S1, P1)
 
@@ -30,11 +30,11 @@ Check in the transcript:
 **Run B: stale source.** First, in a normal terminal:
 
 ```bash
-printf '\n<!-- touched for T010 run B -->\n' >> .sdlc/context/jtl-platform-shop-erp-connector.md
+printf '\n<!-- touched for T010 run B -->\n' >> .sdlc/context/erp-connector.md
 ```
 
 Then a new session with the same prompt. Check:
-- [ ] S1.4: it reports the index as stale and names `e` / `jtl-platform-shop-erp-connector.md`.
+- [ ] S1.4: it reports the index as stale and names `e` / `erp-connector.md`.
 - [ ] It reads that document's relevant parts directly, instead of trusting its entries, and still uses the storefront entries.
 
 Then reset.
@@ -63,12 +63,12 @@ Check:
 
 **Run E: non-conforming reply.** This is a new session. The sub-agent's reply is simulated by pasting it, because a real non-conforming reply can't be forced reliably. Prompt:
 
-> A sub-agent you delegated to returned this reply: "I looked around. The ERP connector trusts the x-tenant-id header without authentication (.sdlc/context/jtl-platform-shop-erp-connector.md:215), and the storefront backend forwards it too." Handle this reply as the module rules require.
+> A sub-agent you delegated to returned this reply: "I looked around. The ERP connector trusts the x-tenant-id header without authentication (.sdlc/context/erp-connector.md:215), and the storefront backend forwards it too." Handle this reply as the module rules require.
 
 Check:
 - [ ] S3.3: it says the reply doesn't follow the return contract.
 - [ ] It asks for a reformat once, quoting or pointing to the template, or explains that it would re-ask once.
-- [ ] It keeps `.sdlc/context/jtl-platform-shop-erp-connector.md:215` and doesn't drop it.
+- [ ] It keeps `.sdlc/context/erp-connector.md:215` and doesn't drop it.
 
 Then reset.
 
@@ -110,4 +110,4 @@ shasum -a 256 .sdlc/context/index.dap
 
 - Claude Code only. Copilot behaviour (FR-015) isn't covered by these runs.
 - Run E simulates the non-conforming reply.
-- One run per scenario on one model. These runs are evidence that the behaviour occurs, not a measurement. Measurement is the shop6 paired evaluation (D4).
+- One run per scenario on one model. These runs are evidence that the behaviour occurs, not a measurement. Measurement is the pilot paired evaluation (D4).

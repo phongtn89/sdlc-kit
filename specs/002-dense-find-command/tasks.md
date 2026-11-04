@@ -1,6 +1,6 @@
 # Tasks: Dense module v2, find instead of read
 
-Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/find.md](contracts/find.md) · Status: draft · Created: 2026-10-30 · Branch: `feat/002-dense-find`
+Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/find.md](contracts/find.md) · Status: parked (evaluation S4, T014–T021, not run by owner decision; S1–S3 built and review-approved, module stays opt-in and experimental, 2026-11-04) · Created: 2026-10-30 · Branch: `feat/002-dense-find`
 
 Verify (kit root):
 - Narrow: `python3 -m unittest tests.test_dap.Find -v` · `python3 -m unittest tests.test_sdlc.DenseModule -v`
@@ -49,7 +49,7 @@ Acceptance: the `Find` test class covers each outcome in `contracts/find.md`, an
 ## S3: The evaluation method ships with the module (spec S3, P2)
 
 Goal: the shipped method matches v2: leak check, tie rule, the context-loaded measure, the lookup columns, no return contract.
-Acceptance: the module test checks the template's content, and the template is usable as is for the shop6 set.
+Acceptance: the module test checks the template's content, and the template is usable as is for the pilot set.
 
 - [x] T009 [P] [S3] Write failing test `DenseModule.test_eval_template_v2` (FR-019). The template must name:
   - the leak check before the first run;
@@ -74,24 +74,24 @@ Acceptance: the module test checks the template's content, and the template is u
 - [x] T012 Converge: spec, plan, tasks and code agree (`sdlc-converge`) — files: `specs/002-dense-find-command/tasks.md` (Convergence section) — verify: the Convergence section lists no open gap, or each gap is a new task — blocked-by: T011
 - [x] T013 Independent review (`sdlc-review`); verdict recorded. Record the reviewed kit revision: the evaluation runs this revision — files: `specs/002-dense-find-command/review.md` — verify: its first line is exactly `VERDICT: APPROVED`; the revision is in its header — blocked-by: T012
 
-## S4: Prove the gain on shop6 (spec S3, P2; gate SC-001, SC-002, SC-005, SC-007, FR-017)
+## S4: Prove the gain on pilot (spec S3, P2; gate SC-001, SC-002, SC-005, SC-007, FR-017)
 
 Goal: the paired evaluation the gate needs, run on the reviewed revision. Outside the kit: nothing in this slice writes to the kit except the result summary in this file.
-Acceptance: `~/Projects/shop6-evals/dense2/results.md` holds every run, the tie reruns, the gate result, the evaluated kit revision and Phong's decision.
+Acceptance: `~/Projects/pilot-evals/dense2/results.md` holds every run, the tie reruns, the gate result, the evaluated kit revision and Phong's decision.
 
-- [ ] T014 [S4] Write the 8 tasks (6 document tasks: routing, cross-repo impact, review against PRD or architecture; 2 code-only), each with Expect items checked against code at pinned revisions, plus the gate from SC-001 and SC-002, in the v2 template. Write each prompt verbatim to its own file for `evals/run.py`, and a key checker with a `--leak <arm>` mode used in T016 — files: `~/Projects/shop6-evals/dense2/tasks.md`, `setup.md`, `prompts/E1.txt` … `prompts/E8.txt`, `check_keys.py` — verify: `python3 -I ~/Projects/shop6-evals/dense2/check_keys.py` exits 0 (every Expect `path:line` exists at its pinned revision, and every prompt file matches `tasks.md` verbatim) — blocked-by: T010
-- [ ] T015 [S4] After H1, freeze: sha256 of `tasks.md` recorded in the evals README, committed locally — files: `~/Projects/shop6-evals/README.md`, `dense2/tasks.md` — verify: hash recorded; Phong's review noted — blocked-by: T014, H1
-- [ ] T016 [S4] Build the arms at the pinned revisions and install **both** from the reviewed kit revision (T013): A with shop6's lock modules, B with those plus `dense`, and B's index freshly built and committed. Both with `.ignore`. Run the leak check in both, for the prompts and for every Expect item's text (`check_keys.py --leak <arm>`) — files: `~/Projects/shop6-dense2-bench/{A,B}` (worktrees, removed in T020), `~/Projects/shop6-evals/dense2/check_keys.py` — verify: `dap.py validate` in B prints `valid` (SC-003); the leak check gives 0 matches in both arms; the managed `AGENTS.md` blocks of A and B differ only by the module-rules section and the dense Skills entry — blocked-by: T013, T015
+- [ ] T014 [S4] Write the 8 tasks (6 document tasks: routing, cross-repo impact, review against PRD or architecture; 2 code-only), each with Expect items checked against code at pinned revisions, plus the gate from SC-001 and SC-002, in the v2 template. Write each prompt verbatim to its own file for `evals/run.py`, and a key checker with a `--leak <arm>` mode used in T016 — files: `~/Projects/pilot-evals/dense2/tasks.md`, `setup.md`, `prompts/E1.txt` … `prompts/E8.txt`, `check_keys.py` — verify: `python3 -I ~/Projects/pilot-evals/dense2/check_keys.py` exits 0 (every Expect `path:line` exists at its pinned revision, and every prompt file matches `tasks.md` verbatim) — blocked-by: T010
+- [ ] T015 [S4] After H1, freeze: sha256 of `tasks.md` recorded in the evals README, committed locally — files: `~/Projects/pilot-evals/README.md`, `dense2/tasks.md` — verify: hash recorded; Phong's review noted — blocked-by: T014, H1
+- [ ] T016 [S4] Build the arms at the pinned revisions and install **both** from the reviewed kit revision (T013): A with pilot's lock modules, B with those plus `dense`, and B's index freshly built and committed. Both with `.ignore`. Run the leak check in both, for the prompts and for every Expect item's text (`check_keys.py --leak <arm>`) — files: `~/Projects/pilot-dense2-bench/{A,B}` (worktrees, removed in T020), `~/Projects/pilot-evals/dense2/check_keys.py` — verify: `dap.py validate` in B prints `valid` (SC-003); the leak check gives 0 matches in both arms; the managed `AGENTS.md` blocks of A and B differ only by the module-rules section and the dense Skills entry — blocked-by: T013, T015
 - [ ] T017 [S4] Run the 16 base sessions through `evals/run.py` with the plan's exact allowlist in both arms, alternating arm order. Parse every transcript for:
   - context loaded;
   - lookup used, and each lookup output's size (SC-005);
   - whether the answer cites the index or the sources (FR-017);
   - reads outside the arm.
 
-  A change to `dap.py` or `rules.md` after the first run means a full rerun — files: `~/Projects/shop6-evals/dense2/runs/` — verify: 16 transcripts, each with a result event; no read outside the arm; both arms unchanged — blocked-by: T016
-- [ ] T018 [S4] Grade the base runs with a fresh read-only grader that sees only the answers, the Expect items and the pinned code — files: `~/Projects/shop6-evals/dense2/grades.md` — verify: all 16 runs have a verdict with its reason — blocked-by: T017
-- [ ] T019 [S4] Tie rule (spec S3.3): for every task whose base result differs between the arms, run it once more in both arms (same allowlist, same parse) and grade the reruns with the same grader brief — files: `~/Projects/shop6-evals/dense2/runs/`, `grades.md` — verify: every differing task has two graded runs per arm; or "no differing task" recorded — blocked-by: T018
-- [ ] T020 [S4] After H2, compute the gate (SC-001 after the tie rule, SC-002 with the spec's formula over all base runs plus the both-passed median, SC-005, SC-007, plus FR-017 citations per run). Write `results.md` with the evaluated kit revision, then remove the arms — files: `~/Projects/shop6-evals/dense2/results.md` — verify: gate computed from `grades.md` and the parsed transcripts; no worktree entries left for the bench — blocked-by: T019, H2
+  A change to `dap.py` or `rules.md` after the first run means a full rerun — files: `~/Projects/pilot-evals/dense2/runs/` — verify: 16 transcripts, each with a result event; no read outside the arm; both arms unchanged — blocked-by: T016
+- [ ] T018 [S4] Grade the base runs with a fresh read-only grader that sees only the answers, the Expect items and the pinned code — files: `~/Projects/pilot-evals/dense2/grades.md` — verify: all 16 runs have a verdict with its reason — blocked-by: T017
+- [ ] T019 [S4] Tie rule (spec S3.3): for every task whose base result differs between the arms, run it once more in both arms (same allowlist, same parse) and grade the reruns with the same grader brief — files: `~/Projects/pilot-evals/dense2/runs/`, `grades.md` — verify: every differing task has two graded runs per arm; or "no differing task" recorded — blocked-by: T018
+- [ ] T020 [S4] After H2, compute the gate (SC-001 after the tie rule, SC-002 with the spec's formula over all base runs plus the both-passed median, SC-005, SC-007, plus FR-017 citations per run). Write `results.md` with the evaluated kit revision, then remove the arms — files: `~/Projects/pilot-evals/dense2/results.md` — verify: gate computed from `grades.md` and the parsed transcripts; no worktree entries left for the bench — blocked-by: T019, H2
 
 ## Final
 
@@ -127,20 +127,20 @@ Acceptance: `~/Projects/shop6-evals/dense2/results.md` holds every run, the tie 
 | NFR-001 | T006, T007 |
 | NFR-002 | T008 |
 | SC-001, SC-002, SC-007 | T017–T020 |
-| SC-003 | T016 (`validate` on the fresh shop6 index) |
+| SC-003 | T016 (`validate` on the fresh pilot index) |
 | SC-004 | T006 (`find` and `fresh`) |
 | SC-005 | T002, T006, T017, T020 |
 | SC-006 | T001, T011 |
 
 ## Progress log
 
-- 2026-11-03 `5f3d44b` — T012 and T013 done. Independent review (a fresh read-only agent, `sdlc-review` method) ran three times: pass 1 at `0561f13` REJECTED (F1 P1: broken `SKILL.md` merge with two Inputs/Process sections and the v1 "read the index first" step, caused by a wrong splice in T005 and masked by a v1 phrase assertion; F2 entry lines unbudgeted; F3 secret in a heading slug echoed; F4 tests that survive mutation); pass 2 at `8fb24b7` REJECTED (F5: the "no heading" line still echoed a secret slug); pass 3 at `5f3d44b` APPROVED (`review.md`). Fixes were test-first (RED seen for F2, F3, F5; F1 and F4 by structure and mutation tests). In a scratch copy, disabling the secret half of `redact()`, its e-mail half, or `guard()` now fails `tests.test_dap`. Final gates at `5f3d44b`: 152 tests OK, `python3 bin/sdlc lint` ok, core-untouched diff empty. **The evaluation (T014–T020) runs this revision.** Open advisories (non-blocking): terms after `--root` or starting with `-` give exit 3 without a hint; `test_rules_and_skill_cover_building` still asserts the v1 `dap.py show` phrase (build self-check, intended); the limit is 2,000 characters, up to 2,028 bytes; `validate` accepts a secret-shaped slug; a secret-shaped source file name is printed in the location line. Next: H1 (review of the 8 answer keys) then T014; the evaluation writes outside the kit (`~/Projects/shop6-evals/dense2`) and starts only on Phong's go-ahead
+- 2026-11-03 `5f3d44b` — T012 and T013 done. Independent review (a fresh read-only agent, `sdlc-review` method) ran three times: pass 1 at `0561f13` REJECTED (F1 P1: broken `SKILL.md` merge with two Inputs/Process sections and the v1 "read the index first" step, caused by a wrong splice in T005 and masked by a v1 phrase assertion; F2 entry lines unbudgeted; F3 secret in a heading slug echoed; F4 tests that survive mutation); pass 2 at `8fb24b7` REJECTED (F5: the "no heading" line still echoed a secret slug); pass 3 at `5f3d44b` APPROVED (`review.md`). Fixes were test-first (RED seen for F2, F3, F5; F1 and F4 by structure and mutation tests). In a scratch copy, disabling the secret half of `redact()`, its e-mail half, or `guard()` now fails `tests.test_dap`. Final gates at `5f3d44b`: 152 tests OK, `python3 bin/sdlc lint` ok, core-untouched diff empty. **The evaluation (T014–T020) runs this revision.** Open advisories (non-blocking): terms after `--root` or starting with `-` give exit 3 without a hint; `test_rules_and_skill_cover_building` still asserts the v1 `dap.py show` phrase (build self-check, intended); the limit is 2,000 characters, up to 2,028 bytes; `validate` accepts a secret-shaped slug; a secret-shaped source file name is printed in the location line. Next: H1 (review of the 8 answer keys) then T014; the evaluation writes outside the kit (`~/Projects/pilot-evals/dense2`) and starts only on Phong's go-ahead
 
 - 2026-11-03 `2f97f9d` — T001–T011 done on `feat/002-dense-find`. H4: approval given by phong.ngo.vn in chat on 2026-11-03 ("implementing the spec 002"); both analyze passes had no open finding. T001 restore from `exp/dense-v1` (return contract removed): 132 OK. T002 RED `python3 -m unittest tests.test_dap.Find` 2 FAIL (`find` not a command). T003 first GREEN attempt failed `test_budget_and_cut_marker` (2,020 > 2,000: the cut-line reserve was 0 when the excerpt started as the whole section); fixed by reserving the cut line's exact length unless the whole section fits; `tests.test_dap` 52 OK. T004 RED: 2 FAIL (`test_install_renders_rules_skill_and_script`, `test_rules_name_find_only`); `test_installed_find_runs` passed at once because T003 already shipped the command. T005 GREEN after two wording fixes (the exact `.github/skills/…` command and the phrase "before reading or searching the workspace documents" must be in the rules): 135 OK, lint ok, rules 7 lines. T006 RED: 6 FAIL (stale, heading gone, exit 3, error cap, redaction, short terms); 5 tests already passed on v1 behaviour (`test_no_match`, `test_read_only`, `test_keeps_unverified_marker`, …). T007 GREEN: `tests.test_dap` 61 OK after fixing a test bug (the three stale cases shared one directory). T008 `test_fast_on_large_workspace` passed first run (guard, as expected; 0.17 s). T009 RED `test_eval_template_v2` FAIL; T010 GREEN. T011: `python3 -m unittest discover -s tests -t .` → 146 OK; `python3 bin/sdlc lint` → ok; `git diff --stat main -- core adapters bin evals` → empty; no `__pycache__` under `modules/`. Next: T012 converge, T013 review
 
 - 2026-10-30 `0ee9391` (branch `feat/002-dense-find` from `main`) — spec, plan and tasks drafted; baseline suite 74 OK.
 - 2026-10-30 — analyze pass 1: 0 CRITICAL, 7 HIGH, 13 MEDIUM, 7 LOW (A1–A27); all fixed in spec, plan, `contracts/find.md` and these tasks.
-- 2026-10-30 — analyze pass 2: 0 CRITICAL, 4 HIGH, 10 MEDIUM, 8 LOW (B1–B22); all fixed (B13's commit of the shop6 decision record waits for Phong); next: H4.
+- 2026-10-30 — analyze pass 2: 0 CRITICAL, 4 HIGH, 10 MEDIUM, 8 LOW (B1–B22); all fixed (B13's commit of the pilot decision record waits for Phong); next: H4.
 
 ## Convergence (2026-11-03, 2f97f9d)
 
@@ -160,7 +160,7 @@ Compared `modules/dense/**`, `tests/test_dap.py` (`Find`) and `tests/test_sdlc.p
 | FR-019 (evaluation method: leak check, tie rule, v2 columns, outside the workspace) | met | `DenseModule.test_eval_template_v2` |
 | NFR-001 (no secret echo; excerpt redaction) | met | `test_invalid_index` (value not echoed), `test_redacts_secret_lines` |
 | NFR-002 (speed) | met | `test_fast_on_large_workspace`: 0.17 s for the lookup |
-| SC-001, SC-002, SC-007 | open: need the shop6 evaluation (T014–T020) | |
-| SC-003 (shop6 index validates) | open: T016 | |
+| SC-001, SC-002, SC-007 | open: need the pilot evaluation (T014–T020) | |
+| SC-003 (pilot index validates) | open: T016 | |
 
 Gaps: none that need a new task. Two notes for the reviewer: (1) `dap.py show` stays in the script for maintainers (spec 001's self-check step uses it); the rules no longer mention it. (2) the rules are 7 lines; the plan allowed up to the lint cap of 30.

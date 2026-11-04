@@ -67,4 +67,4 @@ A **result** is one source section. Entries that point to the same source sectio
 - **Heading gone** from a changed source: the result says `no heading <slug> in <source>` instead of an excerpt.
 - **Redaction (NFR-001):** an excerpt line, or an entry line (its value or its heading slug), that matches the module's secret patterns or its e-mail pattern is printed as `<n>  [redacted: read the source]` (an entry line as `[redacted: read the source]`). An error line that matches is printed as `ERROR <line>: [redacted]`.
 - **Read-only (FR-015):** the lookup writes no file.
-- **Speed (NFR-002):** one lookup in under 2 s for a shop6-size workspace (300 KB of sources, 300 entries).
+- **Speed (NFR-002):** one lookup in under 2 s for a pilot-size workspace (300 KB of sources, 300 entries).

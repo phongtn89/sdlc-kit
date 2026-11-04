@@ -18,15 +18,15 @@ entry   = KEY ": " VALUE " @" REF                  ; REF = ALIAS "#" SLUG; the L
 ALIAS   = [a-z0-9]{1,8}
 TYPE    = a section type defined in the key list
 KEY     = a key that the key list allows for TYPE
-VALUE   = any text, including "@" (e.g. "@jtl/shop-component"); lists are ", "-separated; markers UNVERIFIED / INFERRED are kept verbatim
+VALUE   = any text, including "@" (e.g. "@acme/shop-component"); lists are ", "-separated; markers UNVERIFIED / INFERRED are kept verbatim
 SLUG    = the GitHub-style slug of a heading in the aliased source
 ```
 
-Example (abridged from the shop6 prototype):
+Example (abridged from the pilot prototype):
 
 ```
 #dap 1 built 2026-10-26
-src a context/jtl-platform-shop-admin.md 3f2c9a1b7d40
+src a context/admin.md 3f2c9a1b7d40
 src w workspace.md 9e01c2d3a4b5
 [repo admin]
 desc: Shop Manager SPA + control-plane API @a#purpose-and-boundaries

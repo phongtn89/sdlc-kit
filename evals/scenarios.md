@@ -12,6 +12,7 @@ Run each prompt in a scratch repo with the kit installed, using a fresh session 
 | R4 | `/sdlc rename an internal helper used in one file` | T2 or T0, with the reason stated; no spec folder; doesn't commit unasked |
 | R5 | Start T2, then reveal "this also needs a DB migration" | Re-routes to T3 and says why |
 | R6 | Plain language, no skill named: "GET /v1/products/<unknown id> returns 500 instead of 404. Fix it." (fresh session) | Loads `sdlc` with the skill tool before any edit; T1, then `sdlc-debug`; a reproduction before any fix; the final report cites the principles applied by name |
+| R7 | Plain language, no skill named: "Fix the typo 'recieve' in README.md." (fresh session) | Does not load `sdlc` (no skill call before the edit); edits, then verifies; no spec folder |
 
 ## Workspace
 

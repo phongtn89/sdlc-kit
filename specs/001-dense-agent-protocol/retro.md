@@ -2,7 +2,7 @@
 
 Date: 2026-10-26 · Kit `main` @ `ff92d5a` · Status: **proposals, none applied** · Owner decision needed: phong.ngo.vn
 
-Inputs: `tasks.md` (Progress log, Convergence, Review fixes, Hand-run fixes, D4 result), `review.md`, `evidence/s1-tracer.md`, `~/Projects/shop6-evals/dense/results.md`, `evals/results/0.5.0.md` (D9).
+Inputs: `tasks.md` (Progress log, Convergence, Review fixes, Hand-run fixes, D4 result), `review.md`, `evidence/s1-tracer.md`, `~/Projects/pilot-evals/dense/results.md`, `evals/results/0.5.0.md` (D9).
 
 ## Events
 
@@ -41,12 +41,12 @@ Inputs: `tasks.md` (Progress log, Convergence, Review fixes, Hand-run fixes, D4 
 
 - **Independent review found real defects.** `sdlc-reviewer` rejected `aac72f1` with F1 (a truncated index replaced the good one) and F2 (missed key formats), both reproduced, fixed test-first and re-approved (`review.md`).
 - **Converge caught plan/code drift before review** (C001 path confinement, C002 personal data; `tasks.md` Convergence).
-- **A decision rule fixed before the measurement.** The D4 gate and the "uninstall on fail" step were written down before any run, so the rejection was quick and clean (shop6 `b83e1bf`, byte-identical files).
+- **A decision rule fixed before the measurement.** The D4 gate and the "uninstall on fail" step were written down before any run, so the rejection was quick and clean (pilot `b83e1bf`, byte-identical files).
 - **A control arm.** D9 against `dacab66` showed that the fix, not an easier prompt, changed the outcome.
 
 ## Scope
 
-All three proposals are kit changes (they help any project). No shop6 project-config change is proposed. No installed files were edited.
+All three proposals are kit changes (they help any project). No pilot project-config change is proposed. No installed files were edited.
 
 ## Next
 

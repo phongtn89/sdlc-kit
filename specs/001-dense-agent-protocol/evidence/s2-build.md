@@ -57,7 +57,7 @@ fresh 4bb293220edb
 
 ## Run H: marker check after `dap.py show` and counts (`120845de-32c0-4772-b2ed-0512a6e5882c.jsonl`)
 
-Kit `d88cbd9` (scratch baseline 2), starting from the hand-written index `7e2a10ca8399`. Setup (main session): added a **synthetic** fixture `.sdlc/context/jtl-platform-shop-payments.md` with two marked facts. One is in *Purpose and boundaries* ("UNVERIFIED: no signed agreement or sandbox access exists yet"), the other in *Data* ("INFERRED from the admin connection-status design; no Terraform for it exists yet"). First message: `/sdlc-dense-index build`.
+Kit `d88cbd9` (scratch baseline 2), starting from the hand-written index `7e2a10ca8399`. Setup (main session): added a **synthetic** fixture `.sdlc/context/payments.md` with two marked facts. One is in *Purpose and boundaries* ("UNVERIFIED: no signed agreement or sandbox access exists yet"), the other in *Data* ("INFERRED from the admin connection-status design; no Terraform for it exists yet"). First message: `/sdlc-dense-index build`.
 
 Tool calls: 7 `Bash`. Calls 1–4 read the sources and hash them; call 5 wrote `index.dap.1.tmp` and ran `commit` → `not committed: .sdlc/context/index.dap unchanged` (one entry without a `@ref`); call 6 fixed the tmp and ran `commit` → `committed e737dd93b359 (5 sources, 16 sections, 37 entries)`, then `fresh`; call 7 ran a 10-section self-check with `dap.py show`. There were no `Write` or `Edit` calls on `index.dap`.
 

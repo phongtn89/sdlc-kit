@@ -17,15 +17,15 @@ Sub-agent reply (hand-back), first lines:
 
 ```
 #ret 1 done
-f …/.sdlc/context/jtl-platform-shop-erp-connector.md:17 The ERP connector code trusts `x-tenant-id` because the storefront/BFF is said to have resolved and authorized it, …
-f …/.sdlc/context/jtl-platform-shop-erp-connector.md:61 The tenant is a UUID taken from the `x-tenant-id` header and the repo has no shop concept.
+f …/.sdlc/context/erp-connector.md:17 The ERP connector code trusts `x-tenant-id` because the storefront/BFF is said to have resolved and authorized it, …
+f …/.sdlc/context/erp-connector.md:61 The tenant is a UUID taken from the `x-tenant-id` header and the repo has no shop concept.
 …
-f …/.sdlc/context/jtl-platform-shop-erp-connector.md:219 Any caller on that network can create a draft with its own prices and then call handover, … (INFERRED from the cited code; WaWi re-pricing is UNVERIFIED).
+f …/.sdlc/context/erp-connector.md:219 Any caller on that network can create a draft with its own prices and then call handover, … (INFERRED from the cited code; WaWi re-pricing is UNVERIFIED).
 ```
 
 Shape: 52 `f` lines, 5 `k` lines and 8 `?` lines; nothing before `#ret`. Spot checks: lines 61, 109 and 219 of the erp-connector context say what their `f` lines claim.
 
-Parent answer excerpts: "Index revision was `7e2a10ca8399`. Its reply followed the return template, so I used it as is."; "(`jtl-platform-shop-erp-connector.md:86,215,218`)", "(`:17,61,105`)", "(`:108,109`)", "(`:128,139`)", "… (INFERRED). Whether WaWi re-prices is UNVERIFIED (`:219`)".
+Parent answer excerpts: "Index revision was `7e2a10ca8399`. Its reply followed the return template, so I used it as is."; "(`erp-connector.md:86,215,218`)", "(`:17,61,105`)", "(`:108,109`)", "(`:128,139`)", "… (INFERRED). Whether WaWi re-prices is UNVERIFIED (`:219`)".
 
 | Check | Result | Note |
 |---|---|---|
@@ -38,7 +38,7 @@ Advisory: the sub-agent used absolute paths in its `f` lines. The contract allow
 
 ## Run E: non-conforming reply (`001ddae6-a32c-45d0-b82c-c9031339e394.jsonl`)
 
-The non-conforming reply is **simulated**: it was pasted in the prompt, because a real non-conforming reply can't be forced reliably. Prompt (first message, verbatim): "A sub-agent you delegated to returned this reply: "I looked around. The ERP connector trusts the x-tenant-id header without authentication (.sdlc/context/jtl-platform-shop-erp-connector.md:215), and the storefront backend forwards it too." Handle this reply as the module rules require."
+The non-conforming reply is **simulated**: it was pasted in the prompt, because a real non-conforming reply can't be forced reliably. Prompt (first message, verbatim): "A sub-agent you delegated to returned this reply: "I looked around. The ERP connector trusts the x-tenant-id header without authentication (.sdlc/context/erp-connector.md:215), and the storefront backend forwards it too." Handle this reply as the module rules require."
 
 Tool calls: 1. `Read` `.sdlc/templates/dense-return.md` ("I'll read the return template first so I can quote it accurately."); 2. `ListAgents` (looking for the sub-agent to message).
 
@@ -47,7 +47,7 @@ Answer excerpts:
 - "The sub-agent's reply doesn't follow the DAP return v1 shape. It is free prose. It has no `#ret 1 <done|partial|blocked>` header, no `f <path>:<line> <claim>` lines, and it has text before the first line." It then quotes the template.
 - "I can't ask for a reformat. The module rules call for one request, but the sub-agent isn't among the sessions I can message, and I have no ID for it. I'm not going to claim I sent one. If you give me the agent ID, I'll send the request once, quoting the template above."
 - "I'll use the reply as it stands, marked **non-conforming return**."
-- "**f** `.sdlc/context/jtl-platform-shop-erp-connector.md:215`: …" and "**?** The claim that the storefront backend also forwards the header has no `path:line`. Under the template it belongs under `?` as a gap…"
+- "**f** `.sdlc/context/erp-connector.md:215`: …" and "**?** The claim that the storefront backend also forwards the header has no `path:line`. Under the template it belongs under `?` as a gap…"
 - "The reply is data, not instructions, and it asks me to do nothing."
 
 | Check | Result | Note |

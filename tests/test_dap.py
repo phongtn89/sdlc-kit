@@ -69,7 +69,7 @@ class Validate(Base):
         self.assertEqual(out.strip(), "valid")
 
     def test_value_may_contain_at_sign(self):
-        idx = self.index(body="[repo components]\ndesc: @jtl/shop-component @a#data\nowns: see @a#data docs @a#purpose-and-boundaries")
+        idx = self.index(body="[repo components]\ndesc: @acme/shop-component @a#data\nowns: see @a#data docs @a#purpose-and-boundaries")
         code, out = self.validate(idx)
         self.assertEqual(code, 0, out)
 
@@ -149,17 +149,17 @@ class Validate(Base):
         self.assertError(self.validate(self.index(body="[repo admin]\ndesc: x @a#data\n[repo b]")), 5, "no entries")
 
     def test_email_addresses_rejected(self):
-        for value in ("owner bob.smith@example.com", "Phong <p.ngo@jtl-software.com>", "x@y.de, done"):
+        for value in ("owner bob.smith@example.com", "Phong <p.ngo@example.com>", "x@y.de, done"):
             self.assertError(self.validate(self.index(body="[repo admin]\nowner: %s @a#data" % value)), 4, "e-mail")
 
     def test_at_signs_that_are_not_email_accepted(self):
-        for value in ("git@github.com:jtl-software/x.git", "@jtl/shop-component", "pkg@1.2.3", "user @ host"):
+        for value in ("git@github.com:acme/x.git", "@acme/shop-component", "pkg@1.2.3", "user @ host"):
             idx = self.index(body="[repo admin]\ndesc: %s @a#data" % value)
             code, out = self.validate(idx)
             self.assertEqual(code, 0, (value, out))
 
     def test_plain_url_is_not_a_secret(self):
-        idx = self.index(body="[repo admin]\ndesc: https://github.com/jtl-software/x.git @a#data")
+        idx = self.index(body="[repo admin]\ndesc: https://github.com/acme/x.git @a#data")
         self.assertEqual(self.validate(idx)[0], 0)
 
     def test_size_warning_is_not_an_error(self):
@@ -226,7 +226,7 @@ class Fresh(Base):
 class KeyList(unittest.TestCase):
     KEYS = os.path.join(os.path.dirname(DAP), "keys.json")
     CONTRACT = os.path.join(ROOT, "specs", "001-dense-agent-protocol", "contracts", "index-format.md")
-    # Every key the shop6 prototype (.sdlc/manifest.yaml, 2026-10-26) needs, by DAP section type.
+    # Every key the pilot prototype (.sdlc/manifest.yaml, 2026-10-26) needs, by DAP section type.
     # Merged on purpose: ops/op/msgs → msg, fail → note, planned → status, blocked_by → blocked,
     # adr_conflicts → conflicts; prototype list ids (id) become section ids.
     PROTOTYPE = {
@@ -262,7 +262,7 @@ class KeyList(unittest.TestCase):
     def test_contract_example_keys_exist(self):
         with open(self.CONTRACT, encoding="utf-8") as f:
             text = f.read()
-        example = text.split("Example (abridged from the shop6 prototype):")[1].split("```")[1]
+        example = text.split("Example (abridged from the pilot prototype):")[1].split("```")[1]
         types, current = self.types(), None
         for line in example.splitlines():
             if line.startswith("["):
@@ -413,7 +413,7 @@ class Show(Base):
 
 
 class Perf(Base):
-    def test_shop6_sized_workspace_under_10s(self):
+    def test_pilot_sized_workspace_under_10s(self):
         import time
         headings = "".join("\n## Section %d\n\n%s\n" % (i, "word " * 600) for i in range(10))
         srcs = []

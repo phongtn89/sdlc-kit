@@ -10,11 +10,11 @@ Track: T3
 
 > **Supersedes spec 001 for this capability** once approved; 001 is then marked `superseded by 002`. 001 stays the record of the rejected v1 and its evaluation.
 
-<!-- Source of the decisions: shop6 workspace, .sdlc/decisions/2026-10-30-dense-find-redesign.md (sdlc-grill, play-back confirmed 2026-10-30; not yet committed in shop6: cite its revision once it is). Evidence: the 12 transcripts of the 2026-10-26 shop6 evaluation (shop6-evals/dense/results.md). -->
+<!-- Source of the decisions: pilot workspace, .sdlc/decisions/2026-10-30-dense-find-redesign.md (sdlc-grill, play-back confirmed 2026-10-30; not yet committed in pilot: cite its revision once it is). Evidence: the 12 transcripts of the 2026-10-26 pilot evaluation (pilot-evals/dense/results.md). -->
 
 ## Intent
 
-**Problem:** v1 told agents to read a whole dense index before anything else. In the shop6 evaluation, reading the index (15.9K characters) cost about as much as the targeted document reads it was meant to replace (median 9.5K), and agents skipped the prose rules that told them how to use it. The gate failed: −17% context, against −50% required. The 50% target was also out of reach on that task set, because the documents the index covers were only a median 31% of the baseline's context.
+**Problem:** v1 told agents to read a whole dense index before anything else. In the pilot evaluation, reading the index (15.9K characters) cost about as much as the targeted document reads it was meant to replace (median 9.5K), and agents skipped the prose rules that told them how to use it. The gate failed: −17% context, against −50% required. The 50% target was also out of reach on that task set, because the documents the index covers were only a median 31% of the baseline's context.
 
 **Who:** Agents running sdlc tracks in a workspace or repo with the module enabled, and the maintainers who decide whether to enable it.
 
@@ -111,14 +111,14 @@ As a maintainer, I want to switch the module on and off without touching core ki
 ## Non-functional
 
 - **NFR-001**: The index MUST NOT copy secrets, credentials or personal data from its sources; a source that holds them is referenced by pointer only (as spec 001). Lookup excerpts print source lines, so every excerpt line that matches the module's secret or e-mail patterns MUST be redacted. Other personal data in a workspace document (for example a name) can appear in an excerpt exactly as it would when the agent reads that document; this residual risk is accepted, because the lookup shows nothing the agent couldn't read itself.
-- **NFR-002**: The lookup, validation and the freshness check MUST run offline and non-interactively. A lookup MUST finish within 2 s, and validation within 10 s, for a workspace the size of shop6.
+- **NFR-002**: The lookup, validation and the freshness check MUST run offline and non-interactively. A lookup MUST finish within 2 s, and validation within 10 s, for a workspace the size of pilot.
 - Availability and accessibility: not applicable (no runtime service or UI).
 
 ## Success criteria
 
 - **SC-001**: On the evaluation set, the success rate with the module is ≥ the success rate without it. Measured via the S3 result record, after the tie rule.
 - **SC-002**: With A = context loaded without the module and B = with it, for each task: **the median of (1 − B/A) over the document tasks is at least 0.20**, and **B/A ≤ 1.10 on each code-only task**. All base runs count, pass or fail; the median over pairs where both arms passed is reported beside it. Measured via the S3 result record.
-- **SC-003**: 100% of entries in the shop6 index pass validation, including resolving source pointers. Measured by running the validator.
+- **SC-003**: 100% of entries in the pilot index pass validation, including resolving source pointers. Measured by running the validator.
 - **SC-004**: In 100% of tested cases (a source edited, renamed and deleted), the next freshness check and the next lookup report it stale. Measured by test.
 - **SC-005**: 100% of lookups in the test suite and the evaluation stay within the lookup budget. Measured by test and from the evaluation transcripts.
 - **SC-006**: After installing and removing the module, the hashes of all core-managed files and the always-loaded instructions equal those of a module-free install. Measured by the kit's drift check.
@@ -128,9 +128,9 @@ As a maintainer, I want to switch the module on and off without touching core ki
 
 - Dependency: kit support for module rules in the always-loaded instructions (spec 001 FR-019), already on `main`.
 - Dependency: v1's index format, key list, validator, freshness check and atomic rebuild, preserved at tag `exp/dense-v1`. This spec keeps their required behaviour (FR-002–FR-009).
-- Dependency: the shop6 workspace as the evaluation target, with its `.ignore` (2026-10-30) so the agent's code search sees the product repos in both arms.
+- Dependency: the pilot workspace as the evaluation target, with its `.ignore` (2026-10-30) so the agent's code search sees the product repos in both arms.
 - Assumption: the evaluation set has 8 tasks, 6 document tasks (routing, cross-repo impact, review against the PRD or architecture) and 2 code-only tasks, run once per arm plus the tie rule (decision 6). With 2 code-only tasks, SC-002 applies the +10% limit to each.
-- Assumption: the evaluation runs one fresh non-interactive session per task and arm, with the same read-only tool allowlist in both arms, as the shop6 knowledge-base evaluation did. Grading is done by a fresh read-only grader that sees only the answers, the answer keys and the pinned code; the owner spot-checks.
+- Assumption: the evaluation runs one fresh non-interactive session per task and arm, with the same read-only tool allowlist in both arms, as the pilot knowledge-base evaluation did. Grading is done by a fresh read-only grader that sees only the answers, the answer keys and the pinned code; the owner spot-checks.
 - Assumption: the 24% estimate comes from replaying v1's 6 baseline transcripts. Real lookups may cost more or less, and agents may read sources after a lookup; SC-002's 20% leaves about 4 points of margin.
 - Assumption: only the `claude` target is evaluated. FR-018 on `copilot` is checked by install tests, not by an agent evaluation.
 

@@ -1,7 +1,7 @@
 # ADR-0002: Usage is read from the session transcripts, between start and stop marks
 
 Status: accepted <!-- proposed | accepted | superseded by ADR-NNNN -->
-Date: 2026-11-03 · Deciders: phong.ngo.vn (accepted in chat, 2026-11-03: "I choose the recommended option") · Related: [spec 003](../../specs/003-usage-metrics/spec.md); shop6 decision record `.sdlc/decisions/2026-10-30-usage-metrics.md` (decision 2: explicit start and stop as named commands)
+Date: 2026-11-03 · Deciders: phong.ngo.vn (accepted in chat, 2026-11-03: "I choose the recommended option") · Related: [spec 003](../../specs/003-usage-metrics/spec.md); pilot decision record `.sdlc/decisions/2026-10-30-usage-metrics.md` (decision 2: explicit start and stop as named commands)
 
 ## Context
 

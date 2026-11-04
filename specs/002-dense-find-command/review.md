@@ -4,7 +4,7 @@ VERDICT: APPROVED
 
 ## Scope
 
-- Repository: /Users/phong.ngo.vn/Projects/sdlc-kit, branch feat/002-dense-find
+- Repository: <kit>, branch feat/002-dense-find
 - Revision: `0ee9391..5f3d44b` (head 5f3d44b; earlier reviewed heads 0561f13 and 8fb24b7)
 - Role: implementation (correctness + spec)
 - Agent: independent read-only reviewer

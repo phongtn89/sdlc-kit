@@ -14,7 +14,7 @@ VERDICT: APPROVED
 | `python3 bin/sdlc lint` | `0801055` | ok |
 | F1 / F2 / A1 / ssh probe / A9 reproductions | `0801055` | as above |
 
-Not covered by this verdict: agent behaviour (Convergence C003: T010, T015, T018) and the shop6 evaluation (D4).
+Not covered by this verdict: agent behaviour (Convergence C003: T010, T015, T018) and the pilot evaluation (D4).
 
 ---
 

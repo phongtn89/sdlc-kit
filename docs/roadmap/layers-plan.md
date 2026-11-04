@@ -2,7 +2,7 @@
 
 Date: 2026-11-03 · Owner: phong.ngo.vn · Status: **approved** by phong.ngo.vn on 2026-11-03 (in chat). Approval covers the plan as a whole; no story is started, and each **D** story still needs its decision before a spec · Track: T4 (initiative). Every story below becomes its own T2 change or T3 feature, with its own spec number from 004, and goes through the kit's own flow.
 
-**Sources.** The three documents of 2026-11-03 in the shop6 workspace (`.sdlc/onboarding/`): `agentic-workflow-comparison.md` (15 factors, the matrix, §5.3 sdlc-kit, §6.3 what the kit can take), `agentic-workflow-design-decisions.md` (the 10 decisions, the enforcement ladder, the golden-task recipe, §13 the next version of sdlc-kit), and `shop6-workflow-canvas.md` (how the kit fits Shop 6's routes). Plus the kit's own evidence from specs 001–003 and the live check.
+**Sources.** The three documents of 2026-11-03 in the pilot workspace (`.sdlc/onboarding/`): `agentic-workflow-comparison.md` (15 factors, the matrix, §5.3 sdlc-kit, §6.3 what the kit can take), `agentic-workflow-design-decisions.md` (the 10 decisions, the enforcement ladder, the golden-task recipe, §13 the next version of sdlc-kit), and `the pilot workflow canvas` (how the kit fits the pilot workspace's routes). Plus the kit's own evidence from specs 001–003 and the live check.
 
 **Honest status of the inputs.** §13 of the design-decisions document is labelled *suggestions, not agreed decisions*. This plan turns them into stories, but each epic starts with a grill or an ADR before any spec is written (marked **D**).
 
@@ -56,12 +56,14 @@ Format: **ID** · story · acceptance (observable) · track and size (S ≈ one 
 
 ### E0 Foundations (wave 0)
 
+**Progress 2026-11-04.** D decisions taken in chat: E0.1 model-invocable flag; E0.3 MIT and scrub internal names; E0.4 park. Done: E0.2, E0.3 (history still holds the old names), E0.4, E0.5 (text and tests). E0.1 is changed and lint-guarded, but its acceptance (R6 and R7 at n=3 on two models) and E0.5's (U2 at n=3) are live evals not yet run, so those two stay open.
+
 | ID | Story | Acceptance | Track · size · deps | Level / evidence |
 |---|---|---|---|---|
 | E0.1 | As a user, I type a normal engineering request and the router runs without `/sdlc` **(D: model-invocable router, or a hook, or a thin always-loaded rule)** | Eval R6 at n=3 on two models: for a non-trivial prompt the first skill call is `sdlc`; for a one-line typo it is not. Lint keeps constitution and flag consistent | T2 · S · — | Eval; today `core/skills/sdlc/SKILL.md:5` contradicts `core/constitution.md:3` |
 | E0.2 | As a maintainer, the README says which host is first-class and which is unverified | Support table (Claude Code: first-class; Copilot: rendered, not evaluated) and the three limits already found (transcript format is internal, `--resume` keeps the session id, no concurrency lock) | T0 · S · — | Reviewable text |
-| E0.3 | As the owner, I can share the repository **(D: licence, and what to do with internal names in `specs/`, `docs/adr/`)** | A `LICENSE` file; either the specs are scrubbed of shop6 internals or moved to a private branch; `sdlc install` into a clean repo does not copy them (already true) | T2 · S · owner decision | Checklist |
-| E0.4 | As the owner, spec 002's evaluation (T014–T020) has a recorded outcome or an explicit parked status | `specs/002-…/tasks.md` shows either the gate result and decision, or `Status: parked (reason, date)`; README matches | T3 tail · M or S · needs shop6 access | Gate from spec 002 SC-001/002 |
+| E0.3 | As the owner, I can share the repository **(D: licence, and what to do with internal names in `specs/`, `docs/adr/`)** | A `LICENSE` file; either the specs are scrubbed of pilot internals or moved to a private branch; `sdlc install` into a clean repo does not copy them (already true) | T2 · S · owner decision | Checklist |
+| E0.4 | As the owner, spec 002's evaluation (T014–T020) has a recorded outcome or an explicit parked status | `specs/002-…/tasks.md` shows either the gate result and decision, or `Status: parked (reason, date)`; README matches | T3 tail · M or S · needs pilot access | Gate from spec 002 SC-001/002 |
 | E0.5 | As a user, `sdlc-debug` starts usage recording before the first reproduction | Eval U2 at n=3: `start` precedes the first run of the failing test; skill text updated test-first | T2 · S · — | Live-check follow-up 1 |
 
 ### E1 Mechanical enforcement (wave 1)
@@ -72,7 +74,7 @@ Starting list of "must never happen" (decisions §4): push on red · T3 edits wi
 |---|---|---|---|---|
 | E1.1 | As a maintainer, an ADR fixes the enforcement model per host **(D)** | ADR with the ladder, the "must never happen" list with a target level each, and which levels each host supports (Claude: 2, 3, 5, 6; Copilot: 2, 5, 6) | ADR · S · E0.1 | — |
 | E1.2 | As an agent, I run `bin/sdlc verify` and quote its result instead of claiming it | Runs the configured commands once, non-interactively; writes a JSON evidence record with exit codes and `HEAD`; the record is stale after the next commit; unit tests with a red and a green command | T3 · M · E1.1 | Level 5 |
-| E1.3 | As a maintainer, `bin/sdlc gate <name>` checks readiness mechanically | Gates `approved` (the spec's `Approved` line **and** the digest of spec, plan and tasks recorded at approval, so edits after approval fail), `green-at-head`, `evidence-for-ticks` (every ticked task has evidence at a revision); exit 1 on failure so CI can use it | T3 · M · E1.2 | Level 5 (digest idea from Shop 6's triage) |
+| E1.3 | As a maintainer, `bin/sdlc gate <name>` checks readiness mechanically | Gates `approved` (the spec's `Approved` line **and** the digest of spec, plan and tasks recorded at approval, so edits after approval fail), `green-at-head`, `evidence-for-ticks` (every ticked task has evidence at a revision); exit 1 on failure so CI can use it | T3 · M · E1.2 | Level 5 (digest idea from the pilot workspace's triage) |
 | E1.4 | As a Claude Code user, installing renders three hooks into `.claude/settings.json` | Opt-in switch `enforce` in `.sdlc/config.json`; hooks: block `git push` and `gh pr create` unless `gate green-at-head`; block edits under the source tree on T3 without `gate approved`; at `Stop` warn on ticks without evidence. Rendering is merge-safe with the project's own settings, hashed in the lock, removed by `uninstall`, tested with fake hook JSON | T3 · L · E1.3 | Level 3 |
 | E1.5 | As a team, a CI recipe runs the same gates for any host | A template workflow running `sdlc lint`, `sdlc check`, `sdlc gate approved` and `green-at-head`; documented as the required-check route for Copilot | T2 · S · E1.3 | Level 6 |
 | E1.6 | As a maintainer, budgets are computed, not self-reported | `bin/sdlc budget` reads `git diff --stat` at HEAD and the usage lines (E3) against `budget.*`; `sdlc-implement` calls it | T2 · S · E1.2 | Level 5 |
@@ -113,10 +115,10 @@ Starting list of "must never happen" (decisions §4): push on red · T3 edits wi
 
 | ID | Story | Acceptance | Track · size · deps | Level / evidence |
 |---|---|---|---|---|
-| E5.1 | As a maintainer, an ADR states the modes per route **(D)** | Interactive (default), planning-only, and "handoff to an autonomous runner" (Shop 6's routes; Agentry); what the kit owns in each and what it does not (it will not build a runner) | ADR · S · E1.1 | — |
+| E5.1 | As a maintainer, an ADR states the modes per route **(D)** | Interactive (default), planning-only, and "handoff to an autonomous runner" (the pilot workspace's routes; Agentry); what the kit owns in each and what it does not (it will not build a runner) | ADR · S · E1.1 | — |
 | E5.2 | As a user, `[P]` tasks run isolated | With `isolate` on, each parallel task runs in its own worktree through a subagent; the merge step is explicit; usage overlap flags (spec 003) stay valid; test with a fixture repo | T3 · L · E1.4 | Level 2 and 5 |
 | E5.3 | As an owner, autonomy is a per-track setting the host enforces | `autonomy.T0…T4` in config (`ask`, `confirm`, `auto`) rendered into permission settings (Claude) or documented limits (Copilot); eval per level | T3 · M · E1.4, E5.1 | Level 2 and 3 |
-| E5.4 | As a lead, a ready T3 exports to an autonomous runner **(D: Shop 6 `create-implementation-issue` shape)** | `bin/sdlc export <feature>` writes a runner-ready issue from spec, plan and tasks with the approval digest; round-trip test against a fixture schema | T3 · M · E1.3, E5.1 | Schema test |
+| E5.4 | As a lead, a ready T3 exports to an autonomous runner **(D: the pilot workspace `create-implementation-issue` shape)** | `bin/sdlc export <feature>` writes a runner-ready issue from spec, plan and tasks with the approval digest; round-trip test against a fixture schema | T3 · M · E1.3, E5.1 | Schema test |
 
 ### E6 Ceremony and artifacts (wave 3)
 
@@ -177,7 +179,7 @@ Starting list of "must never happen" (decisions §4): push on red · T3 edits wi
 
 1. **E0.1** How the router becomes reachable: model-invocable flag, a hook, or a thin always-loaded rule. Trade-off: the flag may trigger the router on trivial prompts.
 2. **E0.3** Licence, and whether `specs/` and `docs/adr/` stay public.
-3. **E0.4** Run spec 002's shop6 evaluation, or park it.
+3. **E0.4** Run spec 002's pilot evaluation, or park it.
 4. **E1.1** Which "must never happen" items are in scope for v1 of enforcement, and whether `enforce` is opt-in (recommended).
 5. **E4.1** Which closed tickets form the golden set, and who may see the hidden tests.
 6. **E4.5** Copilot: evaluate or declare unverified.

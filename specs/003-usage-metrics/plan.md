@@ -20,7 +20,7 @@ One new core skill, `sdlc-usage`, ships a stdlib-only script, `usage.py`, with t
 | Principle | Pass / justify | Note |
 |---|---|---|
 | depth-follows-risk | pass | T3: new core skill and a parser of an internal format |
-| agree-before-building | pass | decisions from the shop6 grill and ADR-0002; the plan's choices in the next section need approval |
+| agree-before-building | pass | decisions from the pilot grill and ADR-0002; the plan's choices in the next section need approval |
 | subtract-before-adding | pass | no hooks, no OTel, no server, no new config file; one script and one switch. Reuses the progress log and the existing records |
 | thin-vertical-slices | pass | S1 is one task measured end to end through an installed skill |
 | prove-it-works | pass | exact match against synthetic and one real recorded run (SC-002, SC-009); a live `claude -p` check before ship |

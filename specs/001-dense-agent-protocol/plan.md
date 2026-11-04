@@ -6,7 +6,7 @@ Spec: [spec.md](spec.md) · Status: draft · Created: 2026-10-26
 
 One small, generic core change lets any module add **module rules** to the always-loaded instructions (FR-019). Everything else ships as `modules/dense`: module rules, an `sdlc-dense-index` skill with a standard-library validator script, a key list, a return-contract template and an evaluation-method template. The index is a sectioned line format ([ADR 0001](../../docs/adr/0001-dense-index-format.md)).
 
-The riskiest part isn't code. It's whether agents follow the module rules (load the index, cite sources, include the contract) reliably enough to pass the A/B gate. Only the shop6 evaluation can show that.
+The riskiest part isn't code. It's whether agents follow the module rules (load the index, cite sources, include the contract) reliably enough to pass the A/B gate. Only the pilot evaluation can show that.
 
 ## Technical context
 
@@ -14,7 +14,7 @@ The riskiest part isn't code. It's whether agents follow the module rules (load 
 - **Key dependencies:** none new.
 - **Storage:** files only. The index lives at `.sdlc/context/index.dap`, project-owned and not hashed, like the context documents (`adapters/RENDERING.md`, "Repo context" row).
 - **Testing:** `python3 -m unittest discover -s tests -t .` (`README.md:82`; baseline 50 tests OK in 7.9 s on 2026-10-26) and `python3 bin/sdlc lint` (baseline ok).
-- **Target:** the sdlc-kit repo (`bin/sdlc`, `modules/dense/`, `adapters/RENDERING.md`, `README.md`, `VERSION`, `evals/`). The shop6 workspace is the first install and holds the evaluation set.
+- **Target:** the sdlc-kit repo (`bin/sdlc`, `modules/dense/`, `adapters/RENDERING.md`, `README.md`, `VERSION`, `evals/`). The pilot workspace is the first install and holds the evaluation set.
 - **Constraints:** skill files ≤ 200 lines, with the required sections (`bin/sdlc:26`, lint at `:802-807`). Rules and skills must work on both targets. Validator and freshness check run in under 10 s (NFR-003).
 - **Measurement method** (spec assumption, resolved here): "context before the first action" is the number of characters an agent has loaded (auto-loaded instructions plus every file or tool result read) before its first edit, command or delegation, counted from the session transcript. On Claude, the input-token figure of that turn is recorded too, where the transcript has it. Both arms use the same method, so the ratio is comparable on both targets. No `research.md` is needed.
 
@@ -84,7 +84,7 @@ modules/dense/
 | FR-009, FR-010, FR-011 | `rules.md` (run `fresh` from whichever skill path exists; on exit 0 load the index first and quote its revision (`fresh <IDX12>`); cite sources; on 1 use full sources for the stale aliases; on 2 use full sources throughout) |
 | FR-012, FR-013, FR-014 | `rules.md` + `dense-return.md`; `k` lines may use any key in the key list, of any section type |
 | FR-015 | One rules text in both instruction blocks; skill bodies are identical across targets (`RENDERING.md`) |
-| FR-016 | `dense-eval.md` in the kit (with a leak-check step); the concrete tasks live outside the shop6 workspace in `~/Projects/shop6-evals/dense/` |
+| FR-016 | `dense-eval.md` in the kit (with a leak-check step); the concrete tasks live outside the pilot workspace in `~/Projects/pilot-evals/dense/` |
 | FR-018 | `dap.py commit tmp dest`: validates `tmp`, then atomically replaces `dest` (`os.replace`); on failure leaves `dest` untouched, exit 1 |
 | FR-019 | `load_kit` + `block_inner` + lint |
 | NFR-001 | `validate` rule 6 (secret patterns) |
@@ -96,7 +96,7 @@ modules/dense/
 | Failure | Handling |
 |---|---|
 | Index missing, invalid or unknown version | `fresh` exits 2 (`validate` exits 1); rules say: state it and use full sources (S1.5) |
-| A value contains `@` (e.g. `@jtl/shop-component`) | The parser takes the last ` @` on the line as the reference start, so values may contain `@` (A1) |
+| A value contains `@` (e.g. `@acme/shop-component`) | The parser takes the last ` @` on the line as the reference start, so values may contain `@` (A1) |
 | Source changed, renamed or deleted | Its hash differs or the file is missing → `STALE <alias>`; the agent uses full sources for that alias only (S1.4) |
 | A heading was renamed, so a pointer no longer resolves | The hash changed → stale at track start; the next build's `validate` fails on the slug → last valid index kept (FR-018) |
 | Build interrupted, or the agent writes a bad index | The agent writes only to `index.dap.tmp`; `commit` validates before `os.replace`; the old index survives |
@@ -114,7 +114,7 @@ modules/dense/
   - `dap.py` only reads paths under `.sdlc/` and rejects `..` and absolute paths (reusing the `safe_path` idea, `bin/sdlc:113`).
   - It writes only `.sdlc/context/index.dap`: `commit` refuses any other `dest`, and any `tmp` other than `.sdlc/context/index.dap.<id>.tmp`, after resolving symlinks.
   - No network and no subprocesses.
-- **Performance:** NFR-003 is checked by a test on a generated workspace of shop6 size (10 sources, 300 KB) under 10 s.
+- **Performance:** NFR-003 is checked by a test on a generated workspace of pilot size (10 sources, 300 KB) under 10 s.
 - **Compatibility:**
   - An existing install with no rules-bearing modules → identical block → `check` stays clean after `update`. Covered by test.
   - `VERSION` goes 0.4.1 → 0.5.0 (a new module and a new rendering feature).
@@ -131,10 +131,10 @@ modules/dense/
 | `fresh` reports `fresh <IDX12>` (0) with the index's own hash, then STALE (1) after an edit, a rename or a delete, and INVALID (2) for a missing or invalid index (FR-006, FR-011, SC-004) | `dap.py fresh` | unit | `python3 -m unittest tests.test_dap.Fresh` |
 | An entry whose value contains `@` parses, with the reference taken from the last ` @` (A1) | `dap.py validate` | unit | `python3 -m unittest tests.test_dap.Validate` |
 | `commit` keeps the old index on an invalid tmp file and replaces it on a valid one (FR-018) | `dap.py commit` | unit | `python3 -m unittest tests.test_dap.Commit` |
-| Under 10 s on a shop6-sized input (NFR-003) | `dap.py validate` + `fresh` | unit | `python3 -m unittest tests.test_dap.Perf` |
+| Under 10 s on a pilot-sized input (NFR-003) | `dap.py validate` + `fresh` | unit | `python3 -m unittest tests.test_dap.Perf` |
 | Real module passes lint; installing it renders rules, skill, script and templates | `bin/sdlc lint`, `install --kit . --modules dense` | integration | `python3 -m unittest tests.test_sdlc.DenseModule` |
-| Agents orient from the index, cite sources, fall back when stale; returns conform (S1, S3, SC-001, SC-002, SC-005) | Paired runs per `dense-eval.md` in shop6 | e2e (manual eval) | Baseline arm without the module first; results in shop6 `.sdlc/evals/dense/results.md` |
-| SC-003: the real shop6 index is 100% valid | `dap.py validate` on shop6 | e2e | after deliverable 3 |
+| Agents orient from the index, cite sources, fall back when stale; returns conform (S1, S3, SC-001, SC-002, SC-005) | Paired runs per `dense-eval.md` in pilot | e2e (manual eval) | Baseline arm without the module first; results in pilot `.sdlc/evals/dense/results.md` |
+| SC-003: the real pilot index is 100% valid | `dap.py validate` on pilot | e2e | after deliverable 3 |
 
 ## Rollout & rollback
 
@@ -143,18 +143,18 @@ Deliverables, in order. Each is reviewed and merged on its own:
 1. **D1 Core: module rules** (kit). `load_kit`, `block_inner`, lint, `RENDERING.md`, tests. No visible change for existing installs. About 30 lines of Python and 70 of tests.
 2. **D2 Module: index** (kit). `dap.py`, `keys.json`, the `sdlc-dense-index` skill, the index parts of `rules.md`, `tests/test_dap.py`. About 170 lines of Python, 160 of tests and 120 of Markdown.
 3. **D3 Module: returns and eval method** (kit). The return-contract and eval-method templates, the returns part of `rules.md`, an eval row in `evals/scenarios.md`, `README.md`, `VERSION` 0.5.0. About 120 lines of Markdown.
-4. **D4 shop6 adoption** (shop6 workspace, owner phong.ngo.vn):
+4. **D4 pilot adoption** (pilot workspace, owner phong.ngo.vn):
    - Run the baseline arm **before** installing.
    - Then `install --modules dense`, build the first index, and run the module arm.
    - Record the gate result.
    - Retire `.sdlc/manifest.yaml` only if the gate passes.
 
-**Rollback:** in shop6, `python3 <kit>/bin/sdlc install . --modules ""` re-renders without the module. The block returns byte-identical to before (tested in D1). The index file stays and is inert. In the kit, revert D2 and D3; D1 is inert without rules-bearing modules.
+**Rollback:** in pilot, `python3 <kit>/bin/sdlc install . --modules ""` re-renders without the module. The block returns byte-identical to before (tested in D1). The index file stays and is inert. In the kit, revert D2 and D3; D1 is inert without rules-bearing modules.
 
 **Size:**
 - About 200 lines of Python, 230 of tests and 240 of Markdown in the kit.
-- Each of D1, D2 and D3 is at or under the shop6 `reassess_lines` (300) once tests and Markdown are counted separately. D2 is the largest and stays at about 330 lines of code plus tests, so tasks should split it into validate, fresh and commit slices.
-- The kit repo has no `.sdlc/config.json` budget of its own, so the shop6 budget is used as the reference.
+- Each of D1, D2 and D3 is at or under the pilot `reassess_lines` (300) once tests and Markdown are counted separately. D2 is the largest and stays at about 330 lines of code plus tests, so tasks should split it into validate, fresh and commit slices.
+- The kit repo has no `.sdlc/config.json` budget of its own, so the pilot budget is used as the reference.
 
 ## Complexity justifications
 

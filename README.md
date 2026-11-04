@@ -14,12 +14,12 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 
 | | |
 |---|---|
-| Version | **0.6.0** (see `VERSION`) |
+| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order |
 | State | Usable. Last checked 2026-11-03 on `main` after the spec 003 merge: `sdlc lint` is clean and 228 tests pass. Install, check and uninstall are verified on a fresh repo. |
-| Targets | Claude Code and GitHub Copilot (Copilot is rendered but not eval-tested) |
+| Targets | Claude Code (first-class) and GitHub Copilot (rendered, not evaluated); see [Supported hosts](#supported-hosts) |
 | Requirements | Python 3.9+, stdlib only, no network |
 | Evidence | Behaviour evals in `evals/` (one fresh `claude -p` per prompt via `evals/run.py`). Results are in `evals/results/`: n = 1 per arm, Sonnet 5.5 only. Usage metrics have a live check on real sessions, `evals/results/usage-live-check.md` |
-| Experimental | The opt-in `dense` module (spec 002, `find` instead of read) is built and independently reviewed, but its shop6 paired evaluation hasn't run. Don't enable it for real work until it passes. Spec 001's v1 was rejected (tag `exp/dense-v1`). |
+| Experimental | The opt-in `dense` module (spec 002, `find` instead of read) is built and independently reviewed, but its paired evaluation on a real workspace is **parked** (owner decision, 2026-11-04), so the gain is unproven: don't enable it for real work. Spec 001's v1 was rejected (tag `exp/dense-v1`). |
 
 ## Capabilities
 
@@ -33,6 +33,19 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 - **Self-checking kit.** `sdlc lint` enforces skill structure, valid `.sdlc/` references, and an unnamed-prompt eval for every skill the constitution names.
 - **Safe updates.** `update` skips files edited locally; project rules live in `.sdlc/config.json`, never in kit-owned files.
 
+## Supported hosts
+
+| Host | Status | What that means |
+|---|---|---|
+| Claude Code | first-class | Skills, roles (read-only roles rendered as tool allow-lists), the usage metric and every eval result are on this host. |
+| GitHub Copilot | rendered, not evaluated | Instructions, skills and roles are written to `.github/`; no eval row has run there, and usage metrics report `not available`. |
+
+Limits found so far, not hidden:
+
+- The Claude Code transcript format is internal to Claude Code and can change; usage metrics read it, pin a fixture, and say `not available` instead of guessing.
+- `--resume` keeps the session id, so work resumed in the same session can't be told apart by id; the windows are separated by clock.
+- There is no concurrency lock: two agents writing the same record at once can lose a write.
+
 ## Sharing the kit
 
 The kit has no dependency on this machine or on any one project. To use it on another project, or to give it to a teammate:
@@ -41,7 +54,7 @@ The kit has no dependency on this machine or on any one project. To use it on an
 2. In the other project: `python3 <kit>/bin/sdlc install <repo>`, then run `/sdlc-setup` once.
 3. To take a newer kit later: `git pull` in the kit, then `sdlc update <repo>`.
 
-Known limits when sharing: the repo has no `LICENSE` file yet (add one before sharing outside your team), and `specs/` and `docs/adr/` hold this kit's own history, which names an internal workspace. Neither is installed into projects.
+The kit is under the [MIT licence](LICENSE). `specs/` and `docs/adr/` hold this kit's own history; internal names were replaced in the files (2026-11-04), but earlier git history still contains them, so make the repository public only after rewriting the history or publishing a fresh copy. Neither folder is installed into projects.
 
 ## Install into a project
 
@@ -78,16 +91,16 @@ Never edit kit-owned files in place. Change the kit and run `update`, or put pro
 
 ## Multi-repo workspace
 
-You can install the kit into a plain folder that holds several repos, for example `~/Projects/shop6`. The child repos are never written.
+You can install the kit into a plain folder that holds several repos, for example `~/Projects/pilot`. The child repos are never written.
 
 ```bash
-python3 ~/Projects/sdlc-kit/bin/sdlc install ~/Projects/shop6
+python3 ~/Projects/sdlc-kit/bin/sdlc install ~/Projects/pilot
 ```
 
 To see the raw facts about every repo:
 
 ```bash
-python3 ~/Projects/sdlc-kit/bin/sdlc discover ~/Projects/shop6
+python3 ~/Projects/sdlc-kit/bin/sdlc discover ~/Projects/pilot
 ```
 
 Then open Claude Code in the workspace folder and run `/sdlc-setup`. It detects the workspace and writes `.sdlc/workspace.md` (a map of the repos, their dependencies, commands, specs and agent surfaces) and `repos` in `.sdlc/config.json`, only after you approve. Next, run `/sdlc-context <repo>` to write a cited context file per repo (`.sdlc/context/<repo>.md`). `discover` marks it STALE once the repo moves on. From then on, `/sdlc` first names the repo each task belongs to and works inside it, under that repo's own `AGENTS.md`.
@@ -104,7 +117,7 @@ After install and `/sdlc-setup`, you can just say what you want. You don't need 
 | "Pause here, I'll continue tomorrow" / "Pick up where we left off" | `sdlc-handoff` writes or reads a compact handoff (not yet eval-tested in plain language) |
 | "What did we learn from this feature?" | `sdlc-retro` turns the corrections into proposed changes (not yet eval-tested in plain language) |
 
-**For a bigger or unclear task, start with `/sdlc <task>`, in words like "/sdlc add sorting to the categories list".** The router skill is user-invoked only, so plain language doesn't reliably open it. `/sdlc` investigates, tells you which track (T0 to T4) it chose and why, and opens the steps as a todo list. You can also ask in words ("which track is this?"), but only `/sdlc` is tested.
+**For a bigger or unclear task, just describe it, or start with `/sdlc <task>`, in words like "/sdlc add sorting to the categories list".** The router skill is model-invocable (unreleased, after 0.6.0), so a non-trivial plain-language request should open it and a one-line typo should not; eval rows R6 and R7 check that, and they have not been run yet, so `/sdlc` stays the reliable way. It investigates, tells you which track (T0 to T4) it chose and why, and opens the steps as a todo list.
 
 Tips:
 

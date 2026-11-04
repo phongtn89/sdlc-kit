@@ -8,11 +8,11 @@ Owner: phong.ngo.vn
 Created: 2026-11-03
 Track: T3
 
-<!-- Source of the decisions: shop6 workspace, .sdlc/decisions/2026-10-30-usage-metrics.md (sdlc-grill, play-back confirmed by phong.ngo.vn 2026-10-30; not yet committed in shop6: cite its revision once it is). Decision 7 of that record sets the order: spec 002's analyze findings are fixed first, then this spec is built, then spec 002 is implemented, so its build tasks are measured. -->
+<!-- Source of the decisions: pilot workspace, .sdlc/decisions/2026-10-30-usage-metrics.md (sdlc-grill, play-back confirmed by phong.ngo.vn 2026-10-30; not yet committed in pilot: cite its revision once it is). Decision 7 of that record sets the order: spec 002's analyze findings are fixed first, then this spec is built, then spec 002 is implemented, so its build tasks are measured. -->
 
 ## Intent
 
-**Problem:** The kit records no token or time figures for agentic work. Today the only per-task trace is one progress-log line with a command and its result (`core/skills/sdlc-implement/SKILL.md:33`, "Append to the *Progress log*: the task ID, the command and its result"; the log's template line is `core/templates/tasks.md:50-54`). A bug record has no usage field (`core/templates/bug.md:30-44`, sections Fix, Regression test, Siblings checked) and a fixed review finding has no record of its own beyond a report row (`core/templates/review-report.md:19-25`). The shop6 handoff of 2026-10-27 noted that tokens and cost are recorded nowhere for the team's agentic work.
+**Problem:** The kit records no token or time figures for agentic work. Today the only per-task trace is one progress-log line with a command and its result (`core/skills/sdlc-implement/SKILL.md:33`, "Append to the *Progress log*: the task ID, the command and its result"; the log's template line is `core/templates/tasks.md:50-54`). A bug record has no usage field (`core/templates/bug.md:30-44`, sections Fix, Regression test, Siblings checked) and a fixed review finding has no record of its own beyond a report row (`core/templates/review-report.md:19-25`). The pilot handoff of 2026-10-27 noted that tokens and cost are recorded nowhere for the team's agentic work.
 
 **Who:** Maintainers and teams who run sdlc tracks and want to see what a task, a bug or a finding fix cost in tokens and time, and the owners of later retro views.
 

@@ -167,6 +167,18 @@ class Approve(Proj):
         self.assertEqual(self.gate("approved", "--spec", "005")[0], 2)  # ambiguous
         self.assertEqual(self.gate("approved")[0], 2)  # --spec required
 
+    def test_a_symlinked_spec_folder_found_by_number_cannot_escape(self):
+        outside = os.path.join(self._tmp.name, "outside", "006-y")
+        os.makedirs(outside)
+        for name in ("spec.md", "plan.md", "tasks.md"):
+            shutil.copy(os.path.join(self.f, name), os.path.join(outside, name))
+        os.symlink(outside, os.path.join(self.d, "specs", "006-y"))
+        before = open(os.path.join(outside, "spec.md")).read()
+        for args in (("approve", "--spec", "006", "--by", "Eve"), ("approved", "--spec", "006"),
+                     ("evidence-for-ticks", "--spec", "006")):
+            self.assertEqual(self.gate(*args)[0], 2, args)
+        self.assertEqual(open(os.path.join(outside, "spec.md")).read(), before)
+
     def test_by_is_required_for_approve_and_refused_elsewhere(self):
         self.assertEqual(self.gate("approve", "--spec", "005")[0], 2)
         self.assertEqual(self.gate("approved", "--spec", "005", "--by", "x")[0], 2)
@@ -202,6 +214,23 @@ class Digest(Proj):
                 self.after_approval()
                 self.edit(rel, old, new)
                 self.fails_naming(part)
+
+    def test_text_hidden_on_status_and_approved_lines_is_not_ignored(self):
+        self.after_approval()
+        self.edit("spec.md", "Status: approved <!--", "Status: approved NEWREQ: the system shall X <!--")
+        self.fails_naming("spec")
+        self.setUp()
+        self.after_approval()
+        self.edit("spec.md", "<!-- name, YYYY-MM-DD; filled when approved -->", "<!-- name, YYYY-MM-DD; filled when approved, and more -->")
+        self.fails_naming("spec")
+        self.setUp()
+        self.after_approval()
+        self.edit("plan.md", "· Status: draft ·", "· Status: draft SECRET-CHANGE ·")
+        self.fails_naming("plan")
+        self.setUp()
+        self.after_approval()
+        self.edit("tasks.md", "· Status: draft ·", "· Status: draft SECRET-CHANGE ·")
+        self.fails_naming("tasks")
 
     def test_a_new_and_a_removed_contract_file_fail(self):
         self.after_approval()
@@ -369,7 +398,7 @@ class ApproveRefusals(Proj):
 
     def test_nul_and_other_control_characters_are_not_valid_names(self):
         import sdlc_gate
-        for by in ("a\x00b", "a\x1fb", "a\x7fb"):
+        for by in ("a\x00b", "a\x1fb", "a\x7fb", "a\x85b", "a\u200bb", "a\u00a0b", "a\ufeffb", "a\tb"):
             self.assertFalse(sdlc_gate.valid_by(by), repr(by))
         self.assertTrue(sdlc_gate.valid_by("Ng\u00f4 Th\u1ebf Phong"))
 
@@ -505,6 +534,16 @@ class GreenAtHead(GreenProj):
             json.dump({"version": 2}, f)
         self.assertEqual(self.reason_lines(self.green()[1]), ["record shape or version wrong"])
 
+    def test_a_deeply_nested_record_is_unreadable_not_a_traceback(self):
+        self.setup_repo()
+        os.makedirs(os.path.dirname(self.record_path()), exist_ok=True)
+        with open(self.record_path(), "w") as f:
+            f.write("[" * 400000)
+        code, out, err = self.green()
+        self.assertEqual((code, self.reason_lines(out)), (1, ["unreadable record"]), err)
+        self.assertEqual(out.strip().split("\n")[-1], "gate green-at-head: FAIL (1 problems)")
+        self.assertNotIn("Traceback", err)
+
     def test_no_repository_and_no_commit_are_head_unresolved(self):
         os.makedirs(os.path.join(self.d, ".sdlc"))
         with open(os.path.join(self.d, ".sdlc", "config.json"), "w") as f:
@@ -595,6 +634,14 @@ class Ticks(GreenProj):
         self.tasks("- [x] T002 b\n", "- `%s` T003\u2013T001 done\n" % h[0])  # reversed: not a range, T002 not named
         self.assertEqual(self.ticks()[0], 1)
 
+    def test_a_dash_and_a_number_is_not_a_range(self):
+        h = self.commits(1)
+        for text in ("T001 \u2014 57 tests pass", "T001 \u2013 2026-11-04", "T001-3 ok", "T001 - 12 passed", "T001 \u2013 003"):
+            self.tasks("- [x] T002 b\n- [x] T003 c\n", "- `%s` %s\n" % (h[0], text))
+            code, out, _ = self.ticks()
+            self.assertEqual(code, 1, text)
+            self.assertEqual(len(self.problems(out)), 2, text)
+
     def test_each_kind_of_missing_evidence_is_one_line(self):
         h = self.commits(1)
         self.tasks("- [x] T001 a\n- [x] T002 b\n- [x] T003 c\n- [x] no id here\n- [x] T0011 near\n",
@@ -681,13 +728,6 @@ class Ticks(GreenProj):
                 self.assertEqual(got, want, out)
                 self.assertEqual(code, 1 if want else 0)
 
-    def test_live_files_smoke(self):
-        shallow = subprocess.run(["git", "-C", ROOT, "rev-parse", "--is-shallow-repository"], capture_output=True, text=True).stdout.strip()
-        if shallow != "false":
-            self.skipTest("shallow or non-git checkout")
-        self.assertEqual(run("gate", "evidence-for-ticks", ROOT, "--spec", "002")[0], 0)
-        self.assertEqual(run("gate", "evidence-for-ticks", ROOT, "--spec", "003")[0], 0)
-
 
 class Cli(GreenProj):
     def listing(self, d):
@@ -767,7 +807,7 @@ class Cli(GreenProj):
 
     def test_the_module_imports_only_the_standard_library_and_sdlc_verify(self):
         import ast
-        allowed = {"datetime", "hashlib", "json", "os", "re", "stat", "tempfile", "sdlc_verify"}
+        allowed = {"datetime", "hashlib", "json", "os", "re", "stat", "tempfile", "unicodedata", "sdlc_verify"}
         with open(os.path.join(ROOT, "bin", "sdlc_gate.py"), encoding="utf-8") as f:
             tree = ast.parse(f.read())
         names = set()

@@ -9,6 +9,7 @@ import os
 import re
 import stat
 import tempfile
+import unicodedata
 
 import sdlc_verify
 
@@ -66,13 +67,17 @@ def normalise(kind, raw):
                 break
     if kind == "spec":
         end = header_end(lines)
-        drop = {first_index(lines, "Status:", end), first_index(lines, "Approved:", end)} - {None}
-        lines = [l for i, l in enumerate(lines) if i not in drop]
+        si, ai = first_index(lines, "Status:", end), first_index(lines, "Approved:", end)
+        if si is not None:
+            lines[si] = re.sub(r"^Status:[ \t]*\S+", "Status:", lines[si], count=1)  # the word only; a comment stays covered
+        if ai is not None:
+            comment = re.search(r"<!--.*-->\s*$", lines[ai])
+            lines[ai] = "Approved:" + (" " + comment.group(0).rstrip() if comment else "")
     if kind in ("plan", "tasks"):
         prefix = "Spec:" if kind == "plan" else "Inputs:"
         for i, l in enumerate(lines):
             if l.startswith(prefix):
-                lines[i] = re.sub(r"· Status: [^·\n]*", "· Status:", l)
+                lines[i] = re.sub(r"· Status: \S+", "· Status:", l, count=1)
                 break
     if kind == "tasks":
         lines = [re.sub(r"^([ \t]*[-*] )\[[xX]\]", r"\1[ ]", l) for l in lines]
@@ -124,9 +129,9 @@ def status_word(line):
 def valid_by(by):
     if by is None or by != by.strip() or not by or len(by) > 80:
         return False
-    if "," in by or "<!--" in by or "-->" in by or " " in by or " " in by:
+    if "," in by or "<!--" in by or "-->" in by:
         return False
-    return not any(ord(c) < 32 or ord(c) == 127 for c in by)
+    return not any(unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") or (c.isspace() and c != " ") for c in by)
 
 
 def write_bytes_atomic(path, data, replace=os.replace):
@@ -227,7 +232,10 @@ def resolve_spec(base, spec_dir, spec, safe_path):
                        and os.path.isdir(os.path.join(root, n)))
         if len(found) != 1:
             raise GateError("--spec %s matches %d folders under %s" % (spec, len(found), spec_dir))
-        return os.path.join(root, found[0])
+        path = os.path.join(root, found[0])
+        if not os.path.realpath(path).startswith(os.path.realpath(root) + os.sep):
+            raise GateError("--spec %s leaves %s (a symlinked folder)" % (spec, spec_dir))
+        return path
     rel = (spec or "").rstrip("/")
     try:
         path = safe_path(base, rel)
@@ -255,7 +263,7 @@ def read_record(base):
             return None, "unreadable record"
         with open(path, "rb") as f:
             return json.loads(f.read().decode("utf-8")), None
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return None, "unreadable record"
 
 
@@ -280,7 +288,15 @@ def check_green(base):
 TICK_RE = re.compile(r"^[ \t]*[-*] \[[xX]\](?P<rest>.*)$")
 ID_RE = re.compile(r"^[ \t]*(?P<id>[A-Z]+\d+[a-z]?)(?![0-9A-Za-z_])")
 HASH_RE = re.compile(r"(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])")
-RANGE_RE = re.compile(r"(?<![0-9A-Za-z_])([A-Z]+)(\d+)[ \t]*[\u2013\u2014-][ \t]*(?:\1)?(\d+)(?![0-9A-Za-z_])")
+RANGE_FULL = re.compile(r"(?<![0-9A-Za-z_])([A-Z]+)(\d+)[ \t]*[\u2013\u2014-][ \t]*\1(\d+)(?![0-9A-Za-z_])")
+RANGE_BARE = re.compile(r"(?<![0-9A-Za-z_])([A-Z]+)(\d+)[\u2013\u2014-](\d+)(?![0-9A-Za-z_])")
+
+
+def ranges(line):
+    """(prefix, lo, hi) for `T001-T004` (blanks allowed) and the bare `T001-004` (no blanks, same width)."""
+    out = list(RANGE_FULL.findall(line))
+    out += [(p, lo, hi) for p, lo, hi in RANGE_BARE.findall(line) if len(lo) == len(hi)]
+    return out
 COMMIT_LINE = re.compile(r"^[0-9a-f]{40} commit \d+$")
 TOKEN_CAP = 2000
 
@@ -291,7 +307,7 @@ def names_id(line, tid):
     m = re.fullmatch(r"([A-Z]+)(\d+)", tid)
     if not m:
         return False
-    for prefix, lo, hi in RANGE_RE.findall(line):
+    for prefix, lo, hi in ranges(line):
         if prefix == m.group(1) and int(lo) <= int(hi) and int(lo) <= int(m.group(2)) <= int(hi):
             return True
     return False

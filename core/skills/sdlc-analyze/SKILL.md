@@ -11,7 +11,7 @@ user-invocable: true
 
 - T3, after `sdlc-tasks` and before the human approval gate.
 - Again after any material spec or plan edit.
-- **Read-only.** It reports; fixes happen in the owning skill (specify, plan, tasks).
+- **Read-only.** It reports; fixes happen in the owning skill (specify, plan, tasks). The one exception is step 6: after the human's explicit approval it runs `sdlc gate approve`, which rewrites the spec's `Status` and `Approved` lines.
 
 ## Inputs
 

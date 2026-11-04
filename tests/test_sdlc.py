@@ -728,7 +728,8 @@ class GateSkills(Base):
         return found[0]
 
     def test_analyze_records_approval_through_the_command_after_explicit_approval(self):
-        step = self.line(self.skill("sdlc-analyze"), "gate approve")
+        step = self.line(self.skill("sdlc-analyze"), "bin/sdlc gate approve")
+        self.assertIn("one exception", self.line(self.skill("sdlc-analyze"), "Read-only."))
         for needle in ("<kit_path>/bin/sdlc gate approve", "--by", "explicit approval", "--repo <repo>", "again"):
             self.assertIn(needle, step)
         self.assertNotIn("add `Approved: <name>, YYYY-MM-DD` beneath it", self.skill("sdlc-analyze"))

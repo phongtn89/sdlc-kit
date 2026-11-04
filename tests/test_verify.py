@@ -477,6 +477,94 @@ class GreenAtHead(unittest.TestCase):
             self.assertIs(self.green(r), False, r)
 
 
+class GitRun(Proj):
+    def mod(self):
+        sys.path.insert(0, os.path.join(ROOT, "bin"))
+        import sdlc_verify
+        return sdlc_verify
+
+    def fake(self, body):
+        bindir = os.path.join(self._tmp.name, "gbin")
+        os.makedirs(bindir, exist_ok=True)
+        with open(os.path.join(bindir, "git"), "w") as f:
+            f.write("#!/bin/sh\n" + body + "\n")
+        os.chmod(os.path.join(bindir, "git"), 0o755)
+        return bindir
+
+    def with_path(self, bindir):
+        from unittest import mock
+        return mock.patch.dict(os.environ, {"PATH": bindir + os.pathsep + os.environ["PATH"]})
+
+    def test_ok_fail_timeout_and_nogit_statuses(self):
+        v = self.mod()
+        with self.with_path(self.fake("echo hi")):
+            self.assertEqual(v.git_run(self.d, "x"), ("ok", "hi\n"))
+        with self.with_path(self.fake("exit 3")):
+            self.assertEqual(v.git_run(self.d, "x")[0], "fail")
+        from unittest import mock
+        with self.with_path(self.fake("sleep 5")), mock.patch.object(v, "GIT_TIMEOUT", 0.2):
+            self.assertEqual(v.git_run(self.d, "x")[0], "timeout")
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"PATH": os.path.join(self._tmp.name, "nowhere")}):
+            self.assertEqual(v.git_run(self.d, "x"), ("nogit", ""))
+
+    def test_input_reaches_standard_input(self):
+        v = self.mod()
+        with self.with_path(self.fake("cat")):
+            self.assertEqual(v.git_run(self.d, "x", input="abc\n"), ("ok", "abc\n"))
+
+    def test_git_call_keeps_its_old_answers(self):
+        v = self.mod()
+        with self.with_path(self.fake("echo hi")):
+            self.assertEqual(v.git_call(self.d, "x"), (True, "hi\n"))
+        with self.with_path(self.fake("exit 3")):
+            self.assertEqual(v.git_call(self.d, "x"), (False, ""))
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"PATH": os.path.join(self._tmp.name, "nowhere")}):
+            self.assertEqual(v.git_call(self.d, "x"), (None, ""))
+
+
+class GreenReason(unittest.TestCase):
+    H = "a" * 40
+
+    def rec(self, **kw):
+        r = {"version": 1, "started": "t", "finished": "t", "revision": self.H, "dirty": False,
+             "commands": [{"name": "test", "command": "x", "exit": 0, "seconds": 0.1, "result": "pass"}]}
+        r.update(kw)
+        return r
+
+    def reason(self, rec, head=H):
+        sys.path.insert(0, os.path.join(ROOT, "bin"))
+        import sdlc_verify
+        return sdlc_verify.green_reason(rec, head)
+
+    def test_none_when_green_and_each_reason_in_order(self):
+        self.assertIsNone(self.reason(self.rec()))
+        cases = [
+            (None, "record shape or version wrong"), ([], "record shape or version wrong"),
+            (self.rec(version=2), "record shape or version wrong"),
+            (self.rec(dirty="no"), "record shape or version wrong"),
+            (self.rec(dirty=None), "record shape or version wrong"),
+            (self.rec(commands="x"), "record shape or version wrong"),
+            (self.rec(commands=[1]), "record shape or version wrong"),
+            (self.rec(revision=5), "record shape or version wrong"),
+            (self.rec(revision=None), "record has no revision"),
+            (self.rec(revision="b" * 40), "record is for another revision"),
+            (self.rec(dirty=True), "record was dirty"),
+            (self.rec(commands=[]), "no commands in the record"),
+            (self.rec(commands=[{"name": "t", "command": "x", "exit": 1, "seconds": 0, "result": "fail"}]), "a command did not pass"),
+        ]
+        for rec, want in cases:
+            self.assertEqual(self.reason(rec), want, rec)
+        self.assertEqual(self.reason(self.rec(), head=None), "record is for another revision")
+
+    def test_green_at_head_is_exactly_reason_is_none(self):
+        sys.path.insert(0, os.path.join(ROOT, "bin"))
+        import sdlc_verify
+        for rec in (self.rec(), self.rec(dirty=True), None, self.rec(revision=None)):
+            self.assertIs(sdlc_verify.green_at_head(rec, self.H), sdlc_verify.green_reason(rec, self.H) is None)
+
+
 class Record(Proj):
     def test_record_holds_no_command_output(self):
         marker = "SECRET-MARKER-12345"

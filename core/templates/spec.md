@@ -3,7 +3,7 @@
 Feature: [short name]
 Number: [NNN — from `sdlc next-spec`]
 Status: draft <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
-Approved: <!-- name, YYYY-MM-DD; filled when approved -->
+Approved: <!-- written by `sdlc gate approve --by <name>`: name, YYYY-MM-DD, digest sha256:<64 hex> (spec, plan, tasks, contracts prefixes) -->
 Owner: [name]
 Created: [YYYY-MM-DD]
 Track: T3

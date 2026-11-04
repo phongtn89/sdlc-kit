@@ -49,6 +49,6 @@ Acceptance:
 
 ## Progress log
 
-<!-- One line per session: date, revision, tasks done, evidence, next task. With usage metrics on (`usage.enabled` in `.sdlc/config.json`), `sdlc-usage` also adds hidden `usage-start` and `usage-stop` comments and a `- usage <task id>: …` bullet per task here. Do not edit them. -->
+<!-- One line per session: date, short commit hash, tasks done, evidence, next task. A ticked task needs a line here that names its ID (or a range such as `T001–T004`) and the short commit hash that holds the work: `sdlc gate evidence-for-ticks` checks it. Put baseline test counts here, not in the Verify block. `## Convergence` goes after this log. Write ids plainly at the start of a tick (`- [x] T001 ...`, not bold), and name a range as `T001–T004` (the prefix twice); "T001 – 57 tests" is not a range. Any edit to the spec, plan, contracts or task text after approval needs the human and a new `gate approve` (re-approval). With usage metrics on (`usage.enabled` in `.sdlc/config.json`), `sdlc-usage` also adds hidden `usage-start` and `usage-stop` comments and a `- usage <task id>: …` bullet per task here. Do not edit them. -->
 
 - YYYY-MM-DD `rev` — T00x done (`command` exit 0); next: T00y

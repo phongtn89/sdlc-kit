@@ -714,6 +714,73 @@ class VerifySkills(Base):
             self.assertIn(needle, rule[0])
 
 
+class GateSkills(Base):
+    def skill(self, name):
+        return self.read(".claude/skills/%s/SKILL.md" % name)
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(run("install", self.d, kit=ROOT)[0], 0)
+
+    def line(self, text, needle):
+        found = [l for l in text.split("\n") if needle in l]
+        self.assertEqual(len(found), 1, (needle, found))
+        return found[0]
+
+    def test_analyze_records_approval_through_the_command_after_explicit_approval(self):
+        step = self.line(self.skill("sdlc-analyze"), "bin/sdlc gate approve")
+        self.assertIn("one exception", self.line(self.skill("sdlc-analyze"), "Read-only."))
+        for needle in ("<kit_path>/bin/sdlc gate approve", "--by", "explicit approval", "--repo <repo>", "again"):
+            self.assertIn(needle, step)
+        self.assertNotIn("add `Approved: <name>, YYYY-MM-DD` beneath it", self.skill("sdlc-analyze"))
+
+    def test_implement_readiness_runs_approved_with_a_legacy_fallback(self):
+        text = self.skill("sdlc-implement")
+        step = self.line(text, "gate approved")
+        for needle in ("<kit_path>/bin/sdlc gate approved", "--spec", "no approval digest", "ask the human", "changed"):
+            self.assertIn(needle, step)
+        self.assertNotIn("or the user approved it in this session", text)
+
+    def test_implement_finish_runs_evidence_for_ticks_and_not_green_at_head(self):
+        text = self.skill("sdlc-implement")
+        self.assertIn("quote its last line", self.line(text, "bin/sdlc gate evidence-for-ticks"))
+        self.assertNotIn("green-at-head", text)
+
+    def test_implement_says_a_task_line_edit_needs_a_new_approval_and_logs_the_hash(self):
+        text = self.skill("sdlc-implement")
+        self.assertIn("gate approve", self.line(text, "update the task line"))
+        self.assertIn("short hash", self.line(text, "Never tick work that is blocked"))
+
+    def test_ship_runs_evidence_and_green_after_the_verify(self):
+        text = self.skill("sdlc-ship")
+        step = self.line(text, "gate green-at-head")
+        for needle in ("gate evidence-for-ticks", "after", "verify"):
+            self.assertIn(needle, step)
+
+    def test_constitution_has_one_gate_rule(self):
+        rule = [l for l in managed_block(self.read("AGENTS.md")).split("\n") if "gate approved" in l]
+        self.assertEqual(len(rule), 1, rule)
+        for needle in ("gate evidence-for-ticks", "gate green-at-head", "last line"):
+            self.assertIn(needle, rule[0])
+
+    def test_templates_state_the_evidence_format_and_the_approved_grammar(self):
+        tasks = self.read(".sdlc/templates/tasks.md")
+        log = tasks[tasks.index("## Progress log"):]
+        for needle in ("short commit hash", "## Convergence", "re-approval", "baseline"):
+            self.assertIn(needle, log + tasks)
+        spec = self.read(".sdlc/templates/spec.md")
+        self.assertIn("gate approve", self.line(spec, "Approved:"))
+
+    def test_readme_rendering_and_design_document_the_gate(self):
+        for rel in ("README.md", os.path.join("adapters", "RENDERING.md"), "DESIGN.md"):
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+                self.assertIn("gate", f.read(), rel)
+        with open(os.path.join(ROOT, "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        for needle in ("sdlc gate approved", "evidence-for-ticks", "green-at-head"):
+            self.assertIn(needle, readme)
+
+
 class EvalRows(unittest.TestCase):
     def rows(self):
         with open(os.path.join(ROOT, "evals", "scenarios.md"), encoding="utf-8") as f:

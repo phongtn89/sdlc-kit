@@ -17,7 +17,7 @@ Deliver the approved scope as working, tested, documented code in thin vertical 
 
 ## Process
 
-1. Readiness gate. Do not edit until all hold:
+1. Readiness gate. Do not edit until all hold (a T3 feature also needs `sdlc gate approved` to pass, as in `sdlc-implement`):
    - scope and acceptance are clear; no open `[NEEDS CLARIFICATION]` on the task;
    - seam and callers inspected;
    - Definition of Done known (`.sdlc/checklists/definition-of-done.md`);

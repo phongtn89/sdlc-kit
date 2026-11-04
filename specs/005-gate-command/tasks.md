@@ -1,6 +1,6 @@
 # Tasks: `sdlc gate`
 
-Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/gate.md](contracts/gate.md) · Status: draft · Created: 2026-11-04 · Branch: `feat/005-gate-command`
+Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/gate.md](contracts/gate.md) · Status: approved · Created: 2026-11-04 · Branch: `feat/005-gate-command`
 
 Verify (kit root):
 - Narrow: `python3 -B -m unittest tests.test_gate -v` (helper `run()` in `tests/test_gate.py`, 30 s timeout)
@@ -32,7 +32,7 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 
 ## Human steps
 
-- [ ] H1 Approve implementation after `sdlc-analyze` (the T3 gate); the `Approved` line is written by hand because `approve` does not exist yet (replaced in T012) — owner: phong.ngo.vn — T001 waits for it
+- [x] H1 Approve implementation after `sdlc-analyze` (the T3 gate); the `Approved` line is written by hand because `approve` does not exist yet (replaced in T012) — owner: phong.ngo.vn — T001 waits for it
 - [ ] H2 Approve merge (`sdlc-ship`; merges need explicit approval) — owner: phong.ngo.vn
 
 ## Progress log
@@ -41,3 +41,4 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 - 2026-11-04 `0a3439a` — plan, gate contract and tasks written. Baseline before this feature: 286 tests OK at `49717d4`.
 - 2026-11-04 — analyze pass 1 (fresh read-only agent): 0 CRITICAL, 5 HIGH, 9 MEDIUM, 8 LOW (A1–A22). Fixed in the documents: the progress-log cut and the Status/Approved removal are now scoped so text can't hide behind them (A1, A2); `green-at-head` is not run at implement's finish (A3); `green_reason` and `git_call(input)` in spec 004's module, test-first, so there is one definition and git failures keep their reason (A4); the real logs checked, spec 004's gap stated (A5); shallow clones and unreachable commits stated (A6, A16); checked boxes without an id reported (A7); `approve` edge cases, bytes, mode and name rules (A8); `--repo` spec_dir lookup and type checks (A9); tests moved next to the code they test (A10); ASCII output and write-before-print (A11); parser and error mapping (A12); T012 dogfood (A13); converge and baseline placement (A14); cat-file parsing and caps (A15); failure order, size caps and FIFOs (A17, A18); wording (A19); legacy readiness wording and analyze step 6 (A21, A22). A20 (roadmap `Story:` header) not changed.
 - 2026-11-04 — analyze pass 2 (fresh read-only agent): 0 CRITICAL, 2 HIGH, 5 MEDIUM, 9 LOW (B1–B16). Fixed in the documents: contract files are now a fourth digest part, so editing a contract after approval fails the gate (B1); `git_run` gives timeout and not-found their own status and is added to spec 004's module in its own test-first task, and `green_reason` never raises (B2, B16); the `--repo` record test moved to T008 (B3); stale task reference (B4); re-approval after an intended edit stated in the contract and the implement skill text (B5); entry point and error wrapping stated (B6); last-line exceptions for `approve` and exit 2 (B7); first-line scoping for both gates, status-word rewriting, name rules (B8–B10); baseline counts out of the hashed `Verify` block (B11); fixture snapshots instead of live history (B12); `spec_dir` and `--spec` slash handling (B13); id token boundaries, convergence evidence placement (B14); wording and plan mismatches (B15). A20 (roadmap `Story:` header) deferred: the roadmap's wording, not this spec's defect.
+- 2026-11-04 `7c87d6f` — H1 approved by phong.ngo.vn in chat (after analyze passes 1 and 2). T001 unblocked.

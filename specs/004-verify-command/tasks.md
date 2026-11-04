@@ -1,6 +1,6 @@
 # Tasks: `sdlc verify`
 
-Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/record.md](contracts/record.md) · Status: draft · Created: 2026-11-04 · Branch: `feat/004-verify-command`
+Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/record.md](contracts/record.md) · Status: approved · Created: 2026-11-04 · Branch: `feat/004-verify-command`
 
 Verify (kit root):
 - Narrow: `python3 -m unittest tests.test_verify -v` (the helper `run()` lives in `tests/test_verify.py`, with a 30 s timeout)
@@ -39,7 +39,7 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 
 ## Human steps
 
-- [ ] H1 Approve implementation after `sdlc-analyze` (the T3 gate), accepting that SC-004 can only be measured after the build — owner: phong.ngo.vn — T001 waits for it
+- [x] H1 Approve implementation after `sdlc-analyze` (the T3 gate), accepting that SC-004 can only be measured after the build — owner: phong.ngo.vn — T001 waits for it
 - [ ] H2 Approve merge (`sdlc-ship`; merges need explicit approval) — owner: phong.ngo.vn
 
 ## Progress log
@@ -47,3 +47,4 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 - 2026-11-04 `3b8e173` — spec drafted and clarified (dirty tree: run and record, chosen by phong.ngo.vn).
 - 2026-11-04 — analyze pass 1 (fresh read-only agent): 0 CRITICAL, 9 HIGH, 10 MEDIUM, 6 LOW (A1–A25). Fixed in the documents: dirty check now ignores the evidence folder and reads before and after (A3, A4); `cmd_verify` returns exit 2 itself (A8); output to a file so a daemonised child can't hang `verify` (A10); review skill reads the record instead of running the command (A14); skill placement for ship and implement (A15); final-line grammar (A13); FR-013 and FR-014 now have tasks (A6); task order and the mutation task's dependencies (A1, A2); write-failure seam (A5); NFR-004 restated as a call count (A17); `green_at_head` helper for SC-003 (A18); the unsigned-record limit stated (A19); doc list and repo facts corrected (A20–A25). A16: no pre-build pilot is possible, so H1 records the owner's acceptance.
 - 2026-11-04 — analyze pass 2 (fresh read-only agent): 0 CRITICAL, 2 HIGH, 10 MEDIUM, 4 LOW (B1–B16). Fixed in the documents: a failed `git status` reads as dirty (B1); the output temp file is in the OS temp folder and unlinked, with a carve-out in FR-013 (B2); only `cmd_verify` sets the bytecode flag (B3); last lines for no command and for a failed write (B4); dirty keeps its real value when `HEAD` moved (B5); git call count tested (B6); config shape errors listed (B7); interrupt behaviour defined (B8); the group is killed after every command (B9); skills mention `--repo`, the clean-tree rule and the tool timeout (B10); signal-exit fixture (B11); an assumption that projects ignore build output (B12); stale references, malformed-record cases and small gaps (B13–B16).
+- 2026-11-04 — H1 approved by phong.ngo.vn in chat (after analyze passes 1 and 2). T001 unblocked.

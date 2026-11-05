@@ -18,7 +18,7 @@ A team that uses Copilot (no hooks) or wants a second line behind the Claude Cod
 
 Verify: `python3 -B -m unittest tests.test_ci -v` and `python3 bin/sdlc lint`
 
-Red first, then green: 15 tests in `tests/test_ci.py` failed (2 failures, 12 errors) before `adapters/ci/sdlc-gates.yml` and the docs existed; nine mutations of the template (check never fails, the kit-path line also failing, `MODIFIED` dropped, a skip that swallows a gate failure, a skip on any exit 2, no evidence gate, verify and green-at-head replaced by `true`, the kit left in the tree check) each fail at least one test.
+Red first, then green: 14 of the first 15 tests in `tests/test_ci.py` failed (2 failures, 12 errors) before `adapters/ci/sdlc-gates.yml` and the docs existed; nine mutations of the template (check never fails, the kit-path line also failing, `MODIFIED` dropped, a skip that swallows a gate failure, a skip on any exit 2, no evidence gate, verify and green-at-head replaced by `true`, the kit left in the tree check) each fail at least one test. After review pass 1 four more tests were added (19 in all), red first, and the redundant `sdlc: error` match was removed.
 
 ## Decisions (2026-11-05, phong.ngo.vn accepted all four recommendations in chat; the track stays T2)
 

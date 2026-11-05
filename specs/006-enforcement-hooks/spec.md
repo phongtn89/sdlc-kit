@@ -26,6 +26,8 @@ Track: T3
 - Authenticating who runs a command or the approver's name (as specs 004 and 005).
 - Turning `enforce` on by default.
 - Hosts and hook events other than Claude Code's tool-call and stop events.
+- Workspaces (a config with `repos`): v1 renders no hook there and says so; the gates take `--repo`, and mapping a tool call to a repo is later work.
+- Judging which repository a `git -C <dir> push` targets: the check always runs on the project root.
 
 ## Glossary terms used
 
@@ -91,18 +93,19 @@ As a user, I want the hooks to fail open on their own faults and fail closed onl
 
 - **FR-001**: Installing or updating with `enforce` equal to JSON `true` and a Claude Code target MUST add three hook entries to `.claude/settings.json`: a tool-call hook for `Bash`, a tool-call hook for the editor tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`), and a stop hook. (S3)
 - **FR-002**: Any other `enforce` value, or a missing key, MUST add no entry and MUST remove entries the kit wrote earlier. (S3)
-- **FR-003**: The kit MUST NOT change any part of `.claude/settings.json` other than its own entries, MUST keep the project's own hooks on the same events, and MUST produce identical bytes when run twice. (S3)
+- **FR-003**: The kit MUST NOT change any value in `.claude/settings.json` other than its own entries, MUST keep the project's own hooks on the same events, MUST keep the file's indentation, and MUST produce identical bytes when run twice. (S3)
 - **FR-004**: The kit MUST NOT write the file when it is not valid JSON or has a shape it cannot merge into; it MUST report why and exit non-zero. (S3)
 - **FR-005**: The lock MUST record a hash of what the kit wrote into the settings file, `sdlc check` MUST report a change to the kit's entries as drift, and update MUST NOT overwrite a changed entry without `--force`. (S3)
 - **FR-006**: Uninstall MUST remove exactly the kit's entries and a settings file the kit created that is then empty. (S3)
 - **FR-007**: Each hook MUST call the kit by the path recorded in `.sdlc/lock.json`, never a copy inside the project (ADR-0003 decision 3). (S1, S2)
 - **FR-008**: The Bash hook MUST refuse a command that runs `git push` or `gh pr create`, alone or inside a chain, whenever `sdlc gate green-at-head` does not pass, and MUST show the gate's reason. It MUST allow every other command without running a gate. (S1)
-- **FR-009**: The editor hook MUST refuse an edit to a source file whenever `sdlc gate approved` does not pass for the active spec, showing the gate's reason, and MUST always allow edits to non-source files. (S2)
+- **FR-009**: The editor hook MUST refuse an edit to a source file whenever `sdlc gate approved` does not pass for an active spec whose status is `draft` or `approved`, showing the gate's reason, and MUST always allow edits to non-source files and edits while the active spec is `implemented`, `rejected` or `superseded` (no feature is in flight). (S2)
 - **FR-010**: The stop hook MUST warn, never block, when `sdlc gate evidence-for-ticks` fails for the active spec, listing the failing tasks. (S4)
 - **FR-011**: A hook MUST allow the call when it cannot compute a gate result: unreadable input, a missing kit, no active spec, a gate error (exit 2), or a timeout. It MUST say why in one line. A gate that completes and fails (exit 1) is the only thing that refuses. (S5)
-- **FR-012**: A hook MUST finish within a fixed time limit, and MUST NOT write to the project's files. (S5)
+- **FR-012**: A hook MUST finish within a fixed time limit set on its entry, and MUST NOT write to the project's files. (S5)
 - **FR-013**: With a Copilot-only target, install MUST render no hook and MUST state that no equivalent exists. (S3)
 - **FR-014**: The documentation MUST list what the hooks do not cover (shell edits, other hosts) and how to turn enforcement off. (S3)
+- **FR-015**: With a workspace config (`repos` present) install MUST render no hook and MUST say that workspaces are not supported yet. (S3)
 
 ## Non-functional
 
@@ -113,12 +116,13 @@ As a user, I want the hooks to fail open on their own faults and fail closed onl
 ## Success criteria
 
 - **SC-001**: For each of the three rules, a test that feeds the hook a realistic input fails when the hook (or its rendering) is removed or disabled — measured by mutation checks, 3 of 3 (the full set is E1.7).
-- **SC-002**: A fixture project with its own settings keeps 100% of its own entries across install, update, `enforce` off and uninstall — measured by a byte comparison of everything outside the kit's entries.
+- **SC-002**: A fixture project with its own settings keeps 100% of its own values across install, update, `enforce` off and uninstall — measured by comparing the parsed file outside the kit's entries.
 - **SC-003**: In a live Claude Code session in a scratch project with `enforce` on, a push on red is refused and a push on green is allowed — measured by a recorded eval, 1 of 1 each way, in the manner of spec 004's V1.
 
 ## Assumptions & dependencies
 
 - Assumption: the host passes the tool name and input to a tool-call hook as JSON on standard input and treats exit code 2 with a message on standard error as a refusal; a stop hook that exits 0 with a JSON message shows a warning without blocking. These are re-checked by fixtures (NFR-003) because they are the host's, not the kit's.
+- Assumption: a hook entry may carry a time limit that the host enforces (FR-012), and the host treats any exit code other than 2 as non-blocking, so a crash or a missing interpreter allows the call.
 - Assumption: the editor tools are the ones that carry a file path for source edits; shell-based edits are the stated gap.
 - Assumption: a refusal is surfaced to the agent as a tool error, which it can act on by running `verify` or getting an approval.
 - Dependency: specs 004 and 005 (`verify`, `gate`), ADR-0003, and the install/lock machinery in `bin/sdlc`.

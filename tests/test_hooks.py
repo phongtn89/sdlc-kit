@@ -520,6 +520,13 @@ class Classify(Proj):
         self.assertIs(sdlc_hooks.source_path(self.d, {"spec_dir": "design/specs"}, os.path.join(self.d, "design", "specs", "a.py"), self.d), False)
         self.assertIs(sdlc_hooks.source_path(self.d, cfg, "bin/new.py", self.d), True)  # relative, not yet existing
 
+    def test_spec_dir_is_normalised_like_the_gate_does(self):
+        import sdlc_hooks
+        for value in ("./specs", "specs/", "specs//", "./specs/", "a/../specs"):
+            with self.subTest(value):
+                self.assertIs(sdlc_hooks.source_path(
+                    self.d, {"spec_dir": value}, os.path.join(self.d, "specs", "001-x", "plan.py"), self.d), False)
+
 
 class FailOpen(Feature):
     """Whatever goes wrong inside the kit, the entry exits 0 and nothing but a computed gate failure refuses."""
@@ -778,7 +785,7 @@ class Settings(unittest.TestCase):
         new, lines, rest, empty = sdlc_hooks.remove(merged, lock)
         self.assertEqual(len(new["hooks"]["Stop"]), 1)
         self.assertTrue(any("KEPT" in l and "stop" in l for l in lines), lines)
-        self.assertEqual(sorted(rest["hooks"]), ["stop"])
+        self.assertIsNone(rest)  # the kept entry is no longer managed, so the lock lets go of it
         self.assertEqual(len(new["hooks"]["PreToolUse"]), 1)
 
     def test_remove_does_not_touch_an_empty_hooks_object_it_did_not_empty(self):
@@ -874,6 +881,66 @@ class Bare(unittest.TestCase):
 
 
 class Install(Bare):
+    def test_a_symlinked_settings_file_is_left_alone_without_enforce(self):
+        self.config(commands={"test": "true"})
+        self.install("--targets", "claude")
+        real = os.path.join(self._tmp.name, "real.json")
+        with open(real, "w", encoding="utf-8") as f:
+            f.write('{"a": 1}')
+        os.symlink(real, self.path(".claude", "settings.json"))
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("settings", out)
+        self.assertEqual(slurp(real), '{"a": 1}')
+
+    def test_an_unreadable_settings_file_is_left_alone_without_enforce(self):
+        self.config(commands={"test": "true"})
+        self.install("--targets", "claude")
+        with open(self.path(".claude", "settings.json"), "wb") as f:
+            f.write(b'{"x":"\xe9"}')
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("Traceback", err)
+
+    def test_a_settings_file_the_kit_cannot_read_is_a_skip_when_enforce_is_on(self):
+        self.config(enforce=True, commands={"test": "true"})
+        os.makedirs(self.path(".claude"))
+        with open(self.path(".claude", "settings.json"), "wb") as f:
+            f.write(b'{"x":"\xe9"}')
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("SKIP .claude/settings.json", out)
+        self.assertNotIn("Traceback", err)
+        with open(self.path(".claude", "settings.json"), "rb") as f:
+            self.assertEqual(f.read(), b'{"x":"\xe9"}')
+
+    def test_a_symlinked_settings_file_is_a_skip_when_enforce_is_on(self):
+        self.config(enforce=True, commands={"test": "true"})
+        real = os.path.join(self._tmp.name, "real.json")
+        with open(real, "w", encoding="utf-8") as f:
+            f.write('{"a": 1}')
+        os.makedirs(self.path(".claude"))
+        os.symlink(real, self.path(".claude", "settings.json"))
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("SKIP .claude/settings.json", out)
+        self.assertEqual(slurp(real), '{"a": 1}')
+
+    def test_a_kept_entry_is_not_reported_again_after_enforce_goes_off(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        s = self.settings()
+        s["hooks"]["Stop"][0]["hooks"][0]["timeout"] = 1
+        self.write(json.dumps(s, indent=2) + "\n", ".claude", "settings.json")
+        self.config(commands={"test": "true"})
+        code, out, err = self.update()
+        self.assertIn("KEPT .claude/settings.json (kit hook stop", out)
+        self.assertNotIn("settings", self.lock())
+        code, out, err = self.update()
+        self.assertNotIn("KEPT", out)
+        code, out, err = run("check", self.d)
+        self.assertEqual((code, out.strip()), (0, "ok"), out + err)
+
     def test_enforce_absent_renders_nothing(self):
         code, out, err = self.install("--targets", "claude")
         self.assertEqual(code, 0, out + err)
@@ -1189,6 +1256,20 @@ class Lifecycle(Bare):
         self.assertEqual(code, 0, out + err)
         self.assertEqual(self.read(".claude", "settings.json"), "{not json")
         self.assertIn("SKIP .claude/settings.json", out)
+
+    def test_a_symlinked_settings_file_does_not_stop_check_or_uninstall(self):
+        self.on()
+        real = os.path.join(self._tmp.name, "real.json")
+        shutil.move(self.path(".claude", "settings.json"), real)
+        os.symlink(real, self.path(".claude", "settings.json"))
+        code, out, err = self.check()
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("DRIFT .claude/settings.json:", out)
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("SKIP .claude/settings.json", out)
+        self.assertFalse(os.path.exists(self.path(".sdlc", "lock.json")))
+        self.assertIn("sdlc-kit", slurp(real))  # the target of the link is untouched
 
     def test_uninstall_without_hooks_does_not_touch_settings(self):
         self.write('{"a":1}', ".claude", "settings.json")

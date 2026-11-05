@@ -830,7 +830,7 @@ class HookDocs(unittest.TestCase):
         lowered = body.lower()
         self.assertIn("restart", lowered)
         for needle in ("\"enforce\": true", ".claude/settings.json", "sdlc update", "shell edits",
-                       "$(...)", "aliases", "scripts", "heredoc", "Copilot", "separate tool calls", "commands",
+                       "$(...)", "aliases", "scripts", "heredoc", "unbalanced quote", "git -C", "Copilot", "separate tool calls", "commands",
                        ".sdlc/lock.json", ".sdlc/config.json", ".sdlc/evidence", "sdlc check", "uninstall"):
             self.assertIn(needle.lower(), lowered, needle)
 

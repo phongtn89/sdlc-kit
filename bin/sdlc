@@ -173,11 +173,11 @@ def read_lock(target):
     lock.setdefault("modules", [])
     lock.setdefault("settings", {})
     st = lock["settings"]
-    if not isinstance(st, dict) or not all(
+    if not isinstance(st, dict) or set(st) - {SETTINGS_REL} or not all(
             isinstance(v, dict) and isinstance(v.get("hooks"), dict) and isinstance(v.get("created"), bool)
             and all(isinstance(h, str) for h in v["hooks"].values()) for v in st.values()):
         raise SdlcError("invalid lock: settings")
-    for rel in list(lock["files"]) + list(lock["blocks"]) + list(st):
+    for rel in list(lock["files"]) + list(lock["blocks"]):  # the settings key is exact, and may be a symlink
         safe_path(target, rel)
     return lock
 
@@ -385,10 +385,19 @@ def sync(target, kit, targets, modules, force, first):
     hk = hooks_module()
     enforce = config.get("enforce") is True
     want = enforce and "claude" in targets and "repos" not in config
-    s_full = safe_path(target, SETTINGS_REL)
-    s_text = read_text(s_full) if os.path.isfile(s_full) else None
-    s_action, s_new, s_lock, s_lines, s_skipped = hk.settings_plan(
-        s_text, want, os.path.join(os.path.realpath(kit), "bin", "sdlc"), old.get("settings", {}).get(SETTINGS_REL), force)
+    s_old = old.get("settings", {}).get(SETTINGS_REL)
+    s_full = s_text = s_error = None
+    if want or s_old:  # the file is looked at only when hooks are wanted or were installed: other installs see no change
+        try:
+            s_full = safe_path(target, SETTINGS_REL)
+            s_text = read_text(s_full) if os.path.isfile(s_full) else None
+        except (SdlcError, OSError, UnicodeDecodeError) as e:
+            s_error = str(e) if isinstance(e, SdlcError) else e.__class__.__name__
+    if s_error:
+        s_action, s_new, s_lock, s_lines, s_skipped = None, None, s_old, ["SKIP %s (%s)" % (SETTINGS_REL, s_error)], 1
+    else:
+        s_action, s_new, s_lock, s_lines, s_skipped = hk.settings_plan(
+            s_text, want, os.path.join(os.path.realpath(kit), "bin", "sdlc"), s_old, force)
     out = list(s_lines)
     written = removed = 0
     skipped = s_skipped
@@ -590,8 +599,11 @@ def cmd_check(a, kit):
     s_lock = lock["settings"].get(SETTINGS_REL)
     recorded = bool(s_lock and s_lock["hooks"])
     if recorded:
-        s_full = safe_path(target, SETTINGS_REL)
-        s_lines = hk.drift(read_text(s_full) if os.path.isfile(s_full) else None, s_lock)
+        try:
+            s_full = safe_path(target, SETTINGS_REL)
+            s_lines = hk.drift(read_text(s_full) if os.path.isfile(s_full) else None, s_lock)
+        except (SdlcError, OSError, UnicodeDecodeError) as e:
+            s_lines = ["DRIFT %s: cannot read it: %s" % (SETTINGS_REL, e if isinstance(e, SdlcError) else e.__class__.__name__)]
         out.extend(s_lines)
         drift = drift or bool(s_lines)
     enforce = config.get("enforce") is True
@@ -640,9 +652,12 @@ def cmd_uninstall(a, kit):
             removed += 1
     s_lock = lock["settings"].get(SETTINGS_REL)
     if s_lock:
-        s_full = safe_path(target, SETTINGS_REL)
-        action, s_new, _, s_lines, _ = hooks_module().settings_plan(
-            read_text(s_full) if os.path.isfile(s_full) else None, False, "", s_lock, False)
+        try:
+            s_full = safe_path(target, SETTINGS_REL)
+            action, s_new, _, s_lines, _ = hooks_module().settings_plan(
+                read_text(s_full) if os.path.isfile(s_full) else None, False, "", s_lock, False)
+        except (SdlcError, OSError, UnicodeDecodeError) as e:
+            action, s_lines = None, ["SKIP %s (%s)" % (SETTINGS_REL, e if isinstance(e, SdlcError) else e.__class__.__name__)]
         out.extend(s_lines)
         if action == "write":
             hooks_module().write_atomic(s_full, s_new.encode("utf-8"))

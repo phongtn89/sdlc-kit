@@ -115,7 +115,8 @@ Things to know:
 Known gaps (the hooks are a guard rail, not a sandbox):
 
 - Shell edits (`sed -i`, `>`, `tee`, a script that writes files) are not seen by the edit hook.
-- Pushes hidden in `$(...)` inside quotes, backticks, aliases, scripts, `eval` or `xargs` are not seen. A heredoc body that contains a push command is a false positive.
+- Pushes hidden in `$(...)` inside quotes, backticks, aliases, scripts, `eval` or `xargs` are not seen. A heredoc body that contains a push command is a false positive. A command the hook cannot tokenise (an unbalanced quote, such as an apostrophe in a trailing comment) is allowed with a note, `dash`, `ksh` and `fish` `-c` are not parsed, and wrapper options beyond the common ones (`env -C`, `sudo -D`) can hide a push.
+- Each push is judged against this project's `verify` record, also when it targets another folder (`git -C ../other push`).
 - An agent can still edit `.claude/settings.json`, `.sdlc/lock.json`, `.sdlc/config.json` or the evidence record (`.sdlc/evidence/verify.json`). `sdlc check` reports an edit to the kit's entries in the first; the others are caught only in review.
 
 Design and the pinned host format: `specs/006-enforcement-hooks/`, `docs/adr/0003-enforcement-model.md`.

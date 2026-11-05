@@ -116,13 +116,14 @@ def merge(settings, entries, lock, force):
 
 
 def remove(settings, lock):
-    """(new settings, report lines, remaining lock entry or None, settings is now empty). Removes only the groups the
-    lock recorded and that are unchanged; containers the removal emptied go too."""
+    """(new settings, report lines, None, settings is now empty). Removes only the groups the lock recorded and that
+    are unchanged; containers the removal emptied go too. A changed group stays, reported as KEPT, and is the
+    project's from then on, so no lock entry remains (the third value, kept for the callers' shape)."""
     check_shape(settings)
     new = copy.deepcopy(settings)
     known = (lock or {}).get("hooks", {})
     hooks = new.get("hooks")
-    lines, kept, dropped_any = [], {}, False
+    lines, dropped_any = [], False
     if isinstance(hooks, dict):
         for event in list(hooks):
             keep, dropped = [], False
@@ -133,7 +134,6 @@ def remove(settings, lock):
                     continue
                 if name in known:
                     lines.append("KEPT .claude/settings.json (kit hook %s modified locally, no longer managed)" % name)
-                    kept[name] = known[name]
                 keep.append(g)
             if keep or not dropped:
                 hooks[event] = keep
@@ -141,8 +141,7 @@ def remove(settings, lock):
                 del hooks[event]
         if dropped_any and not hooks:
             del new["hooks"]
-    rest = {"hooks": kept, "created": bool((lock or {}).get("created"))} if kept else None
-    return new, lines, rest, new == {}
+    return new, lines, None, new == {}  # a kept entry is the project's now: the lock lets go of it
 
 
 def load(text):
@@ -387,7 +386,7 @@ def source_path(root, cfg, path, cwd):
         return None
     rel = os.path.relpath(rp, rr).replace(os.sep, "/")
     sd = cfg.get("spec_dir") if isinstance(cfg.get("spec_dir"), str) else "specs"
-    sd = sd.strip("/") or "specs"
+    sd = os.path.normpath(sd).replace(os.sep, "/").strip("/") or "specs"
     if rel.split("/")[0] in NOT_SOURCE_TOP or rel == sd or rel.startswith(sd + "/") or rel.endswith(".md"):
         return False
     return True

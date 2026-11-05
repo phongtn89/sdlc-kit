@@ -1,6 +1,6 @@
 # Mini-spec: `sdlc budget` computes the budgets (E1.6)
 
-Track: T2 · Status: approved · Owner: phong.ngo.vn · Created: 2026-11-05
+Track: T2 · Status: implemented · Owner: phong.ngo.vn · Created: 2026-11-05
 
 <!-- Roadmap story E1.6 (docs/roadmap/layers-plan.md), ladder level 5 (ADR-0003: the program runs the check). Today `budget.target_lines`, `reassess_lines`, `target_turns` and `max_turns` in `.sdlc/config.json` are text the agent is asked to watch (sdlc-implement step 6, the implementer role, the definition of done). This makes the program compute them. Reuses `sdlc_verify.git_run` (spec 004) and the usage lines of spec 003. Promote to a full spec (T3) if open question 1 is answered "yes". -->
 

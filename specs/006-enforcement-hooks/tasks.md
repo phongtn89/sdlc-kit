@@ -42,9 +42,10 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 
 ## Human steps
 
-- [ ] H1 Approve implementation after `sdlc-analyze` (the T3 gate); recorded with `sdlc gate approve --by <name>` — owner: phong.ngo.vn — T001 waits for it
+- [x] H1 Approve implementation after `sdlc-analyze` (the T3 gate); recorded with `sdlc gate approve --by <name>` — owner: phong.ngo.vn — T001 waits for it
 - [ ] H2 Approve merge (`sdlc-ship`; merges need explicit approval) — owner: phong.ngo.vn
 
 ## Progress log
 
 - 2026-11-05 `3b70a8f` — spec drafted and clarified (source tree = everything except docs/kit; active spec from the branch name; both chosen by phong.ngo.vn); plan, contract and tasks written.
+- 2026-11-05 `29b82d1` — H1 done: spec, plan, tasks and contracts approved by phong.ngo.vn in chat after two analyze passes (digest recorded by `gate approve`); next: T001

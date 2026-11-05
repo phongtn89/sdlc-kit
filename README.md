@@ -14,7 +14,7 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 
 | | |
 |---|---|
-| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order, `sdlc verify`, `sdlc gate`; on branch `feat/006-enforcement-hooks` (not merged yet): opt-in enforcement hooks |
+| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order, `sdlc verify`, `sdlc gate`; opt-in enforcement hooks (spec 006); CI template workflow (spec 007) |
 | State | Usable. Last checked 2026-11-03 on `main` after the spec 003 merge: `sdlc lint` is clean and 228 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code (first-class) and GitHub Copilot (rendered, not evaluated); see [Supported hosts](#supported-hosts) |
 | Requirements | Python 3.9+, stdlib only, no network |
@@ -118,6 +118,16 @@ Known gaps (the hooks are a guard rail, not a sandbox):
 - Pushes hidden in `$(...)` inside quotes, backticks, aliases, scripts, `eval` or `xargs` are not seen. A heredoc body that contains a push command is a false positive. A command the hook cannot tokenise (an unbalanced quote, such as an apostrophe in a trailing comment) is allowed with a note, `dash`, `ksh` and `fish` `-c` are not parsed, and wrapper options beyond the common ones (`env -C`, `sudo -D`) can hide a push.
 - Each push is judged against this project's `verify` record, also when it targets another folder (`git -C ../other push`).
 - An agent can still edit `.claude/settings.json`, `.sdlc/lock.json`, `.sdlc/config.json` or the evidence record (`.sdlc/evidence/verify.json`). `sdlc check` reports an edit to the kit's entries in the first; the others are caught only in review.
+
+### CI for any host
+
+`adapters/ci/sdlc-gates.yml` is a GitHub Actions workflow that runs the same gates on every pull request: `sdlc check`, `sdlc verify`, `sdlc gate green-at-head`, and, for a branch named `NNN-…` with a spec folder, `sdlc gate approved` and `sdlc gate evidence-for-ticks`. It is the required-check route for GitHub Copilot, which has no hooks, and a second line behind the Claude Code hooks. It is not rendered by `install`: copy it to `.github/workflows/`, set the kit's `repository` and a pinned `ref` (a tag or commit, never a branch), and, if the kit repository is private, a read-only token as the secret `SDLC_KIT_TOKEN`. Then make the job `gates` a required check; branch protection is set by the repository owner, outside the kit.
+
+- The workflow checks out the kit itself and calls it from there. The lock's `kit_path` names a path on a developer's machine, so `sdlc check` prints `KIT-PATH-MISSING` in CI; the workflow ignores that one line and fails on any other drift and on any error of `sdlc check`.
+- `sdlc lint` is not a step: it validates the kit, so the kit's own CI runs it.
+- A branch whose spec is still a draft fails the required check (`gate approved`), as the hooks refuse source edits then; approve the spec first. A pull request from a fork, or one opened by Dependabot, gets no repository secrets, so a private kit cannot be checked out for it: use a public kit repository, or exempt those pull requests from the required check.
+- It cannot see an unapproved edit that never reaches a commit, or a shell edit; those stay with the hooks and with review.
+- For another CI system, run the same commands in the same order.
 
 Design and the pinned host format: `specs/006-enforcement-hooks/`, `docs/adr/0003-enforcement-model.md`.
 

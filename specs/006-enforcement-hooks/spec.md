@@ -2,7 +2,7 @@
 
 Feature: enforcement-hooks
 Number: 006
-Status: approved <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
+Status: implemented <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
 Approved: phong.ngo.vn, 2026-11-05, digest sha256:b2c6084d0b5a9757b4b1858683b1ca645f206796e86d680ec4d7929bb21b812c (spec b85ce7b2a164, plan ecb0c73930bd, tasks 1b8523539d98, contracts eb3912672d76) <!-- written by `sdlc gate approve --by <name>`: name, YYYY-MM-DD, digest sha256:<64 hex> (spec, plan, tasks, contracts prefixes) -->
 Owner: phong.ngo.vn
 Created: 2026-11-05

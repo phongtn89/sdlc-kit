@@ -43,7 +43,7 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 ## Human steps
 
 - [x] H1 Approve implementation after `sdlc-analyze` (the T3 gate); recorded with `sdlc gate approve --by <name>` — owner: phong.ngo.vn — T001 waits for it
-- [ ] H2 Approve merge (`sdlc-ship`; merges need explicit approval) — owner: phong.ngo.vn
+- [x] H2 Approve merge (`sdlc-ship`; merges need explicit approval) — owner: phong.ngo.vn
 
 ## Progress log
 
@@ -61,3 +61,4 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 - 2026-11-05 `72c8838` — T011 done (`review.md`, `VERDICT: APPROVED`: pass 1 rejected with F1 and F2 high, F3 and F4 low, fixed test-first at `06db6b4`, 7 new tests, suite 481 OK, lint ok; pass 2 approved with three low advisories). Next: T012, the live eval V2, needs a real Claude Code session\n
 - 2026-11-05 `2d14fde` — T012 done (live eval V2 in `evals/results/hooks-live.md`: four `claude -p` runs plus two probes with `enforce` on; the host honoured the deny JSON, a push on red was refused 6 times and never reached the bare repo, a push on green was allowed 2 of 2; `systemMessage` and the `timeout` unit remain unobserved). Next: T013\n
 - 2026-11-05 `c1998a3` — T013 done (`verify: PASSED at c1998a3 (clean tree)`: test 481 OK in 80.5 s, lint pass; `gate green-at-head`, `gate approved --spec 006` and `gate evidence-for-ticks --spec 006` all PASS; roadmap and README status updated). `Status: implemented` waits for H2, the merge approval
+- 2026-11-05 `f356c06` — H2: merge approved by phong.ngo.vn in chat; spec status set to implemented

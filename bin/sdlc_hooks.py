@@ -251,6 +251,23 @@ def on_edit(root, cfg, data, safe_path):
                 "sdlc gate approve." % (rel, name[:3], "; ".join(out[:-1]) or "gate failed"))
 
 
+def on_stop(root, cfg, data, safe_path):
+    """Warn, never block. Silent unless the gate computed a failure: the hook fires every turn."""
+    folder = active_folder(root, cfg, safe_path)
+    if folder is None:
+        return ""
+    name = os.path.basename(folder)
+    try:
+        code, out = gate(root, cfg, "evidence-for-ticks", safe_path, name[:3])
+    except (sdlc_gate.GateError, OSError, UnicodeDecodeError, ValueError):  # no tasks.md yet, or unreadable
+        return ""
+    if code != 1:
+        return ""
+    problems = out[:-1]
+    shown = "; ".join(problems[:5]) + ("; and %d more" % (len(problems) - 5) if len(problems) > 5 else "")
+    return note("spec %s has ticked tasks without evidence: %s" % (name[:3], shown))
+
+
 def run(name, raw, env, read_config, safe_path):
     """Standard output for hook `name` given the host's JSON `raw`. Never raises."""
     try:
@@ -266,12 +283,14 @@ def run(name, raw, env, read_config, safe_path):
         cfg = read_config(root)
         if cfg.get("enforce") is not True:
             return ""
-        if "repos" in cfg:
-            return note("workspaces are not supported yet, hook skipped")
+        if "repos" in cfg:  # the stop hook fires every turn: silent
+            return note("workspaces are not supported yet, hook skipped") if name != "stop" else ""
         if name == "bash":
             return on_bash(root, cfg, data, safe_path)
         if name == "edit":
             return on_edit(root, cfg, data, safe_path)
+        if name == "stop":
+            return on_stop(root, cfg, data, safe_path)
         return ""
     except Exception as e:  # a hook never traps the session
         return note("hook %s skipped: %s: %s" % (name, type(e).__name__, str(e)[:120]))

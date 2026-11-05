@@ -82,7 +82,7 @@ class Proj(unittest.TestCase):
         e = dict(os.environ)
         e["CLAUDE_PROJECT_DIR"] = self.d
         e.update(env or {})
-        p = subprocess.run(["sh", "-c", self.entry(name)], input=payload, capture_output=True, text=True,
+        p = subprocess.run(["/bin/sh", "-c", self.entry(name)], input=payload, capture_output=True, text=True,
                            timeout=60, env=e, cwd=self.d)
         return p.returncode, p.stdout, p.stderr
 
@@ -91,8 +91,8 @@ def deny_reason(out):
     """The deny reason of a PreToolUse hook's stdout, or None when it is not a deny."""
     if not out.strip():
         return None
-    d = json.loads(out)["hookSpecificOutput"]
-    return d["permissionDecisionReason"] if d.get("permissionDecision") == "deny" else None
+    d = json.loads(out).get("hookSpecificOutput") or {}
+    return d.get("permissionDecisionReason") if d.get("permissionDecision") == "deny" else None
 
 
 class BashHook(Proj):
@@ -338,6 +338,97 @@ class EditHook(Feature):
         self.assertEqual((rc, out.strip()), (0, ""), out + err)
 
 
+class StopHook(Feature):
+    def stop(self, active=False):
+        payload = json.loads(fixture("stop.json", self.d))
+        payload["stop_hook_active"] = active
+        return self.fire("stop", json.dumps(payload))
+
+    def tick(self, with_evidence):
+        text = DEMO_TASKS.replace("- [ ] T001", "- [x] T001")
+        if with_evidence:
+            rev = subprocess.run(["git", "-C", self.d, "rev-parse", "--short", "HEAD"], capture_output=True,
+                                 text=True).stdout.strip()
+            text += "- 2026-11-05 `%s` — T001 done\n" % rev
+        self.put("tasks.md", text)
+
+    def test_a_tick_without_evidence_warns_and_does_not_block(self):
+        self.tick(False)
+        for active in (False, True):
+            with self.subTest(stop_hook_active=active):
+                rc, out, err = self.stop(active)
+                self.assertEqual(rc, 0)
+                msg = json.loads(out)
+                self.assertEqual(list(msg), ["systemMessage"])
+                self.assertIn("006", msg["systemMessage"])
+                self.assertIn("T001", msg["systemMessage"])
+                self.assertNotIn("decision", msg)
+
+    def test_complete_evidence_is_silent(self):
+        self.tick(True)
+        rc, out, err = self.stop()
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_no_ticks_is_silent(self):
+        rc, out, err = self.stop()
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_no_active_spec_is_silent(self):
+        self.tick(False)
+        git(self.d, "checkout", "-q", "-b", "other")
+        rc, out, err = self.stop()
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_a_spec_without_tasks_is_silent(self):
+        os.remove(os.path.join(self.spec_dir, "tasks.md"))
+        rc, out, err = self.stop()
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_a_malformed_tasks_file_is_silent(self):
+        with open(os.path.join(self.spec_dir, "tasks.md"), "wb") as f:
+            f.write(b"\xff\xfe- [x] T001 bad")
+        rc, out, err = self.stop()
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_it_never_refuses(self):
+        self.tick(False)
+        out = self.stop()[1]
+        self.assertNotIn("permissionDecision", out)
+
+
+class Fixtures(unittest.TestCase):
+    """The host's input formats, pinned. A change here is a change in what the kit assumes of Claude Code."""
+
+    NAMES = {"bash-push.json": ("PreToolUse", "Bash"), "edit-file.json": ("PreToolUse", "Edit"),
+             "write-file.json": ("PreToolUse", "Write"), "multiedit.json": ("PreToolUse", "MultiEdit"),
+             "notebook.json": ("PreToolUse", "NotebookEdit"), "stop.json": ("Stop", None)}
+
+    def test_fixtures_carry_the_fields_the_hooks_read(self):
+        for name, (event, tool) in self.NAMES.items():
+            with self.subTest(name):
+                d = json.loads(fixture(name, "/proj"))
+                self.assertEqual(d["hook_event_name"], event)
+                self.assertEqual(d["cwd"], "/proj")
+                if tool:
+                    self.assertEqual(d["tool_name"], tool)
+                    key = {"Bash": "command", "NotebookEdit": "notebook_path"}.get(tool, "file_path")
+                    self.assertIsInstance(d["tool_input"][key], str)
+
+    def test_rendered_entries_match_the_host_format(self):
+        import sdlc_hooks
+        hooks = sdlc_hooks.render_entries("/kit/bin/sdlc")
+        self.assertEqual(sorted(hooks), ["PreToolUse", "Stop"])
+        pre = {g["matcher"]: g for g in hooks["PreToolUse"]}
+        self.assertEqual(sorted(pre), ["Bash", "Edit|Write|MultiEdit|NotebookEdit"])
+        self.assertNotIn("matcher", hooks["Stop"][0])
+        for g in hooks["PreToolUse"] + hooks["Stop"]:
+            self.assertEqual(len(g["hooks"]), 1)
+            h = g["hooks"][0]
+            self.assertEqual((h["type"], h["timeout"]), ("command", 90))
+            self.assertTrue(h["command"].endswith("exit 0 # sdlc-kit:" + h["command"].rsplit(":", 1)[1]))
+            self.assertIn("/kit/bin/sdlc", h["command"])
+
+
 def load_cli():
     import importlib.machinery
     import importlib.util
@@ -423,6 +514,154 @@ class Classify(Proj):
         self.assertIs(sdlc_hooks.source_path(self.d, {"spec_dir": "design/specs"}, os.path.join(self.d, "specs", "a.py"), self.d), True)
         self.assertIs(sdlc_hooks.source_path(self.d, {"spec_dir": "design/specs"}, os.path.join(self.d, "design", "specs", "a.py"), self.d), False)
         self.assertIs(sdlc_hooks.source_path(self.d, cfg, "bin/new.py", self.d), True)  # relative, not yet existing
+
+
+class FailOpen(Feature):
+    """Whatever goes wrong inside the kit, the entry exits 0 and nothing but a computed gate failure refuses."""
+
+    def stub_kit(self, sdlc_source, gate_source=None):
+        kit = os.path.join(self._tmp.name, "stubkit")
+        shutil.copytree(os.path.join(ROOT, "bin"), os.path.join(kit, "bin"),
+                        ignore=shutil.ignore_patterns("__pycache__"), dirs_exist_ok=True)
+        if sdlc_source is not None:
+            with open(os.path.join(kit, "bin", "sdlc"), "w") as f:
+                f.write(sdlc_source)
+        if gate_source is not None:
+            with open(os.path.join(kit, "bin", "sdlc_gate.py"), "w") as f:
+                f.write(gate_source)
+        self.write_settings(os.path.join(kit, "bin", "sdlc"))
+
+    def push(self, **kw):
+        return self.fire("bash", fixture("bash-push.json", self.d), **kw)
+
+    def assert_allowed(self, result, note=False):
+        rc, out, err = result
+        self.assertEqual(rc, 0, out + err)
+        self.assertIsNone(deny_reason(out), out)
+        if note:
+            self.assertIn("systemMessage", json.loads(out))
+        else:
+            self.assertEqual(out.strip(), "", out)
+
+    def test_kit_folder_missing(self):
+        self.write_settings(os.path.join(self._tmp.name, "gone", "bin", "sdlc"))
+        rc, out, err = self.push()
+        self.assertEqual(rc, 0)
+        self.assertIn("kit not found", json.loads(out)["systemMessage"])
+
+    def test_an_older_kit_that_exits_2(self):
+        self.stub_kit("import sys\nsys.exit(2)\n")
+        self.assert_allowed(self.push())
+
+    def test_a_crashing_kit(self):
+        self.stub_kit("raise RuntimeError('boom')\n")
+        self.assert_allowed(self.push())
+
+    def test_python_missing_from_path(self):
+        empty = os.path.join(self._tmp.name, "empty-bin")
+        os.makedirs(empty)
+        self.assert_allowed(self.push(env={"PATH": empty}))
+
+    def test_unusable_input(self):
+        for payload in ("", "not json", "[1, 2]", "42", "null", '{"tool_name": "Bash"}', '{"tool_input": []}',
+                        '{"tool_name": "Bash", "tool_input": {"command": 7}}'):
+            with self.subTest(payload):
+                rc, out, err = self.fire("bash", payload)
+                self.assertEqual(rc, 0)
+                self.assertIsNone(deny_reason(out))
+
+    def test_input_over_the_cap_is_skipped_with_a_note(self):
+        big = json.dumps({"tool_name": "Bash", "tool_input": {"command": "git push " + "x" * (1 << 20)}})
+        self.assert_allowed(self.fire("bash", big), note=True)
+
+    def test_no_project_above_the_working_directory(self):
+        other = os.path.join(self._tmp.name, "other")
+        os.makedirs(other)
+        payload = fixture("bash-push.json", other)
+        self.assert_allowed(self.fire("bash", payload, env={"CLAUDE_PROJECT_DIR": other}))
+
+    def test_workspace_config_allows_with_a_note(self):
+        self.write_config({"repos": {"a": {"path": "a"}}})
+        self.assert_allowed(self.push(), note=True)
+
+    def test_a_gate_that_errors_or_raises_allows_with_a_note(self):
+        for gate_src in ("class GateError(Exception):\n    pass\ndef run(*a):\n    return 2, ['sdlc: error: x']\n",
+                         "class GateError(Exception):\n    pass\ndef run(*a):\n    raise RuntimeError('boom')\n"):
+            with self.subTest(gate_src[-30:]):
+                self.stub_kit(None, gate_src)
+                self.assert_allowed(self.push(), note=True)
+
+    def test_a_malformed_spec_allows_an_edit_with_a_note(self):
+        with open(os.path.join(self.spec_dir, "spec.md"), "wb") as f:
+            f.write(b"\xff\xfe")
+        self.assert_allowed(self.fire("edit", fixture("edit-file.json", self.d)), note=True)
+
+    def test_enforce_off_at_run_time_allows_silently(self):
+        for value in (False, "true", 1, None):
+            with self.subTest(value):
+                self.write_config({"enforce": value})
+                self.assert_allowed(self.push())
+
+    def test_project_dir_falls_back_to_the_input_cwd(self):
+        e = dict(os.environ)
+        e.pop("CLAUDE_PROJECT_DIR", None)
+        p = subprocess.run(["/bin/sh", "-c", self.entry("bash")], input=fixture("bash-push.json", self.d),
+                           capture_output=True, text=True, env=e, cwd=os.path.dirname(self.d))
+        self.assertEqual(p.returncode, 0)
+        self.assertIsNotNone(deny_reason(p.stdout))
+
+    def test_a_repos_config_keeps_the_stop_hook_silent(self):
+        self.put("tasks.md", DEMO_TASKS.replace("- [ ] T001", "- [x] T001"))
+        self.write_config({"repos": {"a": {"path": "a"}}})
+        rc, out, err = self.fire("stop", fixture("stop.json", self.d))
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def listing(self):
+        out = []
+        for dp, dn, fn in os.walk(self.d):
+            dn[:] = [x for x in dn if x != ".git"]
+            for f in fn:
+                p = os.path.join(dp, f)
+                out.append((os.path.relpath(p, self.d), os.path.getsize(p), os.path.getmtime(p)))
+        return sorted(out)
+
+    def test_hooks_write_nothing_and_leave_no_bytecode(self):
+        before = self.listing()
+        self.push()
+        self.fire("edit", fixture("edit-file.json", self.d))
+        self.fire("stop", fixture("stop.json", self.d))
+        self.assertEqual(self.listing(), before)
+        pyc = [dp for dp, dn, fn in os.walk(os.path.join(ROOT, "bin")) if "__pycache__" in dn]
+        self.assertEqual(pyc, [])
+
+    def test_an_allowing_call_is_fast(self):
+        import time
+        payload = json.loads(fixture("bash-push.json", self.d))
+        payload["tool_input"]["command"] = "git status"
+        start = time.time()
+        self.fire("bash", json.dumps(payload))
+        self.assertLess(time.time() - start, 1.0)
+
+
+class RunUnit(unittest.TestCase):
+    """`sdlc_hooks.run` called directly, so each safety net is tested without the layer above it."""
+
+    def test_any_exception_becomes_a_note(self):
+        import sdlc_hooks
+        def broken(root):
+            raise RuntimeError("boom")
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        os.makedirs(os.path.join(d, ".sdlc"))
+        open(os.path.join(d, ".sdlc", "lock.json"), "w").close()
+        out = sdlc_hooks.run("bash", json.dumps({"cwd": d}), {}, broken, None)
+        self.assertIn("RuntimeError", json.loads(out)["systemMessage"])
+
+    def test_input_over_the_cap_is_skipped_even_when_it_is_valid_json(self):
+        import sdlc_hooks
+        raw = json.dumps({"tool_name": "Bash", "cwd": "/"}) + " " * sdlc_hooks.INPUT_CAP
+        out = sdlc_hooks.run("bash", raw, {}, lambda r: {}, None)
+        self.assertIn("too large", json.loads(out)["systemMessage"])
 
 
 class Imports(unittest.TestCase):

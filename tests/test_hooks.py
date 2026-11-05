@@ -664,6 +664,165 @@ class RunUnit(unittest.TestCase):
         self.assertIn("too large", json.loads(out)["systemMessage"])
 
 
+OWN = {"permissions": {"allow": ["Bash(ls)"]},
+       "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine.sh"}]}],
+                 "PostToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "after.sh"}]}]},
+       "env": {"A": "1"}}
+
+
+class Settings(unittest.TestCase):
+    KIT = "/kit/bin/sdlc"
+
+    def merge(self, settings, cli=None, lock=None, force=False):
+        import sdlc_hooks
+        return sdlc_hooks.merge(settings, sdlc_hooks.render_entries(cli or self.KIT), lock, force)
+
+    def test_adds_three_groups_to_an_empty_settings(self):
+        import copy
+        new, lines, skipped, lock = self.merge({})
+        self.assertEqual(sorted(new["hooks"]), ["PreToolUse", "Stop"])
+        self.assertEqual(len(new["hooks"]["PreToolUse"]), 2)
+        self.assertEqual(len(new["hooks"]["Stop"]), 1)
+        self.assertEqual(sorted(lock["hooks"]), ["bash", "edit", "stop"])
+        self.assertEqual((skipped, lock["created"]), (0, False))
+
+    def test_keeps_the_projects_own_values_order_and_hooks(self):
+        import copy
+        before = copy.deepcopy(OWN)
+        new, lines, skipped, lock = self.merge(OWN)
+        self.assertEqual(OWN, before)  # the input is not modified
+        self.assertEqual(list(new), ["permissions", "hooks", "env"])
+        self.assertEqual(new["permissions"], before["permissions"])
+        self.assertEqual(new["env"], before["env"])
+        self.assertEqual(new["hooks"]["PostToolUse"], before["hooks"]["PostToolUse"])
+        pre = new["hooks"]["PreToolUse"]
+        self.assertEqual(pre[0], before["hooks"]["PreToolUse"][0])  # theirs first, same matcher kept apart
+        self.assertEqual(len(pre), 3)
+
+    def test_is_idempotent_to_the_byte(self):
+        import sdlc_hooks
+        first, _, _, lock = self.merge(OWN)
+        second, lines, skipped, lock2 = self.merge(first, lock=lock)
+        self.assertEqual((second, lines, skipped, lock2), (first, [], 0, lock))
+        self.assertEqual(sdlc_hooks.dump(second, sdlc_hooks.dump(first, "")), sdlc_hooks.dump(first, ""))
+
+    def test_a_moved_kit_replaces_the_entries_in_place(self):
+        first, _, _, lock = self.merge(OWN)
+        new, lines, skipped, lock2 = self.merge(first, cli="/elsewhere/bin/sdlc", lock=lock)
+        self.assertEqual(skipped, 0)
+        self.assertEqual(len(new["hooks"]["PreToolUse"]), 3)
+        self.assertIn("/elsewhere/bin/sdlc", json.dumps(new))
+        self.assertNotIn("/kit/bin/sdlc", json.dumps(new))
+        self.assertEqual(new["hooks"]["PreToolUse"][0], OWN["hooks"]["PreToolUse"][0])
+        self.assertNotEqual(lock2, lock)
+
+    def test_a_hand_edited_entry_is_skipped_unless_forced(self):
+        import copy
+        first, _, _, lock = self.merge(OWN)
+        edited = copy.deepcopy(first)
+        edited["hooks"]["PreToolUse"][1]["hooks"][0]["timeout"] = 5
+        new, lines, skipped, lock2 = self.merge(edited, cli="/elsewhere/bin/sdlc", lock=lock)
+        self.assertEqual(skipped, 1)
+        self.assertTrue(any("bash" in l and "modified locally" in l for l in lines), lines)
+        self.assertEqual(new["hooks"]["PreToolUse"][1], edited["hooks"]["PreToolUse"][1])
+        self.assertEqual(lock2["hooks"]["bash"], lock["hooks"]["bash"])
+        forced, lines, skipped, lock3 = self.merge(edited, cli="/elsewhere/bin/sdlc", lock=lock, force=True)
+        self.assertEqual(skipped, 0)
+        self.assertEqual(forced["hooks"]["PreToolUse"][1]["hooks"][0]["timeout"], 90)
+
+    def test_an_entry_without_a_lock_record_that_differs_is_modified(self):
+        first, _, _, _ = self.merge(OWN)
+        new, lines, skipped, lock = self.merge(first, cli="/elsewhere/bin/sdlc", lock=None)
+        self.assertEqual(skipped, 3)
+        self.assertEqual(new, first)
+
+    def test_a_deleted_entry_is_added_back(self):
+        first, _, _, lock = self.merge(OWN)
+        del first["hooks"]["Stop"]
+        new, lines, skipped, lock2 = self.merge(first, lock=lock)
+        self.assertEqual(len(new["hooks"]["Stop"]), 1)
+        self.assertEqual(skipped, 0)
+
+    def test_unmergeable_shapes_are_refused_with_a_reason(self):
+        import sdlc_hooks
+        for bad, word in (([], "object"), ({"hooks": []}, "hooks"), ({"hooks": {"Stop": {}}}, "Stop"),
+                          ({"hooks": {"Stop": ["x"]}}, "Stop"), ({"hooks": {"PreToolUse": [3]}}, "PreToolUse")):
+            with self.subTest(bad):
+                with self.assertRaises(sdlc_hooks.SettingsError) as cm:
+                    self.merge(bad)
+                self.assertIn(word, str(cm.exception))
+
+    def test_remove_takes_out_only_the_kits_entries(self):
+        import sdlc_hooks
+        merged, _, _, lock = self.merge(OWN)
+        new, lines, rest, empty = sdlc_hooks.remove(merged, lock)
+        self.assertEqual(new, OWN)
+        self.assertEqual((lines, rest, empty), ([], None, False))
+
+    def test_remove_from_a_file_the_kit_filled_leaves_nothing(self):
+        import sdlc_hooks
+        merged, _, _, lock = self.merge({})
+        new, lines, rest, empty = sdlc_hooks.remove(merged, lock)
+        self.assertEqual((new, empty), ({}, True))
+
+    def test_remove_keeps_a_hand_edited_entry_and_says_so(self):
+        import copy
+        import sdlc_hooks
+        merged, _, _, lock = self.merge(OWN)
+        merged["hooks"]["Stop"][0]["hooks"][0]["timeout"] = 1
+        new, lines, rest, empty = sdlc_hooks.remove(merged, lock)
+        self.assertEqual(len(new["hooks"]["Stop"]), 1)
+        self.assertTrue(any("KEPT" in l and "stop" in l for l in lines), lines)
+        self.assertEqual(sorted(rest["hooks"]), ["stop"])
+        self.assertEqual(len(new["hooks"]["PreToolUse"]), 1)
+
+    def test_remove_does_not_touch_an_empty_hooks_object_it_did_not_empty(self):
+        import sdlc_hooks
+        new, lines, rest, empty = sdlc_hooks.remove({"hooks": {}, "a": 1}, {"hooks": {}, "created": False})
+        self.assertEqual((new, empty), ({"hooks": {}, "a": 1}, False))
+
+    def test_remove_ignores_marked_entries_the_lock_does_not_know(self):
+        import sdlc_hooks
+        merged, _, _, lock = self.merge(OWN)
+        new, lines, rest, empty = sdlc_hooks.remove(merged, {"hooks": {}, "created": False})
+        self.assertEqual(new, merged)
+
+    def test_only_a_single_hook_group_with_the_marker_at_the_end_is_the_kits(self):
+        import sdlc_hooks
+        g = lambda c, n=1: {"hooks": [{"type": "command", "command": c}] * n}
+        self.assertEqual(sdlc_hooks.group_name(g("x # sdlc-kit:bash")), "bash")
+        self.assertIsNone(sdlc_hooks.group_name(g("x # sdlc-kit:bash then more")))
+        self.assertIsNone(sdlc_hooks.group_name(g("x # sdlc-kit:other")))
+        self.assertIsNone(sdlc_hooks.group_name(g("x # sdlc-kit:bash", 2)))
+        self.assertIsNone(sdlc_hooks.group_name({"hooks": "x"}))
+        self.assertIsNone(sdlc_hooks.group_name("x"))
+
+    def test_indentation_and_final_newline(self):
+        import sdlc_hooks
+        for indent, text in (("\t", '{\n\t"a": 1\n}'), (4, '{\n    "a": 1\n}'), (2, '{\n  "a": 1\n}'),
+                             (2, '{"a": 1}')):
+            with self.subTest(repr(text)):
+                settings = sdlc_hooks.load(text)
+                out = sdlc_hooks.dump(settings, text)
+                self.assertTrue(out.endswith("}\n"))
+                self.assertEqual(sdlc_hooks.load(out), settings)
+                if indent != 2 or "\n  " in text:
+                    self.assertEqual(out.splitlines()[1][:len(indent) if indent == "\t" else indent],
+                                     "\t" if indent == "\t" else " " * indent)
+
+    def test_load_refuses_what_it_cannot_merge_into(self):
+        import sdlc_hooks
+        for text in ("", "not json", "[1]", "null", '{"a": '):
+            with self.subTest(text):
+                with self.assertRaises(sdlc_hooks.SettingsError):
+                    sdlc_hooks.load(text)
+
+    def test_non_ascii_values_survive(self):
+        import sdlc_hooks
+        text = '{"note": "größe — 日本"}'
+        self.assertIn("größe — 日本", sdlc_hooks.dump(sdlc_hooks.load(text), text))
+
+
 class Imports(unittest.TestCase):
     def test_only_stdlib_and_sibling_modules(self):
         path = os.path.join(ROOT, "bin", "sdlc_hooks.py")
@@ -678,7 +837,7 @@ class Imports(unittest.TestCase):
         allowed = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else None
         siblings = {"sdlc_gate", "sdlc_verify"}
         if allowed is None:
-            allowed = {"json", "os", "re", "shlex", "sys", "types", "hashlib", "subprocess"}
+            allowed = {"copy", "json", "os", "re", "shlex", "sys", "types", "hashlib", "subprocess"}
         self.assertEqual(names - allowed - siblings, set())
 
 

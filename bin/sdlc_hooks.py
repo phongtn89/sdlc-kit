@@ -3,6 +3,8 @@
 A refusal is never an exit code. The host reads exit code 2 as a refusal, and python exits 2 for a missing script or
 an unknown subcommand, so every entry ends with `exit 0` and a refusal is a structured deny message on standard output.
 """
+import copy
+import hashlib
 import json
 import os
 import re
@@ -40,6 +42,124 @@ def render_entries(cli):
     for name in NAMES:
         out.setdefault(EVENTS[name], []).append(group(cli, name))
     return out
+
+
+# ---------------------------------------------------------------- settings file
+
+MARKER = re.compile(r"# sdlc-kit:(bash|edit|stop)$")
+
+
+class SettingsError(Exception):
+    """The settings file has a shape the kit will not write into."""
+
+
+def group_name(group):
+    """`bash`, `edit` or `stop` when `group` is one of the kit's entries (one hook, marker last), else None."""
+    hooks = group.get("hooks") if isinstance(group, dict) else None
+    if not isinstance(hooks, list) or len(hooks) != 1 or not isinstance(hooks[0], dict):
+        return None
+    cmd = hooks[0].get("command")
+    m = MARKER.search(cmd.rstrip()) if isinstance(cmd, str) else None
+    return m.group(1) if m else None
+
+
+def group_hash(group):
+    text = json.dumps(group, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def check_shape(settings):
+    if not isinstance(settings, dict):
+        raise SettingsError("the top level is not an object")
+    if "hooks" not in settings:
+        return
+    hooks = settings["hooks"]
+    if not isinstance(hooks, dict):
+        raise SettingsError("hooks is not an object")
+    for event, groups in hooks.items():
+        if not isinstance(groups, list) or not all(isinstance(g, dict) for g in groups):
+            raise SettingsError("hooks.%s is not a list of objects" % event)
+
+
+def merge(settings, entries, lock, force):
+    """(new settings, report lines, skipped count, new lock entry). `lock` is the recorded entry or None.
+    Adds the kit's groups, replaces one that is unchanged since the kit wrote it (a moved kit), leaves a hand-edited
+    one alone unless `force`. Never modifies `settings`."""
+    check_shape(settings)
+    new = copy.deepcopy(settings)
+    old = (lock or {}).get("hooks", {})
+    hooks = new.setdefault("hooks", {})
+    lines, skipped, locked = [], 0, {}
+    for event, groups in entries.items():
+        cur = hooks.setdefault(event, [])
+        for g in groups:
+            name, want = group_name(g), group_hash(g)
+            idx = next((i for i, x in enumerate(cur) if group_name(x) == name), None)
+            if idx is None:
+                cur.append(copy.deepcopy(g))
+                locked[name] = want
+                continue
+            have = group_hash(cur[idx])
+            if have == want:
+                locked[name] = have
+            elif old.get(name) == have or force:
+                cur[idx] = copy.deepcopy(g)
+                locked[name] = want
+            else:
+                lines.append("SKIP .claude/settings.json (kit hook %s modified locally)" % name)
+                skipped += 1
+                if name in old:
+                    locked[name] = old[name]
+    return new, lines, skipped, {"hooks": locked, "created": bool((lock or {}).get("created"))}
+
+
+def remove(settings, lock):
+    """(new settings, report lines, remaining lock entry or None, settings is now empty). Removes only the groups the
+    lock recorded and that are unchanged; containers the removal emptied go too."""
+    check_shape(settings)
+    new = copy.deepcopy(settings)
+    known = (lock or {}).get("hooks", {})
+    hooks = new.get("hooks")
+    lines, kept, dropped_any = [], {}, False
+    if isinstance(hooks, dict):
+        for event in list(hooks):
+            keep, dropped = [], False
+            for g in hooks[event]:
+                name = group_name(g)
+                if name in known and group_hash(g) == known[name]:
+                    dropped = dropped_any = True
+                    continue
+                if name in known:
+                    lines.append("KEPT .claude/settings.json (kit hook %s modified locally, no longer managed)" % name)
+                    kept[name] = known[name]
+                keep.append(g)
+            if keep or not dropped:
+                hooks[event] = keep
+            else:
+                del hooks[event]
+        if dropped_any and not hooks:
+            del new["hooks"]
+    rest = {"hooks": kept, "created": bool((lock or {}).get("created"))} if kept else None
+    return new, lines, rest, new == {}
+
+
+def load(text):
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise SettingsError("not valid JSON: %s" % str(e)[:80])
+    if not isinstance(data, dict):
+        raise SettingsError("the top level is not an object")
+    return data
+
+
+def dump(settings, original):
+    """JSON text keeping the indentation of `original` (tab, or 1 to 8 spaces; else 2) and ending in a newline."""
+    m = re.search(r"^([ \t]+)\S", original, re.M)
+    indent = 2
+    if m:
+        indent = "\t" if m.group(1).startswith("\t") else (len(m.group(1)) if len(m.group(1)) <= 8 else 2)
+    return json.dumps(settings, indent=indent, ensure_ascii=False) + "\n"
 
 
 # ---------------------------------------------------------------- runtime

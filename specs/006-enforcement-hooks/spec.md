@@ -43,7 +43,7 @@ Track: T3
 
 As a maintainer, I want the host to refuse `git push` and `gh pr create` unless the last `verify` is green at the current HEAD, so that nobody ships code whose tests did not run.
 
-**Independent test:** with a hook input naming a push, the hook exits non-zero when `gate green-at-head` fails and zero when it passes; with no record it blocks.
+**Independent test:** with a hook input naming a push, the hook prints the deny message (exit 0) when `gate green-at-head` fails, including when there is no record, and prints nothing when it passes.
 
 1. **Given** `enforce` is on and no green record exists for HEAD, **When** the agent runs `git push` or `gh pr create`, **Then** the call is refused and the message says to run `sdlc verify` and quote its last line.
 2. **Given** a green record at HEAD and a clean tree, **When** the same command runs, **Then** it is allowed.
@@ -101,12 +101,12 @@ As a user, I want the hooks to fail open on their own faults and fail closed onl
 - **FR-008**: The Bash hook MUST refuse a command that runs `git push` or `gh pr create`, alone or inside a chain, whenever `sdlc gate green-at-head` does not pass, and MUST show the gate's reason. It MUST allow every other command without running a gate. (S1)
 - **FR-009**: The editor hook MUST refuse an edit to a source file whenever the active spec's status word is `draft` or `approved` and `sdlc gate approved` does not pass, showing the gate's reason, and MUST always allow edits to non-source files and edits while the active spec has any other status (`implemented`, `rejected`, `superseded`, missing or unknown: no feature is known to be in flight; an unknown status allows with a note). (S2)
 - **FR-010**: The stop hook MUST warn, never block, when `sdlc gate evidence-for-ticks` fails for the active spec, listing the failing tasks. (S4)
-- **FR-011**: A hook MUST allow the call when it cannot compute a gate result: unreadable input, a missing kit, no active spec, a gate error (exit 2), or a timeout. It MUST say why in one line. A gate that completes and fails (exit 1) is the only thing that refuses. The entry MUST end with exit code 0 whatever the kit does, so a kit that is missing, older, newer or broken cannot block the host; a refusal is a structured deny message the host reads on a zero exit. (S5)
+- **FR-011**: A hook MUST allow the call when it cannot compute a gate result: unreadable input, a missing kit (the entry prints one line saying so), no active spec, a gate error (exit 2), or a timeout. It MUST say why in one line. A gate that completes and fails (exit 1) is the only thing that refuses. The entry MUST end with exit code 0 whatever the kit does, so a kit that is missing, older, newer or broken cannot block the host; a refusal is a structured deny message the host reads on a zero exit. (S5)
 - **FR-012**: A hook MUST finish within a fixed time limit set on its entry, and MUST NOT write to the project's files. (S5)
 - **FR-013**: With a Copilot-only target, install MUST render no hook and MUST state that no equivalent exists. (S3)
-- **FR-016**: When `enforce` is on and `commands` in the config is empty, install MUST say that a push can never pass until commands are configured, and the push refusal MUST say so too. (S1, S3)
-- **FR-014**: The documentation MUST list what the hooks do not cover (shell edits, other hosts) and how to turn enforcement off, that hooks are read when a session starts (restart after install or update), that `sdlc verify` and the push must be separate tool calls, and that the kit's evidence record and lock are not protected from an agent's editor tools. (S3)
+- **FR-014**: The documentation MUST list what the hooks do not cover (shell edits, other hosts, and that the config, lock, evidence record and settings file are editable by an agent's editor tools) and how to turn enforcement off, that hooks are read when a session starts (restart after install or update), that `sdlc verify` and the push must be separate tool calls, and that the kit's evidence record and lock are not protected from an agent's editor tools. (S3)
 - **FR-015**: With a workspace config (`repos` present) install MUST render no hook and MUST say that workspaces are not supported yet. (S3)
+- **FR-016**: When `enforce` is on and `commands` in the config is empty, install MUST say that a push can never pass until commands are configured, and the push refusal MUST say so too. (S1, S3)
 
 ## Non-functional
 

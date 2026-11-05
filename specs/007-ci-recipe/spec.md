@@ -1,6 +1,6 @@
 # Mini-spec: CI recipe for the gates (E1.5)
 
-Track: T2 · Status: approved · Owner: phong.ngo.vn · Created: 2026-11-05
+Track: T2 · Status: implemented · Owner: phong.ngo.vn · Created: 2026-11-05
 
 <!-- Roadmap story E1.5 (docs/roadmap/layers-plan.md); ADR-0003 decision 4: CI is the common floor, ladder level 6, the required-check route for GitHub Copilot, which has no hook. Acts on `lint`, `check` (spec 001 era), `verify` (spec 004), `gate` (spec 005). Promote to a full spec (T3) if a question below ends in a new command, a new lock key or a rendered file. -->
 

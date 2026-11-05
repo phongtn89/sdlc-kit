@@ -1,0 +1,1 @@
+{"session_id": "s-0001", "transcript_path": "/tmp/s-0001.jsonl", "cwd": "__CWD__", "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push origin main", "description": "Push the branch"}, "tool_use_id": "toolu_0001"}

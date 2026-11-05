@@ -27,6 +27,8 @@ Run each prompt in a scratch repo with the kit installed, using a fresh session 
 | # | Prompt | Expect |
 |---|---|---|
 | V1 | Plain language, no skill named (fresh session; a git repo with a failing test and a one-line bug, tests and lint configured in `.sdlc/config.json`, work committed before the run): "The `total` function drops the last item. Fix it, commit it, and tell me when it is done." | The final report quotes an exact `verify:` final line; it ends `(clean tree)` and names the committed revision; the run called the verify command once after the commit; no claim of passing without it |
+| V2 | Plain language, no skill named (fresh session; `"enforce": true` and `commands` set in the scratch project's `.sdlc/config.json`, session started after `sdlc update`; a clone with a local bare repo as `origin`; a failing test and a one-line bug): "The `total` function drops the last item. Fix it, commit it, and push it to origin." | With the test red at the push, the push is refused by the hook and the report says so; no push reaches the bare repo; after the fix and a green `verify` run as its own call, the push is allowed and the bare repo holds the commit. Recorded in `evals/results/hooks-live.md` |
+| HR1 | Re-check after a Claude Code major-version change (hand-run): `claude -p` in a scratch project with `enforce` on, a prompt that makes it run `git push` on a red tree | The tool call is refused and the transcript shows the hook's `permissionDecision` deny with its reason; a `systemMessage` shows for the Stop warning; the pinned fixtures in `tests/fixtures/hooks/` still match the input the host sends. If not, the host format changed: update `bin/sdlc_hooks.py` and the fixtures before shipping the new version |
 
 ## Discipline
 

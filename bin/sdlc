@@ -171,7 +171,13 @@ def read_lock(target):
             raise SdlcError("invalid lock: %s" % k)
     lock.setdefault("targets", [])
     lock.setdefault("modules", [])
-    for rel in list(lock["files"]) + list(lock["blocks"]):
+    lock.setdefault("settings", {})
+    st = lock["settings"]
+    if not isinstance(st, dict) or set(st) - {SETTINGS_REL} or not all(
+            isinstance(v, dict) and isinstance(v.get("hooks"), dict) and isinstance(v.get("created"), bool)
+            and all(isinstance(h, str) for h in v["hooks"].values()) for v in st.values()):
+        raise SdlcError("invalid lock: settings")
+    for rel in list(lock["files"]) + list(lock["blocks"]):  # the settings key is exact, and may be a symlink
         safe_path(target, rel)
     return lock
 
@@ -357,6 +363,16 @@ def plan_claude_md(target, old):
     return {}, {rel: "@AGENTS.md"}
 
 
+SETTINGS_REL = ".claude/settings.json"
+
+
+def hooks_module():
+    sys.dont_write_bytecode = True  # the kit folder must stay unwritten
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    import sdlc_hooks
+    return sdlc_hooks
+
+
 def sync(target, kit, targets, modules, force, first):
     """Render into target. Returns (exit_code, report lines)."""
     old = read_lock(target) or {"files": {}, "blocks": {}}
@@ -366,8 +382,32 @@ def sync(target, kit, targets, modules, force, first):
         f_add, b_add = plan_claude_md(target, old)
         files.update(f_add)
         blocks.update(b_add)
-    out = []
-    written = skipped = removed = 0
+    hk = hooks_module()
+    enforce = config.get("enforce") is True
+    want = enforce and "claude" in targets and "repos" not in config
+    s_old = old.get("settings", {}).get(SETTINGS_REL)
+    s_full = s_text = s_error = None
+    if want or s_old:  # the file is looked at only when hooks are wanted or were installed: other installs see no change
+        try:
+            s_full = safe_path(target, SETTINGS_REL)
+            s_text = read_text(s_full) if os.path.isfile(s_full) else None
+        except (SdlcError, OSError, UnicodeDecodeError) as e:
+            s_error = str(e) if isinstance(e, SdlcError) else e.__class__.__name__
+    if s_error:
+        s_action, s_new, s_lock, s_lines, s_skipped = None, None, s_old, ["SKIP %s (%s)" % (SETTINGS_REL, s_error)], 1
+    else:
+        s_action, s_new, s_lock, s_lines, s_skipped = hk.settings_plan(
+            s_text, want, os.path.join(os.path.realpath(kit), "bin", "sdlc"), s_old, force)
+    out = list(s_lines)
+    written = removed = 0
+    skipped = s_skipped
+    if enforce and "claude" not in targets:
+        out.append("NOTE enforce: GitHub Copilot has no hook equivalent; use CI (see the docs)")
+    elif enforce and "repos" in config:
+        out.append("NOTE enforce: workspaces are not supported yet; no hook rendered")
+    elif want and hk.commands_empty(config):
+        out.append("NOTE enforce: commands is empty, so sdlc verify cannot pass and every push will be refused; "
+                   "set commands in .sdlc/config.json")
     new_lock_files, new_lock_blocks = {}, {}
     conflicts = []
     actions = []  # (kind, rel, payload)
@@ -452,9 +492,18 @@ def sync(target, kit, targets, modules, force, first):
         else:
             if drop_block(target, rel):
                 removed += 1
+    if s_action == "write":
+        hk.write_atomic(s_full, s_new.encode("utf-8"))
+        written += 1
+    elif s_action == "delete":
+        os.remove(s_full)
+        prune_dirs(target, SETTINGS_REL)
+        removed += 1
     lock = {"kit_version": read_text(os.path.join(kit, "VERSION")).strip(), "kit_path": os.path.realpath(kit),
             "targets": targets,
             "modules": modules, "files": new_lock_files, "blocks": new_lock_blocks}
+    if s_lock:
+        lock["settings"] = {SETTINGS_REL: s_lock}
     write_file(target, ".sdlc/lock.json", (json.dumps(lock, indent=2, sort_keys=True) + "\n").encode("utf-8"))
     out.append("sdlc: written %d, skipped %d, removed %d" % (written, skipped, removed))
     return (2 if skipped else 0), out
@@ -545,8 +594,30 @@ def cmd_check(a, kit):
         elif sha(inner.encode("utf-8")) != lock["blocks"][rel]:
             out.append("DRIFT %s: managed block edited" % rel)
             drift = True
+    config = read_config(target)
+    hk = hooks_module()
+    s_lock = lock["settings"].get(SETTINGS_REL)
+    recorded = bool(s_lock and s_lock["hooks"])
+    if recorded:
+        try:
+            s_full = safe_path(target, SETTINGS_REL)
+            s_lines = hk.drift(read_text(s_full) if os.path.isfile(s_full) else None, s_lock)
+        except (SdlcError, OSError, UnicodeDecodeError) as e:
+            s_lines = ["DRIFT %s: cannot read it: %s" % (SETTINGS_REL, e if isinstance(e, SdlcError) else e.__class__.__name__)]
+        out.extend(s_lines)
+        drift = drift or bool(s_lines)
+    enforce = config.get("enforce") is True
+    kit_path = lock.get("kit_path")
+    if isinstance(kit_path, str) and not os.path.isdir(kit_path):
+        if recorded or enforce:
+            out.append("KIT-PATH-MISSING %s" % kit_path)
+            drift = True
+        else:
+            out.append("NOTE KIT-PATH-MISSING %s" % kit_path)
+    if enforce and not recorded and "claude" in lock["targets"] and "repos" not in config:
+        out.append("NOTE enforce is true but the lock records no hooks (run update)")
     groups = {}
-    for n in spec_dirs(target, read_config(target)):
+    for n in spec_dirs(target, config):
         groups.setdefault(n[:3], []).append(n)
     for prefix in sorted(groups):
         if len(groups[prefix]) > 1:
@@ -578,6 +649,22 @@ def cmd_uninstall(a, kit):
             out.append("KEPT %s (modified locally)" % rel)
     for rel in sorted(lock["blocks"]):
         if drop_block(target, rel):
+            removed += 1
+    s_lock = lock["settings"].get(SETTINGS_REL)
+    if s_lock:
+        try:
+            s_full = safe_path(target, SETTINGS_REL)
+            action, s_new, _, s_lines, _ = hooks_module().settings_plan(
+                read_text(s_full) if os.path.isfile(s_full) else None, False, "", s_lock, False)
+        except (SdlcError, OSError, UnicodeDecodeError) as e:
+            action, s_lines = None, ["SKIP %s (%s)" % (SETTINGS_REL, e if isinstance(e, SdlcError) else e.__class__.__name__)]
+        out.extend(s_lines)
+        if action == "write":
+            hooks_module().write_atomic(s_full, s_new.encode("utf-8"))
+            removed += 1
+        elif action == "delete":
+            os.remove(s_full)
+            prune_dirs(target, SETTINGS_REL)
             removed += 1
     os.remove(safe_path(target, ".sdlc/lock.json"))
     prune_dirs(target, ".sdlc/lock.json")
@@ -613,6 +700,22 @@ def cmd_gate(a, kit):
         return 2, ["sdlc: error: %s" % e]
     enc = sys.stdout.encoding or "utf-8"
     return code, [l.encode(enc, "replace").decode(enc) for l in lines]  # an encoding problem can't follow a write
+
+
+def cmd_hook(a, kit):
+    """Run an enforcement hook (spec 006). The process exit code is always 0; a refusal is a message on stdout."""
+    sys.dont_write_bytecode = True  # the kit folder must stay unwritten
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    try:
+        import sdlc_hooks
+        raw = sys.stdin.buffer.read(sdlc_hooks.INPUT_CAP + 1).decode("utf-8", "replace")
+        out = sdlc_hooks.run(a.name, raw, os.environ, read_config, safe_path)
+    except Exception as e:  # even an import failure must not block the host
+        out = json.dumps({"systemMessage": "sdlc: hook %s skipped: %s" % (a.name, type(e).__name__)})
+    enc = sys.stdout.encoding or "utf-8"
+    if out:
+        print(out.encode(enc, "replace").decode(enc))
+    return 0, []
 
 
 # ---------------------------------------------------------------- discover
@@ -932,6 +1035,8 @@ def build_parser():
     sp.add_argument("--spec", help="feature: NNN or a folder inside spec_dir")
     sp.add_argument("--repo", help="workspace repo name")
     sp.add_argument("--by", help="approver's name (approve only)")
+    sp = add("hook", cmd_hook, "Run an enforcement hook; reads the host's JSON on standard input (spec 006).", dir_=False)
+    sp.add_argument("name", choices=["bash", "edit", "stop"])
     sp = add("discover", cmd_discover, "List the git repos directly under a workspace folder (read-only).")
     sp.add_argument("--json", action="store_true", help="machine-readable output")
     add("lint", cmd_lint, "Validate the kit itself.", dir_=False)

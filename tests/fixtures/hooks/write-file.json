@@ -1,0 +1,1 @@
+{"session_id": "s-0003", "transcript_path": "/tmp/s-0003.jsonl", "cwd": "__CWD__", "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {"file_path": "__CWD__/bin/app.py", "content": "a = 2\n"}, "tool_use_id": "toolu_0003"}

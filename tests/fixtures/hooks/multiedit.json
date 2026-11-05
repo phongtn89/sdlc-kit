@@ -1,0 +1,1 @@
+{"session_id": "s-0004", "transcript_path": "/tmp/s-0004.jsonl", "cwd": "__CWD__", "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "MultiEdit", "tool_input": {"file_path": "__CWD__/bin/app.py", "edits": [{"old_string": "a = 1", "new_string": "a = 2"}]}, "tool_use_id": "toolu_0004"}

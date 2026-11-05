@@ -148,6 +148,7 @@ Each SKILL.md stays under about 150 lines. Detail goes in `references/`.
 - **Managed blocks** use `<!-- BEGIN sdlc-kit -->` … `<!-- END sdlc-kit -->`. Text outside them is never touched. This is the same pattern `sync-agent-policy.py` already uses.
 - **Spec numbering:** `sdlc next-spec` hands out the next free number. `sdlc check` flags duplicate prefixes. Existing duplicates are reported, not renamed.
 - `sdlc uninstall` removes only files listed in the lockfile.
+- **Enforcement (opt-in):** with `enforce: true` the Claude Code target also gets three hook entries in `.claude/settings.json`, merged beside the project's own and tracked by hash in the lock. See `specs/006-enforcement-hooks/` and ADR-0003.
 
 ## 8. Fleet migration map (later, per repo, human-approved)
 

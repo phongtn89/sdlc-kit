@@ -30,6 +30,7 @@ Paths are relative to the project root. `<P>` = role file stem.
 | Project config | `.sdlc/config.json`: created from `adapters/config.default.json` if absent, **never overwritten, never hashed**. In a workspace, `sdlc-setup` adds `repos: {<name>: {path, spec_dir, process, commands}}`. `process` is `spec-kit` (the repo's Spec Kit gates win; the router hands T3/T4 off to the repo's `speckit-*` skills) or `sdlc-kit`. | same |
 | Repo context | `.sdlc/context/<repo>.md`: written by `sdlc-context` from `.sdlc/templates/context.md`, starting with a `Built from: \`<sha>\`` line. Project-owned, not hashed. `discover` reports `context: {path, built_from, stale, commits_behind}` per repo. | same |
 | Workspace map | `.sdlc/workspace.md`: written by `sdlc-setup` in workspace mode from `.sdlc/templates/workspace.md`. Project-owned, not hashed. | same |
+| Hooks | `.claude/settings.json`: three hook entries merged beside the project's own, only when `enforce` is the JSON `true`; hashes in the `settings` key of the lock; removed when `enforce` is off or on uninstall | none (no hook equivalent) |
 | Lock | `.sdlc/lock.json` | same |
 
 Skill bodies refer to shared docs by the project-relative paths `.sdlc/...`, so the bodies are identical for every target.

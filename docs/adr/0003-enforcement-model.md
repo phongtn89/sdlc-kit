@@ -39,7 +39,7 @@ Level 0 and 1 stay in the skills and templates for every host.
 ## Consequences
 
 - Stories E1.2 to E1.7 are specified from this table; each rule needs a test that fails when its mechanism is removed (E1.7).
-- Hooks are internal-format dependent (hook JSON on stdin, exit code 2 blocks). They get pinned fixtures and a re-check row, as the usage metric does.
+- Hooks are internal-format dependent (hook JSON on stdin, a deny decision on stdout). They get pinned fixtures and a re-check row, as the usage metric does. Spec 006 (`specs/006-enforcement-hooks/`) refuses with a JSON decision and always exits 0, because the host reads exit 2 as a block and a missing script would otherwise lock a session.
 - A blocking hook can trap a session if its check is wrong. v1 blocks only on a gate result that is computed, never on a guess, and `Stop` only warns.
 - `enforce` on by default is rejected for now: it changes every existing install; revisit after E1.7 shows the hooks hold.
 

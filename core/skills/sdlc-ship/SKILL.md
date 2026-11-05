@@ -30,7 +30,7 @@ user-invocable: true
    - Link the spec or issue.
    - Paste the verification commands with their real outcomes.
    - State the risk and rollback, migrations and rollout order, and what remains unverified (remote-only checks, credentials, environments).
-6. **Outward actions need approval.** Pushing, opening or merging a PR, publishing a package, deploying, posting to trackers: confirm each with the user, once per action, unless they authorized it explicitly in this task. Never enable auto-merge or force-push unless asked.
+6. **Outward actions need approval.** Pushing, opening or merging a PR, publishing a package, deploying, posting to trackers: confirm each with the user, once per action, unless they authorized it explicitly in this task. Never enable auto-merge or force-push unless asked. If `enforce` is on and a hook refusal turns down the push, run `sdlc verify` (a separate tool call from the push) or get the approval; never edit `.claude/settings.json` or work around the hook.
 7. **Release** (when asked): release notes from the merged PRs, a version bump following the project's scheme, migration and rollback notes. Then the deploy steps from the plan, in rollout order.
 8. **Close the spec**: once the PR is merged, set the spec's `Status: implemented`. If the spec was replaced, set `superseded by NNN`.
 9. **Report**: the branch, commit SHAs, PR URL (if created), the gate results, the unverified remote checks, and what the human does next.

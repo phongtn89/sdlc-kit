@@ -815,6 +815,60 @@ class EvalRows(unittest.TestCase):
         self.assertIn(".sdlc/evidence/verify.json", readme)
 
 
+class HookDocs(unittest.TestCase):
+    def text(self, *parts):
+        with open(os.path.join(ROOT, *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def section(self, text, title):
+        m = re.search(r"^## %s\n(.*?)(?=^## |\Z)" % re.escape(title), text, re.M | re.S)
+        self.assertIsNotNone(m, title)
+        return m.group(1)
+
+    def test_readme_has_an_enforcement_section_with_the_gaps(self):
+        body = self.section(self.text("README.md"), "Enforcement (opt-in)")
+        lowered = body.lower()
+        self.assertIn("restart", lowered)
+        for needle in ("\"enforce\": true", ".claude/settings.json", "sdlc update", "shell edits",
+                       "$(...)", "aliases", "scripts", "heredoc", "Copilot", "separate tool calls", "commands",
+                       ".sdlc/lock.json", ".sdlc/config.json", ".sdlc/evidence", "sdlc check", "uninstall"):
+            self.assertIn(needle.lower(), lowered, needle)
+
+    def test_readme_lists_the_hook_command(self):
+        self.assertRegex(self.text("README.md"), r"\| `sdlc hook <bash\|edit\|stop>`")
+
+    def test_rendering_has_a_settings_row(self):
+        row = [l for l in self.text("adapters", "RENDERING.md").split("\n") if l.startswith("| Hooks")]
+        self.assertEqual(len(row), 1)
+        for needle in (".claude/settings.json", "enforce", "lock"):
+            self.assertIn(needle, row[0])
+
+    def test_design_and_adr_point_at_spec_006(self):
+        design = self.text("DESIGN.md")
+        self.assertIn("specs/006-enforcement-hooks", design)
+        adr = self.text("docs", "adr", "0003-enforcement-model.md")
+        self.assertIn("specs/006-enforcement-hooks", self.section(adr, "Consequences"))
+        self.assertNotIn("exit code 2 blocks", adr)
+
+    def test_implement_and_ship_say_a_refusal_is_a_cue_not_an_obstacle(self):
+        for name in ("sdlc-implement", "sdlc-ship"):
+            lines = [l for l in self.text("core", "skills", name, "SKILL.md").split("\n") if "hook refus" in l]
+            self.assertEqual(len(lines), 1, name)
+            for needle in ("sdlc verify", "approval", ".claude/settings.json", "never"):
+                self.assertIn(needle, lines[0], (name, needle))
+
+    def test_eval_rows_for_the_pinned_format_and_the_live_run(self):
+        rows = EvalRows.rows(self)
+        self.assertIn("HR1", rows)
+        self.assertIn("claude -p", rows["HR1"])
+        self.assertIn("permissionDecision", rows["HR1"])
+        v2 = rows["V2"]
+        prompt = re.findall(r'"([^"]+)"', v2.split("|")[2])[-1]
+        for word in ("sdlc", "hook", "verify", "skill", "enforce"):
+            self.assertNotIn(word, prompt.lower(), word)
+        self.assertIn("refused", v2.split("|")[-2])
+
+
 class CheckUpdateTests(Base):
     def setUp(self):
         super().setUp()

@@ -76,6 +76,7 @@ Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.js
 | `sdlc gate <name> <dir> --spec <NNN> [--repo <name>] [--by <name>]` | Mechanical readiness checks. `approve --by <name>` records the human's approval with a digest of spec, plan, tasks and contracts; `sdlc gate approved` passes only while those documents are unchanged since; `green-at-head` passes only for a clean, current, all-pass `verify` record on a still-clean tree; `evidence-for-ticks` needs a progress-log line with a real commit for every ticked task. Exit 0 pass, 1 fail, 2 usage error. They report; hooks and CI (later stories) act on the exit code. |
 | `sdlc verify <dir> [--repo <name>]` | Run the configured `commands` once each and write `.sdlc/evidence/verify.json` (revision, dirty flag, exit codes, no output). Exits 0 only if everything that ran passed. Last line: `verify: PASSED at <hash> (clean tree)` is the only verified-at-HEAD result. POSIX only; no lock if two runs overlap. `uninstall` keeps `.sdlc/evidence/` (the record is local state: add it to `.gitignore` if you don't want it committed). |
 | `sdlc discover <dir> [--json]` | Read-only inventory of the git repos in a workspace folder |
+| `sdlc hook <bash|edit|stop>` | Internal: the enforcement hooks call it (see Enforcement below). Reads the host's JSON on stdin, always exits 0. |
 | `sdlc lint` | Validate the kit itself |
 
 ### What lands in the project
@@ -90,6 +91,34 @@ Then, in the project, run the `sdlc-setup` skill once. It fills `.sdlc/config.js
 | `specs/`, `docs/adr/`, glossary | project |
 
 Never edit kit-owned files in place. Change the kit and run `update`, or put project rules in `.sdlc/config.json` → `extra_instructions`.
+
+## Enforcement (opt-in)
+
+By default the kit's rules are text the agent follows. Set `"enforce": true` in `.sdlc/config.json` (only the JSON `true` counts) and run `sdlc update`: for Claude Code the kit then writes three hook entries into `.claude/settings.json`, next to your own settings and hooks, which stay untouched.
+
+| Hook | Refuses or warns |
+|---|---|
+| `Bash` | A `git push` or `gh pr create` unless `sdlc gate green-at-head` passes (a clean, current, all-pass `sdlc verify` record). |
+| `Edit`, `Write`, `MultiEdit`, `NotebookEdit` | A source edit while the active spec (from the branch name, `NNN-`) is not approved or its documents changed since approval. Specs, docs, `.sdlc/`, `.claude/`, `.github/` and Markdown are not source. |
+| `Stop` | Only warns: a ticked task without a progress-log line that holds a real commit. |
+
+A refusal is a message the agent sees, never an exit code, so a broken hook cannot lock a session. A missing kit folder, an unreadable config or any error makes the hook allow and say so. `enforce` is read on every run: turn it off in the config and the hooks stop acting at once; `sdlc update` then removes the entries. `sdlc check` reports an edited or missing entry (`DRIFT`) and a moved kit (`KIT-PATH-MISSING`); `sdlc uninstall` removes exactly the kit's entries, keeps one you edited, and deletes a settings file the kit created once it is empty.
+
+Things to know:
+
+- Restart the Claude Code session after `install` or `update`; hooks are read at session start.
+- `commands` must be set in `.sdlc/config.json`: with none, `sdlc verify` cannot pass and every push is refused.
+- Run `sdlc verify` and the push as separate tool calls. A push chained after `verify` in one command is judged before `verify` runs.
+- A refusal is the cue to run `sdlc verify` or to get the approval, not to work around it.
+- GitHub Copilot has no hook equivalent: use CI (`sdlc check`, `sdlc verify`) there. Workspaces (`repos`) are not supported yet.
+
+Known gaps (the hooks are a guard rail, not a sandbox):
+
+- Shell edits (`sed -i`, `>`, `tee`, a script that writes files) are not seen by the edit hook.
+- Pushes hidden in `$(...)` inside quotes, backticks, aliases, scripts, `eval` or `xargs` are not seen. A heredoc body that contains a push command is a false positive.
+- An agent can still edit `.claude/settings.json`, `.sdlc/lock.json`, `.sdlc/config.json` or the evidence record (`.sdlc/evidence/verify.json`). `sdlc check` reports an edit to the kit's entries in the first; the others are caught only in review.
+
+Design and the pinned host format: `specs/006-enforcement-hooks/`, `docs/adr/0003-enforcement-model.md`.
 
 ## Multi-repo workspace
 

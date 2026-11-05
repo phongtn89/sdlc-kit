@@ -31,8 +31,8 @@ Track: T3
 
 - **Enforcement**: the `enforce` switch in `.sdlc/config.json`; only the JSON value `true` turns it on (ADR-0003).
 - **Managed hook entry**: a hook entry the kit wrote into `.claude/settings.json`, recognisable as the kit's, so install, update and uninstall touch those and nothing else.
-- **Active spec**: the T3 feature whose folder the hook treats as the one being worked on (see Open questions).
-- **Source tree**: the files an unapproved feature must not yet change (see Open questions).
+- **Active spec**: the T3 feature whose folder the hook treats as the one being worked on: the one whose number starts the current branch name.
+- **Source tree**: the files an unapproved feature must not yet change: every file except those under `spec_dir`, `.sdlc/`, `.claude/`, `.github/`, `docs/`, and files ending `.md`.
 - **Green at HEAD**, **approval digest**, **evidence for a tick**: as defined by specs 004 and 005.
 
 ## User scenarios
@@ -127,7 +127,11 @@ As a user, I want the hooks to fail open on their own faults and fail closed onl
 
 <!-- Written by `sdlc-clarify`. -->
 
+### Session 2026-11-05
+
+- Q: Which files count as the source tree? → A: every file except those under `spec_dir`, `.sdlc/`, `.claude/`, `.github/`, `docs/`, and files ending `.md`. No configuration in v1.
+- Q: How is the active spec found? → A: the current branch name starts with a spec number (as in `feat/006-...`) that matches a folder in `spec_dir`; otherwise there is none and the hook allows. No config key in v1.
+
 ## Open questions
 
-- [NEEDS CLARIFICATION: Which files count as the source tree? Default proposed: every file except those under `spec_dir`, `.sdlc/`, `.claude/`, `.github/`, `docs/`, and files ending `.md`. Blocks FR-009. Owner: phong.ngo.vn]
-- [NEEDS CLARIFICATION: How is the active spec found? Default proposed: the current branch name starts with a spec number (`feat/006-...`) matching a folder in `spec_dir`; otherwise none, and the hook allows. Blocks FR-009, FR-010. Owner: phong.ngo.vn]
+None.

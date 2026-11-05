@@ -702,6 +702,17 @@ def cmd_gate(a, kit):
     return code, [l.encode(enc, "replace").decode(enc) for l in lines]  # an encoding problem can't follow a write
 
 
+def cmd_budget(a, kit):
+    sys.dont_write_bytecode = True  # the kit folder must stay unwritten
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    import sdlc_budget
+    try:
+        target = check_target(a.dir)
+        return sdlc_budget.run(target, read_config(target), a, safe_path)
+    except (SdlcError, sdlc_budget.BudgetError, OSError, UnicodeDecodeError, ValueError) as e:
+        return 2, ["sdlc: error: %s" % e]
+
+
 def cmd_hook(a, kit):
     """Run an enforcement hook (spec 006). The process exit code is always 0; a refusal is a message on stdout."""
     sys.dont_write_bytecode = True  # the kit folder must stay unwritten
@@ -1035,6 +1046,11 @@ def build_parser():
     sp.add_argument("--spec", help="feature: NNN or a folder inside spec_dir")
     sp.add_argument("--repo", help="workspace repo name")
     sp.add_argument("--by", help="approver's name (approve only)")
+    sp = add("budget", cmd_budget, "Compare the diff and a unit's turns with budget.* (read-only).")
+    sp.add_argument("--repo", help="workspace repo name")
+    sp.add_argument("--base", help="branch, tag or commit to measure from (default: origin/HEAD, main or master)")
+    sp.add_argument("--unit", help="task or finding id whose recorded turns are compared (needs --spec)")
+    sp.add_argument("--spec", help="feature NNN or folder holding the tasks.md with the usage line (needs --unit)")
     sp = add("hook", cmd_hook, "Run an enforcement hook; reads the host's JSON on standard input (spec 006).", dir_=False)
     sp.add_argument("name", choices=["bash", "edit", "stop"])
     sp = add("discover", cmd_discover, "List the git repos directly under a workspace folder (read-only).")

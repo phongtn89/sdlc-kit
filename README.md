@@ -125,6 +125,7 @@ Known gaps (the hooks are a guard rail, not a sandbox):
 
 - The workflow checks out the kit itself and calls it from there. The lock's `kit_path` names a path on a developer's machine, so `sdlc check` prints `KIT-PATH-MISSING` in CI; the workflow ignores that one line and fails on any other drift.
 - `sdlc lint` is not a step: it validates the kit, so the kit's own CI runs it.
+- A branch whose spec is still a draft fails the required check (`gate approved`), as the hooks refuse source edits then; approve the spec first. A pull request from a fork, or one opened by Dependabot, gets no repository secrets, so a private kit cannot be checked out for it: use a public kit repository, or exempt those pull requests from the required check.
 - It cannot see an unapproved edit that never reaches a commit, or a shell edit; those stay with the hooks and with review.
 - For another CI system, run the same commands in the same order.
 

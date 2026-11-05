@@ -73,6 +73,11 @@ class Template(unittest.TestCase):
         self.assertIn("repository:", body)
         self.assertLess(body.index("info/exclude"), body.index("name: Verify"))
 
+    def test_the_job_is_read_only_and_leaves_no_credentials_behind(self):
+        body = text("adapters", "ci", "sdlc-gates.yml")
+        self.assertRegex(body, r"(?m)^permissions:\n  contents: read$")
+        self.assertEqual(body.count("persist-credentials: false"), 2)
+
     def test_lint_is_not_a_step(self):
         self.assertNotIn("sdlc lint", "\n".join(steps().values()))
         self.assertNotIn(" lint", "\n".join(steps().values()))
@@ -136,6 +141,29 @@ class GreenProject(Project):
         self.assertEqual(code, 0, out)
         self.assertIn("KIT-PATH-MISSING", out)
 
+    def test_no_lock_or_a_corrupt_lock_fails_the_check_step(self):
+        lock = os.path.join(self.d, ".sdlc", "lock.json")
+        with open(lock, "w") as f:
+            f.write("{bad")
+        code, out = self.step("Check install")
+        self.assertNotEqual(code, 0, out)
+        os.remove(lock)
+        code, out = self.step("Check install")
+        self.assertNotEqual(code, 0, out)
+
+    def test_a_crash_of_check_fails_the_step(self):
+        env = dict(os.environ, SDLC="false", HEAD_REF="x")
+        p = subprocess.run(["sh", "-c", steps()["Check install"]], cwd=self.d, env=env, capture_output=True, text=True)
+        self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
+
+    def test_the_first_numbered_segment_of_the_branch_wins_like_in_the_hooks(self):
+        code, out = self.step("Spec gates", "feat/007-demo/099-other")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("skipped", out)
+        self.assertIn("PASS", out)
+        code, out = self.step("Spec gates", "feat/12345-x")
+        self.assertIn("skipped", out)
+
     def test_a_modified_kit_file_fails_the_check_step(self):
         with open(os.path.join(self.d, ".claude", "skills", "sdlc", "SKILL.md"), "a") as f:
             f.write("\nlocal edit\n")
@@ -195,7 +223,7 @@ class Docs(unittest.TestCase):
         for body in (readme, rendering):
             self.assertIn("adapters/ci/sdlc-gates.yml", body)
         for needle in ("required check", "Copilot", "SDLC_KIT_TOKEN", "pinned", "KIT-PATH-MISSING", "branch protection",
-                       "not rendered", "sdlc lint"):
+                       "not rendered", "sdlc lint", "draft", "fork", "dependabot"):
             self.assertIn(needle.lower(), readme.lower(), needle)
 
     def test_install_output_is_unchanged_by_the_template(self):

@@ -10,10 +10,16 @@
 #
 # `sdlc lint` is not a step: it validates the kit itself, so the kit's own CI runs it, not a project's.
 # The lock's `kit_path` names a path on a developer's machine, so `sdlc check` reports KIT-PATH-MISSING here; the
-# "Check install" step ignores that one line and fails on every other drift.
+# "Check install" step ignores that one line and fails on every other drift and on any error.
+# The spec gates follow the hooks' rule: the first path segment that starts with three digits and a dash is the spec
+# number. A branch whose spec is still a draft fails `gate approved`, as the hooks do for source edits. A pull request
+# from a fork, or one opened by Dependabot, gets no repository secrets, so a private kit cannot be checked out for it.
 name: sdlc gates
 
 on: pull_request
+
+permissions:
+  contents: read
 
 env:
   SDLC: python3 .sdlc-kit/bin/sdlc
@@ -26,6 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Check out the kit
         uses: actions/checkout@v4
@@ -34,15 +41,18 @@ jobs:
           ref: v0.0.0
           token: ${{ secrets.SDLC_KIT_TOKEN }}
           path: .sdlc-kit
+          persist-credentials: false
 
       - name: Keep the kit out of the tree check
         run: echo ".sdlc-kit/" >> .git/info/exclude
 
       - name: Check install
         run: |
-          out=$($SDLC check . || true)
+          code=0
+          out=$($SDLC check . 2>&1) || code=$?
           echo "$out"
           if echo "$out" | grep -E '^(MISSING|MODIFIED|DRIFT|DUPLICATE-SPEC) '; then exit 1; fi
+          if [ "$code" -ne 0 ] && ! echo "$out" | grep -q '^KIT-PATH-MISSING '; then exit 1; fi
 
       - name: Verify
         run: $SDLC verify .
@@ -54,7 +64,7 @@ jobs:
         env:
           HEAD_REF: ${{ github.head_ref }}
         run: |
-          num=$(printf '%s' "$HEAD_REF" | sed -nE 's#^([^/]+/)*([0-9]{3})-.*#\2#p')
+          num=$(printf '%s\n' "$HEAD_REF" | grep -oE '(^|/)[0-9]{3}-' | head -1 | tr -d '/-')
           if [ -z "$num" ]; then echo "no NNN- prefix in the branch name, spec gates skipped"; exit 0; fi
           out=$($SDLC gate approved . --spec "$num" 2>&1) && code=0 || code=$?
           echo "$out"

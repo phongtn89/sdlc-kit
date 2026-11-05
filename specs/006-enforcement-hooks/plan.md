@@ -1,6 +1,6 @@
 # Plan: Enforcement hooks for Claude Code
 
-Spec: [spec.md](spec.md) · Status: draft · Created: 2026-11-05
+Spec: [spec.md](spec.md) · Status: approved · Created: 2026-11-05
 
 ## Summary
 

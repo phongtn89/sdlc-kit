@@ -1,6 +1,6 @@
 # Tasks: Enforcement hooks for Claude Code
 
-Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/hooks.md](contracts/hooks.md) · Status: draft · Created: 2026-11-05 · Branch: `feat/006-enforcement-hooks`
+Inputs: [spec.md](spec.md), [plan.md](plan.md), [contracts/hooks.md](contracts/hooks.md) · Status: approved · Created: 2026-11-05 · Branch: `feat/006-enforcement-hooks`
 
 Verify (kit root):
 - Narrow: `python3 -B -m unittest tests.test_hooks -v` (helpers in `tests/test_hooks.py`, 30 s timeout per call)

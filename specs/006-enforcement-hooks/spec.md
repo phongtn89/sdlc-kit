@@ -68,7 +68,7 @@ As a user, I want the hooks installed only when I turn `enforce` on, merged into
 **Independent test:** a fixture project with its own settings and hooks gains the three entries on install, keeps every one of its own, and loses only the kit's on `enforce: false` or uninstall.
 
 1. **Given** `enforce` is absent or not `true`, **When** I install or update, **Then** no hook is written and any hook the kit wrote earlier is removed.
-2. **Given** `enforce` is true and a `.claude/settings.json` with the project's own settings and hooks, **When** I install or update, **Then** the three kit hooks are added, nothing else in the file changes, and running install again changes nothing.
+2. **Given** `enforce` is true and a `.claude/settings.json` with the project's own settings and hooks, **When** I install or update, **Then** the three kit hooks are added, no other value in the file changes (formatting may be normalised on the first write), and running install again changes nothing.
 3. **Given** the file is not valid JSON or its `hooks` value has an unexpected shape, **When** I install, **Then** nothing in it is written, the report says why, and the exit code is non-zero.
 4. **Given** the kit's entries were edited by hand, **When** I update, **Then** they are reported as modified and left alone unless `--force`; `sdlc check` reports the drift.
 5. **Given** the hooks are installed, **When** I uninstall, **Then** only the kit's entries go, and an emptied file the kit created is removed.
@@ -81,7 +81,7 @@ As a reader of `tasks.md`, I want a warning when a session ends with ticked task
 **Independent test:** a Stop input with a failing `gate evidence-for-ticks` for the active spec produces a warning and exit 0; a passing or undeterminable one produces nothing.
 
 1. **Given** the active spec has a ticked task with no evidence line, **When** the session stops, **Then** the user sees a warning that lists the tasks, and the session is not blocked.
-2. **Given** the evidence is complete, or no active spec can be determined, **When** the session stops, **Then** nothing is shown.
+2. **Given** the evidence is complete, no active spec can be determined, or the active spec has no `tasks.md` yet, **When** the session stops, **Then** nothing is shown. (The stop hook fires every turn, so it stays silent unless it has a computed warning.)
 
 ### S5: A broken hook never traps the session (P1)
 
@@ -92,19 +92,20 @@ As a user, I want the hooks to fail open on their own faults and fail closed onl
 ## Requirements
 
 - **FR-001**: Installing or updating with `enforce` equal to JSON `true` and a Claude Code target MUST add three hook entries to `.claude/settings.json`: a tool-call hook for `Bash`, a tool-call hook for the editor tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`), and a stop hook. (S3)
-- **FR-002**: Any other `enforce` value, or a missing key, MUST add no entry and MUST remove entries the kit wrote earlier. (S3)
+- **FR-002**: Any other `enforce` value, or a missing key, MUST add no entry and MUST remove entries the kit wrote earlier; and a hook that finds `enforce` not equal to `true` at run time MUST allow silently, so turning it off takes effect before the next update. (S3)
 - **FR-003**: The kit MUST NOT change any value in `.claude/settings.json` other than its own entries, MUST keep the project's own hooks on the same events, MUST keep the file's indentation, and MUST produce identical bytes when run twice. (S3)
 - **FR-004**: The kit MUST NOT write the file when it is not valid JSON or has a shape it cannot merge into; it MUST report why and exit non-zero. (S3)
 - **FR-005**: The lock MUST record a hash of what the kit wrote into the settings file, `sdlc check` MUST report a change to the kit's entries as drift, and update MUST NOT overwrite a changed entry without `--force`. (S3)
 - **FR-006**: Uninstall MUST remove exactly the kit's entries and a settings file the kit created that is then empty. (S3)
 - **FR-007**: Each hook MUST call the kit by the path recorded in `.sdlc/lock.json`, never a copy inside the project (ADR-0003 decision 3). (S1, S2)
 - **FR-008**: The Bash hook MUST refuse a command that runs `git push` or `gh pr create`, alone or inside a chain, whenever `sdlc gate green-at-head` does not pass, and MUST show the gate's reason. It MUST allow every other command without running a gate. (S1)
-- **FR-009**: The editor hook MUST refuse an edit to a source file whenever `sdlc gate approved` does not pass for an active spec whose status is `draft` or `approved`, showing the gate's reason, and MUST always allow edits to non-source files and edits while the active spec is `implemented`, `rejected` or `superseded` (no feature is in flight). (S2)
+- **FR-009**: The editor hook MUST refuse an edit to a source file whenever the active spec's status word is `draft` or `approved` and `sdlc gate approved` does not pass, showing the gate's reason, and MUST always allow edits to non-source files and edits while the active spec has any other status (`implemented`, `rejected`, `superseded`, missing or unknown: no feature is known to be in flight; an unknown status allows with a note). (S2)
 - **FR-010**: The stop hook MUST warn, never block, when `sdlc gate evidence-for-ticks` fails for the active spec, listing the failing tasks. (S4)
-- **FR-011**: A hook MUST allow the call when it cannot compute a gate result: unreadable input, a missing kit, no active spec, a gate error (exit 2), or a timeout. It MUST say why in one line. A gate that completes and fails (exit 1) is the only thing that refuses. (S5)
+- **FR-011**: A hook MUST allow the call when it cannot compute a gate result: unreadable input, a missing kit, no active spec, a gate error (exit 2), or a timeout. It MUST say why in one line. A gate that completes and fails (exit 1) is the only thing that refuses. The entry MUST end with exit code 0 whatever the kit does, so a kit that is missing, older, newer or broken cannot block the host; a refusal is a structured deny message the host reads on a zero exit. (S5)
 - **FR-012**: A hook MUST finish within a fixed time limit set on its entry, and MUST NOT write to the project's files. (S5)
 - **FR-013**: With a Copilot-only target, install MUST render no hook and MUST state that no equivalent exists. (S3)
-- **FR-014**: The documentation MUST list what the hooks do not cover (shell edits, other hosts) and how to turn enforcement off. (S3)
+- **FR-016**: When `enforce` is on and `commands` in the config is empty, install MUST say that a push can never pass until commands are configured, and the push refusal MUST say so too. (S1, S3)
+- **FR-014**: The documentation MUST list what the hooks do not cover (shell edits, other hosts) and how to turn enforcement off, that hooks are read when a session starts (restart after install or update), that `sdlc verify` and the push must be separate tool calls, and that the kit's evidence record and lock are not protected from an agent's editor tools. (S3)
 - **FR-015**: With a workspace config (`repos` present) install MUST render no hook and MUST say that workspaces are not supported yet. (S3)
 
 ## Non-functional
@@ -121,7 +122,8 @@ As a user, I want the hooks to fail open on their own faults and fail closed onl
 
 ## Assumptions & dependencies
 
-- Assumption: the host passes the tool name and input to a tool-call hook as JSON on standard input and treats exit code 2 with a message on standard error as a refusal; a stop hook that exits 0 with a JSON message shows a warning without blocking. These are re-checked by fixtures (NFR-003) because they are the host's, not the kit's.
+- Assumption: the host reads hook entries when a session starts, so install and update need a restart to take effect (unverified; stated in the docs).
+- Assumption: the host passes the tool name and input to a tool-call hook as JSON on standard input and treats a zero exit with a structured deny message (`permissionDecision` `deny` and a reason) as a refusal shown to the agent; a stop hook that exits 0 with a JSON `systemMessage` shows a warning without blocking. These are the host's, not the kit's: they are pinned by fixtures (NFR-003) and proven by the live eval (SC-003).
 - Assumption: a hook entry may carry a time limit that the host enforces (FR-012), and the host treats any exit code other than 2 as non-blocking, so a crash or a missing interpreter allows the call.
 - Assumption: the editor tools are the ones that carry a file path for source edits; shell-based edits are the stated gap.
 - Assumption: a refusal is surfaced to the agent as a tool error, which it can act on by running `verify` or getting an approval.

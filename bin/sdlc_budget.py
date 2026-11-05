@@ -51,8 +51,8 @@ def git(workdir, *args):
 
 def default_base(workdir):
     ok, out = git(workdir, "symbolic-ref", "-q", "refs/remotes/origin/HEAD")
-    if ok and out.strip():
-        return out.strip()
+    if ok and out.strip() and git(workdir, "rev-parse", "--verify", "-q", out.strip() + "^{commit}")[0]:
+        return out.strip()  # a dangling origin/HEAD falls through to main and master
     for name in ("main", "master"):
         if git(workdir, "rev-parse", "--verify", "-q", name + "^{commit}")[0]:
             return name

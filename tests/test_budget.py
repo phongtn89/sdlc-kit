@@ -106,6 +106,15 @@ class Lines(Repo):
         c, out, err = self.budget_run()
         self.assertIn("lines: 2 ", out, out)
 
+    def test_a_rename_counts_as_a_delete_and_an_add(self):
+        git(self.d, "checkout", "-q", "main")
+        self.write("a.txt", lines(7))
+        self.commit("a on main")
+        git(self.d, "checkout", "-q", "-b", "feat/009-rename")
+        git(self.d, "mv", "a.txt", "b.txt")
+        c, out, err = self.budget_run()
+        self.assertIn("lines: 14 ", out, out)
+
     def test_the_spec_folder_the_kit_folders_are_not_counted(self):
         self.write("specs/008-demo/spec.md", lines(400))
         self.write(".sdlc/evidence/verify.json", lines(400))
@@ -147,6 +156,14 @@ class Base(Repo):
         git(self.d, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/develop")
         c, out, err = self.budget_run()
         self.assertIn("lines: 140 ", out, out)
+
+    def test_a_dangling_origin_head_falls_back_to_main(self):
+        git(self.d, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone")
+        self.write("work.txt", lines(9))
+        self.commit()
+        c, out, err = self.budget_run()
+        self.assertEqual(c, 0, out + err)
+        self.assertIn("lines: 9 ", out)
 
     def test_master_is_found_when_there_is_no_main(self):
         git(self.d, "branch", "-m", "main", "master")

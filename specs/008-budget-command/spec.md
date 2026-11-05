@@ -19,7 +19,7 @@ An agent that says "the diff is small" or "I am at turn 12" is self-reporting. `
 
 Verify: `python3 -B -m unittest tests.test_budget -v` and `python3 bin/sdlc lint`
 
-Red first, then green: the 28 tests in `tests/test_budget.py` failed before `bin/sdlc_budget.py` existed (22 failures, 14 errors, subtests counted); sixteen mutations (limits at `>=`, deletions not counted, untracked skipped, spec folder or `.claude` counted, base used instead of the merge-base, first usage line winning, turns at max not reassess, turns ignored, `origin/HEAD` ignored, option-like base allowed, thousands comma, binary counted, unit and spec not paired, target above reassess allowed) each fail at least one test; two survived at first (`origin/HEAD`, option-like base) and drove a better test each.
+Red first, then green: the 28 tests in `tests/test_budget.py` failed before `bin/sdlc_budget.py` existed (22 failures, 14 errors, subtests counted); sixteen mutations (limits at `>=`, deletions not counted, untracked skipped, spec folder or `.claude` counted, base used instead of the merge-base, first usage line winning, turns at max not reassess, turns ignored, `origin/HEAD` ignored, option-like base allowed, thousands comma, binary counted, unit and spec not paired, target above reassess allowed) each fail at least one test; two survived at first (`origin/HEAD`, option-like base) and drove a better test each. Review found two low issues (a dangling `origin/HEAD`, rename counting), fixed or documented, test-first: 30 tests in all.
 
 ## Decisions (2026-11-05, phong.ngo.vn accepted all four recommendations in chat; the track stays T2)
 

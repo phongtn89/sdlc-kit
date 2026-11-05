@@ -171,7 +171,13 @@ def read_lock(target):
             raise SdlcError("invalid lock: %s" % k)
     lock.setdefault("targets", [])
     lock.setdefault("modules", [])
-    for rel in list(lock["files"]) + list(lock["blocks"]):
+    lock.setdefault("settings", {})
+    st = lock["settings"]
+    if not isinstance(st, dict) or not all(
+            isinstance(v, dict) and isinstance(v.get("hooks"), dict) and isinstance(v.get("created"), bool)
+            and all(isinstance(h, str) for h in v["hooks"].values()) for v in st.values()):
+        raise SdlcError("invalid lock: settings")
+    for rel in list(lock["files"]) + list(lock["blocks"]) + list(st):
         safe_path(target, rel)
     return lock
 
@@ -357,6 +363,16 @@ def plan_claude_md(target, old):
     return {}, {rel: "@AGENTS.md"}
 
 
+SETTINGS_REL = ".claude/settings.json"
+
+
+def hooks_module():
+    sys.dont_write_bytecode = True  # the kit folder must stay unwritten
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    import sdlc_hooks
+    return sdlc_hooks
+
+
 def sync(target, kit, targets, modules, force, first):
     """Render into target. Returns (exit_code, report lines)."""
     old = read_lock(target) or {"files": {}, "blocks": {}}
@@ -366,8 +382,23 @@ def sync(target, kit, targets, modules, force, first):
         f_add, b_add = plan_claude_md(target, old)
         files.update(f_add)
         blocks.update(b_add)
-    out = []
-    written = skipped = removed = 0
+    hk = hooks_module()
+    enforce = config.get("enforce") is True
+    want = enforce and "claude" in targets and "repos" not in config
+    s_full = safe_path(target, SETTINGS_REL)
+    s_text = read_text(s_full) if os.path.isfile(s_full) else None
+    s_action, s_new, s_lock, s_lines, s_skipped = hk.settings_plan(
+        s_text, want, os.path.join(os.path.realpath(kit), "bin", "sdlc"), old.get("settings", {}).get(SETTINGS_REL), force)
+    out = list(s_lines)
+    written = removed = 0
+    skipped = s_skipped
+    if enforce and "claude" not in targets:
+        out.append("NOTE enforce: GitHub Copilot has no hook equivalent; use CI (see the docs)")
+    elif enforce and "repos" in config:
+        out.append("NOTE enforce: workspaces are not supported yet; no hook rendered")
+    elif want and hk.commands_empty(config):
+        out.append("NOTE enforce: commands is empty, so sdlc verify cannot pass and every push will be refused; "
+                   "set commands in .sdlc/config.json")
     new_lock_files, new_lock_blocks = {}, {}
     conflicts = []
     actions = []  # (kind, rel, payload)
@@ -452,9 +483,18 @@ def sync(target, kit, targets, modules, force, first):
         else:
             if drop_block(target, rel):
                 removed += 1
+    if s_action == "write":
+        hk.write_atomic(s_full, s_new.encode("utf-8"))
+        written += 1
+    elif s_action == "delete":
+        os.remove(s_full)
+        prune_dirs(target, SETTINGS_REL)
+        removed += 1
     lock = {"kit_version": read_text(os.path.join(kit, "VERSION")).strip(), "kit_path": os.path.realpath(kit),
             "targets": targets,
             "modules": modules, "files": new_lock_files, "blocks": new_lock_blocks}
+    if s_lock:
+        lock["settings"] = {SETTINGS_REL: s_lock}
     write_file(target, ".sdlc/lock.json", (json.dumps(lock, indent=2, sort_keys=True) + "\n").encode("utf-8"))
     out.append("sdlc: written %d, skipped %d, removed %d" % (written, skipped, removed))
     return (2 if skipped else 0), out

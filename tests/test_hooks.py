@@ -15,10 +15,10 @@ FIXTURES = os.path.join(ROOT, "tests", "fixtures", "hooks")
 sys.path.insert(0, os.path.join(ROOT, "bin"))
 
 
-def run(*args, env=None, timeout=30, cwd=None):
+def run(*args, env=None, timeout=30, cwd=None, cli=CLI):
     e = dict(os.environ)
     e.update(env or {})
-    p = subprocess.run([sys.executable, "-B", CLI] + list(args), capture_output=True, text=True,
+    p = subprocess.run([sys.executable, "-B", cli] + list(args), capture_output=True, text=True,
                        timeout=timeout, env=e, cwd=cwd)
     return p.returncode, p.stdout, p.stderr
 
@@ -26,6 +26,11 @@ def run(*args, env=None, timeout=30, cwd=None):
 def git(d, *args):
     subprocess.run(["git", "-C", d, "-c", "user.email=a@b", "-c", "user.name=x"] + list(args),
                    check=True, capture_output=True, text=True)
+
+
+def slurp(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
 
 
 def fixture(name, cwd):
@@ -823,6 +828,248 @@ class Settings(unittest.TestCase):
         self.assertIn("größe — 日本", sdlc_hooks.dump(sdlc_hooks.load(text), text))
 
 
+KIT_ENTRIES = ("bash", "edit", "stop")
+
+
+class Bare(unittest.TestCase):
+    """An empty folder to install the kit into."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.d = os.path.join(self._tmp.name, "proj")
+        os.mkdir(self.d)
+
+    def path(self, *parts):
+        return os.path.join(self.d, *parts)
+
+    def read(self, *parts):
+        with open(self.path(*parts), encoding="utf-8") as f:
+            return f.read()
+
+    def write(self, text, *parts):
+        os.makedirs(os.path.dirname(self.path(*parts)), exist_ok=True)
+        with open(self.path(*parts), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def config(self, **cfg):
+        self.write(json.dumps(cfg), ".sdlc", "config.json")
+
+    def settings(self):
+        return json.loads(self.read(".claude", "settings.json"))
+
+    def lock(self):
+        return json.loads(self.read(".sdlc", "lock.json"))
+
+    def install(self, *extra, cli=CLI):
+        return run("install", self.d, *extra, cli=cli)
+
+    def update(self, *extra, cli=CLI):
+        return run("update", self.d, *extra, cli=cli)
+
+    def kit_commands(self, settings=None):
+        s = settings or self.settings()
+        return [h["command"] for groups in s["hooks"].values() for g in groups for h in g["hooks"]
+                if "# sdlc-kit:" in h["command"]]
+
+
+class Install(Bare):
+    def test_enforce_absent_renders_nothing(self):
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 0, out + err)
+        self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+        self.assertNotIn("settings", self.lock())
+
+    def test_only_the_json_true_turns_it_on(self):
+        for value in ("true", 1, "yes", None, [True]):
+            with self.subTest(repr(value)):
+                shutil.rmtree(self.d)
+                os.mkdir(self.d)
+                self.config(enforce=value)
+                code, out, err = self.install("--targets", "claude")
+                self.assertEqual(code, 0, out + err)
+                self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+
+    def test_enforce_true_renders_three_entries_from_the_lock(self):
+        self.config(enforce=True, commands={"test": "true"})
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 0, out + err)
+        cmds = self.kit_commands()
+        self.assertEqual(len(cmds), 3)
+        cli = os.path.join(self.lock()["kit_path"], "bin", "sdlc")  # FR-007: the entry names the lock's kit path
+        for c in cmds:
+            self.assertIn(cli, c)
+        for groups in self.settings()["hooks"].values():
+            for g in groups:
+                self.assertEqual(g["hooks"][0]["timeout"], 90)
+        self.assertEqual(self.lock()["settings"][".claude/settings.json"]["created"], True)
+        self.assertEqual(sorted(self.lock()["settings"][".claude/settings.json"]["hooks"]), list(KIT_ENTRIES))
+
+    def test_install_twice_changes_nothing(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        before = (self.read(".claude", "settings.json"), self.read(".sdlc", "lock.json"))
+        mtime = os.stat(self.path(".claude", "settings.json")).st_mtime_ns
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual((self.read(".claude", "settings.json"), self.read(".sdlc", "lock.json")), before)
+        self.assertEqual(os.stat(self.path(".claude", "settings.json")).st_mtime_ns, mtime)  # not rewritten
+
+    def test_the_projects_own_settings_survive_on_and_off(self):
+        own = {"permissions": {"allow": ["Bash(ls)"]}, "env": {"A": "ö"},
+               "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine.sh"}]}]}}
+        self.write(json.dumps(own, indent=4, ensure_ascii=False) + "\n", ".claude", "settings.json")
+        self.config(enforce=True, commands={"test": "true"})
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 0, out + err)
+        text = self.read(".claude", "settings.json")
+        self.assertTrue(text.splitlines()[1].startswith("    \""), text[:40])
+        s = self.settings()
+        self.assertEqual(s["permissions"], own["permissions"])
+        self.assertEqual(s["env"], own["env"])
+        self.assertEqual(s["hooks"]["PreToolUse"][0], own["hooks"]["PreToolUse"][0])
+        self.assertEqual(len(self.kit_commands(s)), 3)
+        self.assertFalse(self.lock()["settings"][".claude/settings.json"]["created"])
+        self.config(enforce=False)
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.settings(), own)
+        self.assertNotIn("settings", self.lock())
+
+    def test_turning_enforce_off_removes_a_file_the_kit_created(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.config(enforce=False, commands={"test": "true"})
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+        self.assertNotIn("settings", self.lock())
+
+    def test_an_unmergeable_file_is_left_alone_and_reported(self):
+        for text, word in (("not json", "not valid JSON"), ('{"hooks": []}', "hooks")):
+            with self.subTest(text):
+                shutil.rmtree(self.d)
+                os.mkdir(self.d)
+                self.write(text, ".claude", "settings.json")
+                self.config(enforce=True, commands={"test": "true"})
+                code, out, err = self.install("--targets", "claude")
+                self.assertEqual(code, 2, out + err)
+                self.assertIn("SKIP .claude/settings.json", out)
+                self.assertIn(word, out)
+                self.assertEqual(self.read(".claude", "settings.json"), text)
+                self.assertNotIn("settings", self.lock())
+
+    def test_a_hand_edited_entry_is_skipped_unless_forced(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        s = self.settings()
+        s["hooks"]["Stop"][0]["hooks"][0]["timeout"] = 5
+        self.write(json.dumps(s, indent=2) + "\n", ".claude", "settings.json")
+        edited = self.read(".claude", "settings.json")
+        code, out, err = self.update()
+        self.assertEqual(code, 2, out + err)
+        self.assertIn("kit hook stop modified locally", out)
+        self.assertEqual(self.read(".claude", "settings.json"), edited)
+        code, out, err = self.update("--force")
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.settings()["hooks"]["Stop"][0]["hooks"][0]["timeout"], 90)
+
+    def test_a_deleted_entry_comes_back(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        s = self.settings()
+        del s["hooks"]["Stop"]
+        self.write(json.dumps(s, indent=2) + "\n", ".claude", "settings.json")
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(len(self.kit_commands()), 3)
+
+    def test_a_moved_kit_rewrites_the_entries(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        moved = os.path.join(self._tmp.name, "kit2")
+        shutil.copytree(ROOT, moved, ignore=shutil.ignore_patterns(".git", "__pycache__", "specs", "evals"))
+        code, out, err = self.update(cli=os.path.join(moved, "bin", "sdlc"))
+        self.assertEqual(code, 0, out + err)
+        for c in self.kit_commands():
+            self.assertIn(os.path.realpath(moved), c)
+            self.assertNotIn(os.path.join(ROOT, "bin", "sdlc"), c)
+
+    def test_copilot_only_gets_a_note_and_no_hook(self):
+        self.config(enforce=True, commands={"test": "true"})
+        code, out, err = self.install("--targets", "copilot")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("Copilot has no hook equivalent", out)
+        self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+
+    def test_workspace_config_gets_a_note_and_no_hook(self):
+        self.config(enforce=True, commands={"test": "true"}, repos={"a": {"path": "a"}})
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("workspaces are not supported yet", out)
+        self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+
+    def test_empty_commands_get_a_note(self):
+        self.config(enforce=True)
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("commands", out)
+        self.assertIn("every push will be refused", out)
+        self.assertEqual(len(self.kit_commands()), 3)
+
+    def test_an_old_lock_without_the_key_works(self):
+        self.install("--targets", "claude")
+        self.assertNotIn("settings", self.lock())
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+
+    def test_a_bad_settings_key_in_the_lock_is_refused(self):
+        self.install("--targets", "claude")
+        for bad in ([], {"../x": {"hooks": {}, "created": False}}, {".claude/settings.json": {"hooks": {"bash": 1}, "created": False}},
+                    {".claude/settings.json": {"hooks": {}, "created": "yes"}}):
+            with self.subTest(bad):
+                lock = self.lock()
+                lock["settings"] = bad
+                self.write(json.dumps(lock), ".sdlc", "lock.json")
+                code, out, err = self.update()
+                self.assertNotEqual(code, 0)
+                self.assertRegex(err + out, "invalid lock: settings|unsafe path")
+
+    def test_the_kit_folder_gets_no_bytecode(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.update()
+        self.assertEqual([dp for dp, dn, fn in os.walk(os.path.join(ROOT, "bin")) if "__pycache__" in dn], [])
+
+
+class AtomicWrite(unittest.TestCase):
+    def test_a_failed_replace_leaves_the_file_and_no_temp(self):
+        import sdlc_hooks
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        target = os.path.join(d, "settings.json")
+        with open(target, "w") as f:
+            f.write("old")
+        os.chmod(target, 0o640)
+        def boom(a, b):
+            raise OSError("no")
+        with self.assertRaises(OSError):
+            sdlc_hooks.write_atomic(target, b"new", replace=boom)
+        self.assertEqual(slurp(target), "old")
+        self.assertEqual(os.listdir(d), ["settings.json"])
+        sdlc_hooks.write_atomic(target, b"new")
+        self.assertEqual(slurp(target), "new")
+        self.assertEqual(os.stat(target).st_mode & 0o777, 0o640)
+
+    def test_creates_missing_folders(self):
+        import sdlc_hooks
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        target = os.path.join(d, "a", "b.json")
+        sdlc_hooks.write_atomic(target, b"x")
+        self.assertEqual(slurp(target), "x")
+
+
 class Imports(unittest.TestCase):
     def test_only_stdlib_and_sibling_modules(self):
         path = os.path.join(ROOT, "bin", "sdlc_hooks.py")
@@ -837,7 +1084,7 @@ class Imports(unittest.TestCase):
         allowed = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else None
         siblings = {"sdlc_gate", "sdlc_verify"}
         if allowed is None:
-            allowed = {"copy", "json", "os", "re", "shlex", "sys", "types", "hashlib", "subprocess"}
+            allowed = {"copy", "json", "os", "re", "shlex", "stat", "sys", "tempfile", "types", "hashlib", "subprocess"}
         self.assertEqual(names - allowed - siblings, set())
 
 

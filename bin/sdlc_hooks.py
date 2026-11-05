@@ -9,6 +9,8 @@ import json
 import os
 import re
 import shlex
+import stat
+import tempfile
 import types
 
 import sdlc_gate
@@ -160,6 +162,51 @@ def dump(settings, original):
     if m:
         indent = "\t" if m.group(1).startswith("\t") else (len(m.group(1)) if len(m.group(1)) <= 8 else 2)
     return json.dumps(settings, indent=indent, ensure_ascii=False) + "\n"
+
+
+def write_atomic(path, data, replace=os.replace):
+    """Write `data` to `path` through a temporary file beside it, keeping an existing file's mode. A failure leaves
+    the old file and no temporary file."""
+    d = os.path.dirname(path)
+    os.makedirs(d, exist_ok=True)
+    mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.exists(path) else 0o644
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".sdlc-")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, mode)
+        replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def settings_plan(text, want, cli, lock, force):
+    """What install and update do to the settings file. `text` is its content or None, `want` whether the hooks
+    should be there, `lock` the recorded entry. Returns (action, new text, new lock entry, report lines, skipped);
+    action is None, `write` or `delete`."""
+    try:
+        if text is None:
+            if not want:
+                return None, None, None, [], 0
+            new, lines, skipped, entry = merge({}, render_entries(cli), None, force)
+            entry["created"] = True
+            return "write", dump(new, ""), entry, lines, skipped
+        settings = load(text)
+        if want:
+            new, lines, skipped, entry = merge(settings, render_entries(cli), lock, force)
+            return ("write" if new != settings else None), dump(new, text), entry, lines, skipped
+        if not lock:
+            return None, None, None, [], 0
+        new, lines, rest, empty = remove(settings, lock)
+        if empty and rest is None and lock.get("created"):
+            return "delete", None, None, lines, 0
+        return ("write" if new != settings else None), dump(new, text), rest, lines, 0
+    except SettingsError as e:
+        return None, None, lock, ["SKIP .claude/settings.json (%s)" % e], 1
 
 
 # ---------------------------------------------------------------- runtime

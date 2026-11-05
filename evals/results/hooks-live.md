@@ -26,7 +26,7 @@ Because the agents followed the kit's skills and ran `verify` before pushing, a 
 
 - Claude Code **honours the deny JSON** on stdout with exit code 0: the command does not run, and the agent sees the reason text, prefixed by the host with `PreToolUse:Bash hook error:` (the label says "error", which is cosmetic).
 - The wrapper's `exit 0` path, the kit path in the entry, and the `Bash` matcher work in a real session; the hook ran on every Bash call without breaking a single one (no false deny on `git commit`, `verify`, `ls`, `grep`, `python3`).
-- The refusal text led the agents to the intended next step: run `verify` as its own call (green2, red2 and both probes did), not to edit `.claude/settings.json` or work around it (none tried, 0 of 6 sessions that met a refusal).
+- The refusal text led the agents to the intended next step: run `verify` as its own call (green2, red2 and both probes did), not to edit `.claude/settings.json` or work around it (none tried, 0 of the 4 sessions that met a refusal).
 - A push chained after the commit in one command is refused while the record predates the commit (red2, green2): the documented "separate tool calls" rule is real, and the agents learned it from the message.
 
 ## Not settled, and limits

@@ -1,0 +1,65 @@
+# sdlc-kit gates in CI (ladder level 6). Copy this file to .github/workflows/sdlc-gates.yml in your project; install does
+# not render it. It works for any host and is the required-check route for GitHub Copilot, which has no hooks: in the
+# repository settings, make the job `gates` a required status check (branch protection is set by the repository owner).
+#
+# Before you use it:
+#   1. Set `repository` and `ref` below to your copy of the kit and a pinned tag or commit (the lock's `kit_version`).
+#      Never a branch name: a moving ref lets the gates change under a pull request.
+#   2. If the kit repository is private, add a read-only token as the secret SDLC_KIT_TOKEN.
+#   3. `commands` in .sdlc/config.json must be set, or `sdlc verify` cannot pass.
+#
+# `sdlc lint` is not a step: it validates the kit itself, so the kit's own CI runs it, not a project's.
+# The lock's `kit_path` names a path on a developer's machine, so `sdlc check` reports KIT-PATH-MISSING here; the
+# "Check install" step ignores that one line and fails on every other drift.
+name: sdlc gates
+
+on: pull_request
+
+env:
+  SDLC: python3 .sdlc-kit/bin/sdlc
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the project
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check out the kit
+        uses: actions/checkout@v4
+        with:
+          repository: OWNER/sdlc-kit
+          ref: v0.0.0
+          token: ${{ secrets.SDLC_KIT_TOKEN }}
+          path: .sdlc-kit
+
+      - name: Keep the kit out of the tree check
+        run: echo ".sdlc-kit/" >> .git/info/exclude
+
+      - name: Check install
+        run: |
+          out=$($SDLC check . || true)
+          echo "$out"
+          if echo "$out" | grep -E '^(MISSING|MODIFIED|DRIFT|DUPLICATE-SPEC) '; then exit 1; fi
+
+      - name: Verify
+        run: $SDLC verify .
+
+      - name: Green at HEAD
+        run: $SDLC gate green-at-head .
+
+      - name: Spec gates
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          num=$(printf '%s' "$HEAD_REF" | sed -nE 's#^([^/]+/)*([0-9]{3})-.*#\2#p')
+          if [ -z "$num" ]; then echo "no NNN- prefix in the branch name, spec gates skipped"; exit 0; fi
+          out=$($SDLC gate approved . --spec "$num" 2>&1) && code=0 || code=$?
+          echo "$out"
+          if [ "$code" -eq 2 ] && echo "$out" | grep -q "matches 0 folders"; then
+            echo "no spec folder for $num, spec gates skipped"; exit 0
+          fi
+          [ "$code" -eq 0 ] || exit "$code"
+          $SDLC gate evidence-for-ticks . --spec "$num"

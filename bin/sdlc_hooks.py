@@ -5,6 +5,7 @@ an unknown subcommand, so every entry ends with `exit 0` and a refusal is a stru
 """
 import json
 import os
+import re
 import shlex
 import types
 
@@ -68,15 +69,89 @@ def commands_empty(cfg):
     return not (isinstance(c, dict) and any(isinstance(v, str) and v.strip() for v in c.values()))
 
 
-def pushes(cmd):
-    """True when the command line runs `git push` or `gh pr create`."""
-    words = shlex.split(cmd)
-    for i, w in enumerate(words):
-        if w == "git" and "push" in words[i + 1:]:
-            return True
-        if w == "gh" and words[i + 1:i + 3] == ["pr", "create"]:
-            return True
+PUNCT = ";&|()<>\n"
+WRAPPERS = {"sudo": {"-u", "-g"}, "env": {"-u"}, "command": set(), "time": set(), "nohup": set(), "exec": set(),
+            "timeout": {"-s", "-k"}, "nice": {"-n"}, "ionice": {"-c", "-n"}, "setsid": set(), "stdbuf": set()}
+KEYWORDS = {"{", "!", "if", "then", "else", "elif", "do", "while", "until"}
+SHELLS = {"sh", "bash", "zsh"}
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+SHELL_C = re.compile(r"^-[A-Za-z]*c[A-Za-z]*$")
+GIT_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+
+
+def lexer(cmd):
+    """shlex configured for command lines: no comments (a `#` would swallow the newline after it), whitespace
+    without newline, and runs of `;&|()<>` and newlines as their own tokens."""
+    lex = shlex.shlex(cmd, posix=True, punctuation_chars=PUNCT)
+    lex.whitespace_split = True
+    lex.whitespace = " \t\r"
+    lex.commenters = ""
+    return lex
+
+
+def segments(cmd):
+    """Word lists of the commands in a line; a token of only separator characters ends one. ValueError if unbalanced."""
+    words = list(lexer(cmd.replace("\\\n", " ")))
+    out, cur = [], []
+    for w in words:
+        if w and all(c in PUNCT for c in w):
+            out.append(cur)
+            cur = []
+        else:
+            cur.append(w)
+    out.append(cur)
+    return [s for s in out if s]
+
+
+def strip_prefix(words):
+    """Drop leading assignments, shell keywords and wrapper commands with their options."""
+    while words:
+        w = words[0]
+        base = os.path.basename(w)
+        if ASSIGNMENT.match(w) or w in KEYWORDS:
+            words = words[1:]
+        elif base in WRAPPERS:
+            takes, words = WRAPPERS[base], words[1:]
+            while words and words[0].startswith("-"):
+                words = words[2:] if words[0] in takes else words[1:]
+            if base == "timeout" and words and re.match(r"^[0-9.]+[smhd]?$", words[0]):
+                words = words[1:]
+        else:
+            break
+    return words
+
+
+def segment_pushes(words, depth):
+    words = strip_prefix(words)
+    if not words:
+        return False
+    prog, rest = os.path.basename(words[0]), words[1:]
+    helped = "-h" in rest or "--help" in rest
+    if prog == "git":
+        while rest and rest[0].startswith("-"):
+            rest = rest[2:] if rest[0] in GIT_WITH_ARG else rest[1:]
+        return bool(rest) and rest[0] == "push" and not helped
+    if prog == "gh":
+        while rest and rest[0].startswith("-"):
+            rest = rest[2:] if rest[0] in ("-R", "--repo") else rest[1:]
+        return rest[:2] == ["pr", "create"] and not helped
+    if prog in SHELLS and depth < 2:
+        for i, w in enumerate(rest):
+            if SHELL_C.match(w) and i + 1 < len(rest):
+                return line_pushes(rest[i + 1], depth + 1)
     return False
+
+
+def line_pushes(cmd, depth):
+    return any(segment_pushes(s, depth) for s in segments(cmd))
+
+
+def pushes(cmd):
+    """True when the command line runs `git push` or `gh pr create`; None when it cannot be tokenised."""
+    try:
+        return line_pushes(cmd, 1)
+    except ValueError:
+        return None
 
 
 def gate(root, cfg, name, safe_path):
@@ -86,7 +161,12 @@ def gate(root, cfg, name, safe_path):
 
 def on_bash(root, cfg, data, safe_path):
     cmd = (data.get("tool_input") or {}).get("command")
-    if not isinstance(cmd, str) or not pushes(cmd):
+    if not isinstance(cmd, str):
+        return ""
+    found = pushes(cmd)
+    if found is None:
+        return note("could not tell whether the command pushes (unbalanced quote), allowed")
+    if not found:
         return ""
     code, lines = gate(root, cfg, "green-at-head", safe_path)
     if code == 0:

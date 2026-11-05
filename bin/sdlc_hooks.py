@@ -209,6 +209,32 @@ def settings_plan(text, want, cli, lock, force):
         return None, None, lock, ["SKIP .claude/settings.json (%s)" % e], 1
 
 
+def drift(text, lock):
+    """`check` lines for the kit's recorded entries: `text` is the settings file's content or None, `lock` the
+    recorded entry. An entry is `edited` when its hash differs from the lock's, `missing` when it is not there."""
+    names = sorted((lock or {}).get("hooks", {}))
+    if not names:
+        return []
+    if text is None:
+        return ["DRIFT .claude/settings.json: kit hook %s missing" % n for n in names]
+    try:
+        settings = load(text)
+        check_shape(settings)
+    except SettingsError as e:
+        return ["DRIFT .claude/settings.json: %s" % e]
+    found = {}
+    for groups in (settings.get("hooks") or {}).values():
+        for g in groups:
+            found.setdefault(group_name(g), g)
+    lines = []
+    for n in names:
+        if n not in found:
+            lines.append("DRIFT .claude/settings.json: kit hook %s missing" % n)
+        elif group_hash(found[n]) != lock["hooks"][n]:
+            lines.append("DRIFT .claude/settings.json: kit hook %s edited" % n)
+    return lines
+
+
 # ---------------------------------------------------------------- runtime
 
 def deny(reason):

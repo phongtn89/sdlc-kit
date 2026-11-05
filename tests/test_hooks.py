@@ -1042,6 +1042,171 @@ class Install(Bare):
         self.assertEqual([dp for dp, dn, fn in os.walk(os.path.join(ROOT, "bin")) if "__pycache__" in dn], [])
 
 
+class Lifecycle(Bare):
+    """`check` and `uninstall` with the kit's settings entries."""
+
+    def on(self, **extra):
+        self.config(enforce=True, commands={"test": "true"}, **extra)
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 0, out + err)
+
+    def check(self):
+        return run("check", self.d)
+
+    def edit_settings(self, fn):
+        s = self.settings()
+        fn(s)
+        self.write(json.dumps(s, indent=2) + "\n", ".claude", "settings.json")
+
+    def set_lock(self, fn):
+        lock = self.lock()
+        fn(lock)
+        self.write(json.dumps(lock, indent=2, sort_keys=True) + "\n", ".sdlc", "lock.json")
+
+    def test_check_is_ok_after_install(self):
+        self.on()
+        code, out, err = self.check()
+        self.assertEqual((code, out.strip()), (0, "ok"), out + err)
+
+    def test_check_reports_an_edited_entry(self):
+        self.on()
+
+        def tweak(s):
+            s["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] = 5
+        self.edit_settings(tweak)
+        code, out, err = self.check()
+        self.assertEqual(code, 1, out + err)
+        self.assertEqual(out.strip().splitlines(), ["DRIFT .claude/settings.json: kit hook bash edited"])
+
+    def test_check_reports_a_missing_entry_and_a_missing_file(self):
+        self.on()
+
+        def drop(s):
+            s["hooks"]["Stop"] = []
+        self.edit_settings(drop)
+        code, out, err = self.check()
+        self.assertEqual(code, 1, out + err)
+        self.assertEqual(out.strip().splitlines(), ["DRIFT .claude/settings.json: kit hook stop missing"])
+        os.remove(self.path(".claude", "settings.json"))
+        code, out, err = self.check()
+        self.assertEqual(code, 1, out + err)
+        self.assertEqual(out.strip().splitlines(),
+                         ["DRIFT .claude/settings.json: kit hook %s missing" % n for n in KIT_ENTRIES])
+
+    def test_check_ignores_the_projects_own_entries(self):
+        self.on()
+
+        def add(s):
+            s["hooks"]["PreToolUse"].append({"matcher": "Bash", "hooks": [{"type": "command", "command": "mine.sh"}]})
+            s["permissions"] = {"allow": []}
+        self.edit_settings(add)
+        code, out, err = self.check()
+        self.assertEqual((code, out.strip()), (0, "ok"), out + err)
+
+    def test_check_reports_a_settings_file_it_cannot_read(self):
+        self.on()
+        self.write("{not json", ".claude", "settings.json")
+        code, out, err = self.check()
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("DRIFT .claude/settings.json:", out)
+
+    def test_a_missing_kit_path_is_drift_when_hooks_are_recorded(self):
+        self.on()
+        gone = os.path.join(self._tmp.name, "gone")
+        self.set_lock(lambda l: l.update(kit_path=gone))
+        code, out, err = self.check()
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("KIT-PATH-MISSING %s" % gone, out.splitlines())
+
+    def test_a_missing_kit_path_is_drift_when_enforce_is_on(self):
+        self.on()
+        gone = os.path.join(self._tmp.name, "gone")
+        self.set_lock(lambda l: (l.update(kit_path=gone), l.pop("settings")))
+        code, out, err = self.check()
+        self.assertEqual(code, 1, out + err)
+        self.assertIn("KIT-PATH-MISSING %s" % gone, out.splitlines())
+
+    def test_a_missing_kit_path_is_only_a_note_without_hooks(self):
+        self.config(commands={"test": "true"})
+        self.install("--targets", "claude")
+        gone = os.path.join(self._tmp.name, "gone")
+        self.set_lock(lambda l: l.update(kit_path=gone))
+        code, out, err = self.check()
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("NOTE KIT-PATH-MISSING %s" % gone, out.splitlines())
+        self.assertNotIn("\nKIT-PATH-MISSING", "\n" + out)
+
+    def test_a_lock_without_kit_path_is_fine(self):
+        self.config(commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.set_lock(lambda l: l.pop("kit_path"))
+        code, out, err = self.check()
+        self.assertEqual((code, out.strip()), (0, "ok"), out + err)
+
+    def test_enforce_on_with_no_recorded_hooks_is_a_note(self):
+        self.config(commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.config(enforce=True, commands={"test": "true"})
+        code, out, err = self.check()
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("NOTE enforce is true but the lock records no hooks (run update)", out.splitlines())
+
+    def test_uninstall_removes_exactly_the_kit_entries(self):
+        own = {"permissions": {"allow": ["Bash(ls)"]},
+               "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "mine.sh"}]}]}}
+        self.write(json.dumps(own, indent=2) + "\n", ".claude", "settings.json")
+        self.on()
+        self.assertEqual(len(self.kit_commands()), 3)
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.settings(), own)
+        self.assertFalse(os.path.exists(self.path(".sdlc", "lock.json")))
+
+    def test_uninstall_deletes_a_file_the_kit_created(self):
+        self.on()
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+
+    def test_uninstall_keeps_a_hand_edited_entry(self):
+        self.on()
+
+        def tweak(s):
+            s["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] = 5
+        self.edit_settings(tweak)
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("KEPT .claude/settings.json (kit hook bash modified locally, no longer managed)",
+                      out.splitlines())
+        names = [c.rsplit("# sdlc-kit:", 1)[1] for c in self.kit_commands()]
+        self.assertEqual(names, ["bash"])
+        self.assertFalse(os.path.exists(self.path(".sdlc", "lock.json")))
+
+    def test_uninstall_leaves_a_broken_settings_file_alone(self):
+        self.on()
+        self.write("{not json", ".claude", "settings.json")
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.read(".claude", "settings.json"), "{not json")
+        self.assertIn("SKIP .claude/settings.json", out)
+
+    def test_uninstall_without_hooks_does_not_touch_settings(self):
+        self.write('{"a":1}', ".claude", "settings.json")
+        self.config(commands={"test": "true"})
+        self.install("--targets", "claude")
+        mtime = os.stat(self.path(".claude", "settings.json")).st_mtime_ns
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.read(".claude", "settings.json"), '{"a":1}')
+        self.assertEqual(os.stat(self.path(".claude", "settings.json")).st_mtime_ns, mtime)
+
+    def test_the_kit_folder_gets_no_bytecode_across_the_lifecycle(self):
+        self.on()
+        self.check()
+        run("uninstall", self.d)
+        self.assertEqual([dp for dp, dn, fn in os.walk(os.path.join(ROOT, "bin")) if "__pycache__" in dn], [])
+
+
 class AtomicWrite(unittest.TestCase):
     def test_a_failed_replace_leaves_the_file_and_no_temp(self):
         import sdlc_hooks

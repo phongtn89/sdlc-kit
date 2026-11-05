@@ -585,8 +585,27 @@ def cmd_check(a, kit):
         elif sha(inner.encode("utf-8")) != lock["blocks"][rel]:
             out.append("DRIFT %s: managed block edited" % rel)
             drift = True
+    config = read_config(target)
+    hk = hooks_module()
+    s_lock = lock["settings"].get(SETTINGS_REL)
+    recorded = bool(s_lock and s_lock["hooks"])
+    if recorded:
+        s_full = safe_path(target, SETTINGS_REL)
+        s_lines = hk.drift(read_text(s_full) if os.path.isfile(s_full) else None, s_lock)
+        out.extend(s_lines)
+        drift = drift or bool(s_lines)
+    enforce = config.get("enforce") is True
+    kit_path = lock.get("kit_path")
+    if isinstance(kit_path, str) and not os.path.isdir(kit_path):
+        if recorded or enforce:
+            out.append("KIT-PATH-MISSING %s" % kit_path)
+            drift = True
+        else:
+            out.append("NOTE KIT-PATH-MISSING %s" % kit_path)
+    if enforce and not recorded and "claude" in lock["targets"] and "repos" not in config:
+        out.append("NOTE enforce is true but the lock records no hooks (run update)")
     groups = {}
-    for n in spec_dirs(target, read_config(target)):
+    for n in spec_dirs(target, config):
         groups.setdefault(n[:3], []).append(n)
     for prefix in sorted(groups):
         if len(groups[prefix]) > 1:
@@ -618,6 +637,19 @@ def cmd_uninstall(a, kit):
             out.append("KEPT %s (modified locally)" % rel)
     for rel in sorted(lock["blocks"]):
         if drop_block(target, rel):
+            removed += 1
+    s_lock = lock["settings"].get(SETTINGS_REL)
+    if s_lock:
+        s_full = safe_path(target, SETTINGS_REL)
+        action, s_new, _, s_lines, _ = hooks_module().settings_plan(
+            read_text(s_full) if os.path.isfile(s_full) else None, False, "", s_lock, False)
+        out.extend(s_lines)
+        if action == "write":
+            hooks_module().write_atomic(s_full, s_new.encode("utf-8"))
+            removed += 1
+        elif action == "delete":
+            os.remove(s_full)
+            prune_dirs(target, SETTINGS_REL)
             removed += 1
     os.remove(safe_path(target, ".sdlc/lock.json"))
     prune_dirs(target, ".sdlc/lock.json")

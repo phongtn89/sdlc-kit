@@ -216,6 +216,215 @@ class Parse(unittest.TestCase):
             self.assertIn(ch, sdlc_hooks.PUNCT)
 
 
+DEMO_SPEC = """# Spec: Demo
+
+Feature: demo
+Number: 006
+Status: %s <!-- draft | approved | implemented -->
+Approved: <!-- filled by gate approve -->
+Owner: o
+Track: T3
+
+## Requirements
+
+- **FR-001**: The system MUST do a thing.
+"""
+DEMO_PLAN = "# Plan: Demo\n\nSpec: [spec.md](spec.md) · Status: draft\n\n## Summary\n\nHow.\n"
+DEMO_TASKS = ("# Tasks: Demo\n\nInputs: [spec.md](spec.md) · Status: draft\n\n## S1\n\n- [ ] T001 [S1] Do it\n\n"
+              "## Progress log\n\n- start\n")
+
+
+class Feature(Proj):
+    """A project on branch feat/006-demo with a draft spec, plan and tasks."""
+
+    branch = "feat/006-demo"
+
+    def setUp(self):
+        super().setUp()
+        self.spec_dir = os.path.join(self.d, "specs", "006-demo")
+        os.makedirs(self.spec_dir)
+        self.put("spec.md", DEMO_SPEC % "draft")
+        self.put("plan.md", DEMO_PLAN)
+        self.put("tasks.md", DEMO_TASKS)
+
+    def put(self, name, text):
+        with open(os.path.join(self.spec_dir, name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def approve(self):
+        code, out, err = run("gate", "approve", self.d, "--spec", "006", "--by", "tester")
+        self.assertEqual(code, 0, out + err)
+
+    def edit(self, fixture_name="edit-file.json", path=None, cwd=None):
+        payload = json.loads(fixture(fixture_name, self.d))
+        if path is not None:
+            key = "notebook_path" if "notebook_path" in payload["tool_input"] else "file_path"
+            payload["tool_input"][key] = path
+        if cwd is not None:
+            payload["cwd"] = cwd
+        return self.fire("edit", json.dumps(payload))
+
+
+class EditHook(Feature):
+    def test_source_edit_is_refused_while_the_spec_is_a_draft(self):
+        rc, out, err = self.edit()
+        self.assertEqual(rc, 0)
+        reason = deny_reason(out)
+        self.assertIsNotNone(reason, out)
+        self.assertIn("bin/app.py", reason)
+        self.assertIn("006", reason)
+        self.assertIn("not approved", reason)
+
+    def test_every_editor_tool_is_covered(self):
+        for name in ("edit-file.json", "write-file.json", "multiedit.json", "notebook.json"):
+            with self.subTest(name):
+                self.assertIsNotNone(deny_reason(self.edit(name)[1]))
+
+    def test_source_edit_is_allowed_once_approved(self):
+        self.approve()
+        rc, out, err = self.edit()
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_editing_an_approved_document_refuses_source_edits_again(self):
+        self.approve()
+        self.put("plan.md", DEMO_PLAN + "\nA new paragraph.\n")
+        reason = deny_reason(self.edit()[1])
+        self.assertIn("plan changed since approval", reason)
+
+    def test_documents_and_kit_files_are_always_editable(self):
+        for rel in ("specs/006-demo/spec.md", "specs/006-demo/plan.md", "README.md", ".claude/settings.json",
+                    ".sdlc/config.json", ".github/x.yml", "docs/a.txt", "notes.md"):
+            with self.subTest(rel):
+                rc, out, err = self.edit(path=os.path.join(self.d, rel))
+                self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_no_active_spec_allows(self):
+        git(self.d, "checkout", "-q", "-b", "main2")
+        rc, out, err = self.edit()
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_statuses_without_a_feature_in_flight_allow(self):
+        for status in ("implemented", "rejected", "superseded"):
+            with self.subTest(status):
+                self.put("spec.md", DEMO_SPEC % status)
+                rc, out, err = self.edit()
+                self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_unknown_or_missing_status_allows_with_a_note(self):
+        self.put("spec.md", DEMO_SPEC % "proposed")
+        rc, out, err = self.edit()
+        self.assertIn("systemMessage", json.loads(out))
+        self.put("spec.md", DEMO_SPEC.replace("Status: %s <!-- draft | approved | implemented -->\n", ""))
+        rc, out, err = self.edit()
+        self.assertEqual(rc, 0)
+        self.assertIn("systemMessage", json.loads(out))
+
+    def test_missing_path_allows_with_a_note(self):
+        payload = json.loads(fixture("edit-file.json", self.d))
+        payload["tool_input"] = {}
+        rc, out, err = self.fire("edit", json.dumps(payload))
+        self.assertEqual(rc, 0)
+        self.assertIn("systemMessage", json.loads(out))
+
+    def test_relative_path_resolves_against_cwd(self):
+        sub = os.path.join(self.d, "bin")
+        os.makedirs(sub, exist_ok=True)
+        self.assertIsNotNone(deny_reason(self.edit(path="app.py", cwd=sub)[1]))
+        rc, out, err = self.edit(path="../README.md", cwd=sub)
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+    def test_path_outside_the_project_is_allowed(self):
+        rc, out, err = self.edit(path=os.path.join(self._tmp.name, "elsewhere.py"))
+        self.assertEqual((rc, out.strip()), (0, ""), out + err)
+
+
+def load_cli():
+    import importlib.machinery
+    import importlib.util
+    loader = importlib.machinery.SourceFileLoader("sdlc_cli", CLI)
+    spec = importlib.util.spec_from_loader("sdlc_cli", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+class Classify(Proj):
+    def active(self, branch, cfg=None):
+        git(self.d, "checkout", "-q", "-B", branch)
+        import sdlc_hooks
+        cli = load_cli()
+        return sdlc_hooks.active_spec(self.d, cfg or {}, cli.safe_path)
+
+    def spec(self, name, with_spec=True, root="specs"):
+        d = os.path.join(self.d, root, name)
+        os.makedirs(d, exist_ok=True)
+        if with_spec:
+            with open(os.path.join(d, "spec.md"), "w") as f:
+                f.write("Status: draft\n")
+
+    def test_active_spec_from_the_branch(self):
+        self.spec("006-x")
+        for b in ("feat/006-x", "006-x", "fix/006-a/b", "team/feat/006-q"):
+            with self.subTest(b):
+                self.assertEqual(self.active(b), "006-x")
+
+    def test_no_active_spec(self):
+        self.spec("006-x")
+        self.spec("007-y", with_spec=False)
+        self.spec("008-a")
+        self.spec("008-b")
+        for b in ("main", "feat/007-y", "feat/008-a", "feat/009-none", "feat/6-x", "feat/x-006-y"):
+            with self.subTest(b):
+                self.assertIsNone(self.active(b))
+
+    def test_detached_head_has_no_active_spec(self):
+        self.spec("006-x")
+        git(self.d, "checkout", "-q", "--detach")
+        import sdlc_hooks
+        self.assertIsNone(sdlc_hooks.active_spec(self.d, {}, load_cli().safe_path))
+
+    def test_no_git_has_no_active_spec(self):
+        import sdlc_hooks
+        d = os.path.join(self._tmp.name, "nogit")
+        os.makedirs(os.path.join(d, "specs", "006-x"))
+        open(os.path.join(d, "specs", "006-x", "spec.md"), "w").close()
+        self.assertIsNone(sdlc_hooks.active_spec(d, {}, load_cli().safe_path))
+
+    def test_unborn_branch_still_resolves(self):
+        import sdlc_hooks
+        d = os.path.join(self._tmp.name, "unborn")
+        os.makedirs(os.path.join(d, "specs", "006-x"))
+        open(os.path.join(d, "specs", "006-x", "spec.md"), "w").close()
+        git(d, "init", "-q", "-b", "feat/006-x")
+        self.assertEqual(sdlc_hooks.active_spec(d, {}, load_cli().safe_path), "006-x")
+
+    def test_custom_spec_dir(self):
+        self.spec("006-x", root="design/specs")
+        self.assertEqual(self.active("feat/006-x", {"spec_dir": "design/specs"}), "006-x")
+        self.assertIsNone(self.active("feat/006-x", {}))
+
+    def test_source_classifier(self):
+        import sdlc_hooks
+        cfg = {}
+        def c(rel, cwd=None):
+            return sdlc_hooks.source_path(self.d, cfg, os.path.join(self.d, rel) if not rel.startswith("..") else rel,
+                                          cwd or self.d)
+        for rel in ("bin/x", "tests/x.py", "README.txt", "src/docs/x.py", "docs.py", "src/x.md.py", "Makefile"):
+            with self.subTest(rel):
+                self.assertIs(c(rel), True)
+        for rel in ("specs/006-x/spec.md", ".sdlc/config.json", ".claude/settings.json", ".github/a.yml", "docs/a.py",
+                    "README.md", "src/notes.md"):
+            with self.subTest(rel):
+                self.assertIs(c(rel), False)
+        self.assertIsNone(sdlc_hooks.source_path(self.d, cfg, os.path.join(self._tmp.name, "out.py"), self.d))
+        self.assertIsNone(sdlc_hooks.source_path(self.d, cfg, "../out.py", self.d))
+        os.symlink(self._tmp.name, os.path.join(self.d, "link"))
+        self.assertIsNone(sdlc_hooks.source_path(self.d, cfg, os.path.join(self.d, "link", "x.py"), self.d))
+        self.assertIs(sdlc_hooks.source_path(self.d, {"spec_dir": "design/specs"}, os.path.join(self.d, "specs", "a.py"), self.d), True)
+        self.assertIs(sdlc_hooks.source_path(self.d, {"spec_dir": "design/specs"}, os.path.join(self.d, "design", "specs", "a.py"), self.d), False)
+        self.assertIs(sdlc_hooks.source_path(self.d, cfg, "bin/new.py", self.d), True)  # relative, not yet existing
+
+
 class Imports(unittest.TestCase):
     def test_only_stdlib_and_sibling_modules(self):
         path = os.path.join(ROOT, "bin", "sdlc_hooks.py")

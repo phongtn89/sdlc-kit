@@ -10,6 +10,7 @@ import shlex
 import types
 
 import sdlc_gate
+import sdlc_verify
 
 NAMES = ("bash", "edit", "stop")
 MATCHERS = {"bash": "Bash", "edit": "Edit|Write|MultiEdit|NotebookEdit"}
@@ -154,9 +155,49 @@ def pushes(cmd):
         return None
 
 
-def gate(root, cfg, name, safe_path):
-    args = types.SimpleNamespace(name=name, spec=None, repo=None, by=None)
+def gate(root, cfg, name, safe_path, spec=None):
+    args = types.SimpleNamespace(name=name, spec=spec, repo=None, by=None)
     return sdlc_gate.run(root, cfg, args, safe_path)
+
+
+BRANCH_RE = re.compile(r"^(?:[^/]+/)*?(\d{3})-")
+NOT_SOURCE_TOP = (".sdlc", ".claude", ".github", "docs")
+NO_FEATURE_IN_FLIGHT = ("implemented", "rejected", "superseded")
+
+
+def active_folder(root, cfg, safe_path):
+    """The spec folder whose number starts the current branch name, or None. Never a guess: exactly one folder
+    holding spec.md, else none."""
+    status, out = sdlc_verify.git_run(root, "symbolic-ref", "--short", "-q", "HEAD")
+    m = BRANCH_RE.match(out.strip()) if status == "ok" else None
+    if not m:
+        return None
+    try:
+        base, spec_dir = sdlc_gate.resolve_base(root, cfg, None, safe_path)
+        folder = sdlc_gate.resolve_spec(base, spec_dir, m.group(1), safe_path)
+    except Exception:
+        return None
+    return folder if os.path.isfile(os.path.join(folder, "spec.md")) else None
+
+
+def active_spec(root, cfg, safe_path):
+    folder = active_folder(root, cfg, safe_path)
+    return os.path.basename(folder) if folder else None
+
+
+def source_path(root, cfg, path, cwd):
+    """True for a source file, False for a document or kit file, None when the path is not checked (outside the
+    project root, also through a symlink)."""
+    p = path if os.path.isabs(path) else os.path.join(cwd, path)
+    rr, rp = os.path.realpath(root), os.path.realpath(p)
+    if rp != rr and not rp.startswith(rr + os.sep):
+        return None
+    rel = os.path.relpath(rp, rr).replace(os.sep, "/")
+    sd = cfg.get("spec_dir") if isinstance(cfg.get("spec_dir"), str) else "specs"
+    sd = sd.strip("/") or "specs"
+    if rel.split("/")[0] in NOT_SOURCE_TOP or rel == sd or rel.startswith(sd + "/") or rel.endswith(".md"):
+        return False
+    return True
 
 
 def on_bash(root, cfg, data, safe_path):
@@ -180,6 +221,36 @@ def on_bash(root, cfg, data, safe_path):
     return deny(reason)
 
 
+def on_edit(root, cfg, data, safe_path):
+    tool_input = data.get("tool_input")
+    tool_input = tool_input if isinstance(tool_input, dict) else {}
+    path = tool_input.get("file_path") or tool_input.get("notebook_path")
+    if not isinstance(path, str) or not path:
+        return note("no file path in the edit, allowed")
+    cwd = data.get("cwd") if isinstance(data.get("cwd"), str) and data.get("cwd") else root
+    if not source_path(root, cfg, path, cwd):  # a document, a kit file, or outside the project (None)
+        return ""
+    folder = active_folder(root, cfg, safe_path)
+    if folder is None:
+        return ""
+    lines, si, _ = sdlc_gate.header_lines(sdlc_gate.read_doc(os.path.join(folder, "spec.md"), "spec.md"))
+    word = sdlc_gate.status_word(lines[si]) if si is not None else None
+    name = os.path.basename(folder)
+    if word in NO_FEATURE_IN_FLIGHT:
+        return ""
+    if word not in ("draft", "approved"):
+        return note("spec %s has status %s, edit allowed" % (name[:3], word or "missing"))
+    code, out = gate(root, cfg, "approved", safe_path, name[:3])
+    if code == 0:
+        return ""
+    if code != 1:
+        return note("approved could not be computed: %s" % (out[-1] if out else "no output"))
+    rel = os.path.relpath(os.path.realpath(path if os.path.isabs(path) else os.path.join(cwd, path)),
+                          os.path.realpath(root)).replace(os.sep, "/")
+    return deny("sdlc: refused: %s is source and spec %s is not approved: %s. Get the human's approval and run "
+                "sdlc gate approve." % (rel, name[:3], "; ".join(out[:-1]) or "gate failed"))
+
+
 def run(name, raw, env, read_config, safe_path):
     """Standard output for hook `name` given the host's JSON `raw`. Never raises."""
     try:
@@ -199,6 +270,8 @@ def run(name, raw, env, read_config, safe_path):
             return note("workspaces are not supported yet, hook skipped")
         if name == "bash":
             return on_bash(root, cfg, data, safe_path)
+        if name == "edit":
+            return on_edit(root, cfg, data, safe_path)
         return ""
     except Exception as e:  # a hook never traps the session
         return note("hook %s skipped: %s: %s" % (name, type(e).__name__, str(e)[:120]))

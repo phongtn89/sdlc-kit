@@ -1,0 +1,1 @@
+{"session_id": "s-0005", "transcript_path": "/tmp/s-0005.jsonl", "cwd": "__CWD__", "permission_mode": "default", "hook_event_name": "PreToolUse", "tool_name": "NotebookEdit", "tool_input": {"notebook_path": "__CWD__/bin/analysis.ipynb", "new_source": "print(1)", "cell_id": "c1", "edit_mode": "replace"}, "tool_use_id": "toolu_0005"}

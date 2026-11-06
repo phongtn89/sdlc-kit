@@ -40,10 +40,13 @@ def git(d, *args):
 
 
 def denied(out):
+    """A refusal as the host reads it: the event, the decision and a reason that starts with `sdlc: refused`."""
     try:
-        return (json.loads(out).get("hookSpecificOutput") or {}).get("permissionDecision") == "deny"
+        out = (json.loads(out).get("hookSpecificOutput") or {})
     except ValueError:
         return False
+    return (out.get("hookEventName") == "PreToolUse" and out.get("permissionDecision") == "deny"
+            and str(out.get("permissionDecisionReason", "")).startswith("sdlc: refused"))
 
 
 def message(out):
@@ -129,7 +132,8 @@ class PushWhileTestsAreRed(Project):
         for command in ("git push origin main", "gh pr create --fill", "git -C . push", "git -c a.b=c push",
                         "sudo git push", "env X=1 git push", "timeout 30 git push", "bash -c 'git push'",
                         "sh -c \"git push origin main\"", "/usr/bin/git push", "gh -R o/r pr create",
-                        "git status; git push", "git status\ngit push", "(git push)"):
+                        "git status; git push", "git status\ngit push", "(git push)", "bash -lc 'git push'",
+                        "if true; then git push; fi", "sudo -u root git push", "nohup git push", "echo x | git push"):
             with self.subTest(command):
                 self.assertTrue(denied(self.push(command)))
 
@@ -164,13 +168,19 @@ class PushWhileTestsAreRed(Project):
         self.write("src/app.py", "a = 1\n")  # the tree is clean again at the same commit
         self.assertTrue(denied(self.push()))
 
-    def test_the_hook_acts_only_when_enforce_is_the_json_true(self):
+    def test_every_hook_acts_only_when_enforce_is_the_json_true(self):
+        self.write("specs/009-demo/tasks.md", "# Tasks\n\n- [x] T001 do it\n\n## Progress log\n\n")
+        self.commit("an unlogged tick on a draft spec")
         for value in (None, "true", 1):
             with self.subTest(repr(value)):
                 self.config(**({} if value is None else {"enforce": value}))
                 self.assertEqual(self.push(), "")
+                self.assertEqual(self.edit(), "")
+                self.assertEqual(self.stop(), "")
         self.config(enforce=True)
         self.assertTrue(denied(self.push()))
+        self.assertTrue(denied(self.edit()))
+        self.assertIn("ticked tasks without evidence", message(self.stop()))
 
     def test_all_three_hooks_are_rendered_when_enforce_is_on(self):
         self.assertEqual(self.push("ls"), "")
@@ -285,9 +295,11 @@ class ReviewerAbleToWrite(Project):
         self.assertTrue({"reviewer", "security-reviewer"} <= set(read_only_roles()))
 
     def tools(self, rel):
-        m = re.search(r"^tools: (.+?)\s*(?:#.*)?$", self.read(rel), re.M)
-        self.assertIsNotNone(m, "%s has no tools line, so it would inherit every tool" % rel)
-        return m.group(1)
+        parts = self.read(rel).split("\n---\n", 1)
+        self.assertTrue(parts[0].startswith("---\n"), rel)
+        found = re.findall(r"^tools: (.+?)\s*(?:#.*)?$", parts[0], re.M)  # the front matter only
+        self.assertEqual(len(found), 1, "%s: %d tools keys in its front matter (none inherits every tool)" % (rel, len(found)))
+        return found[0]
 
     def test_a_read_only_role_renders_with_read_tools_only_for_both_hosts(self):
         # An allow list, not a deny list: a new tool that writes, runs commands or delegates must not slip through.

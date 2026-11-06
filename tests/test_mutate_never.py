@@ -34,6 +34,14 @@ class Script(unittest.TestCase):
     def test_an_error_without_a_failure_is_not_a_catch(self):
         self.assertEqual(self.run_it([("breaks", [("flag.txt", "1", "x")])]), ["breaks"])
 
+    def test_expected_failures_do_not_make_an_error_a_catch(self):
+        for last, want in (("FAILED (failures=2, errors=1)", "fail"), ("FAILED (errors=1, failures=2)", "fail"),
+                           ("FAILED (failures=1, skipped=2)", "fail"), ("FAILED (errors=1, expected failures=1)", "error"),
+                           ("FAILED (errors=3)", "error"), ("FAILED (failures=0, errors=1)", "error")):
+            with self.subTest(last):
+                cmd = [sys.executable, "-B", "-c", "import sys; print(%r); sys.exit(1)" % last]
+                self.assertEqual(mutate_never.outcome(self.kit, cmd), want)
+
     def test_a_timeout_is_not_a_catch(self):
         hang = [sys.executable, "-B", "-c", "import sys, time; time.sleep(5) if open('flag.txt').read() != '1' else 0"]
         old, mutate_never.TIMEOUT = mutate_never.TIMEOUT, 1

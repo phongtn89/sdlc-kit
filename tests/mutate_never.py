@@ -12,6 +12,7 @@ Exit 0: every mutation was caught. 1: at least one was not. 2: the script itself
 pass, or a text to replace is not found exactly once).
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,6 +84,24 @@ MUTATIONS = [
      [(GATE, "        if not any(names_id(l, tid) and any(", "        if not any(True and any(")]),
     ("reviewer: the Claude role may delegate to an agent",
      [(CLI, '            lines.append("tools: Read, Grep, Glob")', '            lines.append("tools: Read, Grep, Glob, Agent")')]),
+    ("hooks: the kit path is not quoted in the entry", [(HOOKS, "    k = shlex.quote(cli)\n", "    k = cli\n")]),
+    ("reviewer: the Claude tools line is rendered after the front matter",
+     [(CLI, '        if ro:\n            lines.append("tools: Read, Grep, Glob")', "        if False:\n            pass"),
+      (CLI, '    lines.append("---")\n    return ("\\n".join(lines) + "\\n" + body)',
+       '    lines.append("---")\n    return ("\\n".join(lines) + "\\n" + ("tools: Read, Grep, Glob\\n" if ro and target == "claude" else "") + body)')]),
+    ("reviewer: a second Copilot tools line carries write tools",
+     [(CLI, '        if both:\n            lines.append("target: github-copilot")',
+       '        lines.append("tools: [\'read\', \'search\', \'edit\', \'execute\']")\n        if both:\n            lines.append("target: github-copilot")')]),
+    ("opt-in: only the bash hook honours enforce off",
+     [(HOOKS, 'if cfg.get("enforce") is not True:', 'if cfg.get("enforce") is not True and name == "bash":')]),
+    ("hooks: the deny names the wrong event", [(HOOKS, '"hookEventName": "PreToolUse", "permissionDecision"', '"hookEventName": "PostToolUse", "permissionDecision"')]),
+    ("hooks: the deny carries no reason under the host's key", [(HOOKS, '"permissionDecisionReason": reason', '"reason": reason')]),
+    ("push on red: `bash -lc` hides the push", [(HOOKS, 'SHELL_C = re.compile(r"^-[A-Za-z]*c[A-Za-z]*$")', 'SHELL_C = re.compile(r"^-c$")')]),
+    ("push on red: shell keywords hide the push",
+     [(HOOKS, 'KEYWORDS = {"{", "!", "if", "then", "else", "elif", "do", "while", "until"}', "KEYWORDS = set()")]),
+    ("push on red: a pipe does not end a command", [(HOOKS, 'PUNCT = ";&|()<>\\n"', 'PUNCT = ";&()<>\\n"')]),
+    ("push on red: sudo options hide the push", [(HOOKS, 'WRAPPERS = {"sudo": {"-u", "-g"},', 'WRAPPERS = {"sudo": set(),')]),
+    ("push on red: nohup hides the push", [(HOOKS, '"nohup": set(), ', "")]),
     ("reviewer: the Copilot role may run a shell",
      [(CLI, "lines.append(\"tools: ['read', 'search']\" if ro else", "lines.append(\"tools: ['read', 'search', 'shell']\" if ro else")]),
 ]
@@ -115,19 +134,21 @@ def outcome(work, command):
     if p.returncode == 0:
         return "pass"
     tail = (p.stdout + p.stderr).strip().splitlines()[-1:] or [""]
-    return "fail" if "failures=" in tail[0] else "error"
+    # "(failures=2, errors=1)" or "(errors=1, failures=2)", not "expected failures=1" on its own
+    return "fail" if re.search(r"[(,] ?failures=[1-9]", tail[0]) else "error"
 
 
 def run(kit, mutations, command=TEST_COMMAND, say=print):
     """The labels of the mutations no test failed on. Raises MutationError."""
     survivors = []
     with tempfile.TemporaryDirectory() as tmp:
-        base = os.path.join(tmp, "base")
+        # Paths with a space: an unquoted kit path in a hook command works anywhere else and fails here.
+        base = os.path.join(tmp, "base kit")
         shutil.copytree(kit, base, ignore=IGNORE)
         if outcome(base, command) != "pass":
             raise MutationError("the tests do not pass on the unmutated copy")
         for n, (label, edits) in enumerate(mutations):
-            work = os.path.join(tmp, "m%d" % n)
+            work = os.path.join(tmp, "m %d" % n)
             shutil.copytree(base, work)
             apply(work, edits)
             result = outcome(work, command)
@@ -140,13 +161,19 @@ def run(kit, mutations, command=TEST_COMMAND, say=print):
     return survivors
 
 
-def main():
+def main(argv=None):
+    """Optional arguments select mutations whose label contains one of them (to re-run a few)."""
+    only = argv if argv is not None else sys.argv[1:]
+    chosen = [m for m in MUTATIONS if not only or any(w in m[0] for w in only)]
+    if not chosen:
+        print("mutate_never: no mutation matches %s" % ", ".join(only))
+        return 2
     try:
-        survivors = run(ROOT, MUTATIONS)
+        survivors = run(ROOT, chosen)
     except MutationError as e:
         print("mutate_never: %s" % e)
         return 2
-    print("mutate_never: %d of %d mutations caught by a failing test" % (len(MUTATIONS) - len(survivors), len(MUTATIONS)))
+    print("mutate_never: %d of %d mutations caught by a failing test" % (len(chosen) - len(survivors), len(chosen)))
     return 1 if survivors else 0
 
 

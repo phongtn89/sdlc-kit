@@ -17,14 +17,26 @@ CLI = os.path.join(ROOT, "bin", "sdlc")
 ADR = os.path.join(ROOT, "docs", "adr", "0003-enforcement-model.md")
 
 
+def clean_env(**extra):
+    """The environment without GIT_* (a GIT_DIR from the caller would aim every git call at another repository)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(extra)
+    return env
+
+
 def sdlc(*args):
-    p = subprocess.run([sys.executable, "-B", CLI] + list(args), capture_output=True, text=True, timeout=60)
+    p = subprocess.run([sys.executable, "-B", CLI] + list(args), capture_output=True, text=True, timeout=60,
+                       env=clean_env())
     return p.returncode, p.stdout + p.stderr
 
 
+GIT_CONFIG = ["-c", "user.email=a@b", "-c", "user.name=x", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
+              "-c", "maintenance.auto=false", "-c", "gc.auto=0"]
+
+
 def git(d, *args):
-    return subprocess.run(["git", "-C", d, "-c", "user.email=a@b", "-c", "user.name=x"] + list(args),
-                          check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run(["git", "-C", d] + GIT_CONFIG + list(args), check=True, capture_output=True, text=True,
+                          env=clean_env()).stdout.strip()
 
 
 def denied(out):
@@ -84,12 +96,17 @@ class Project(unittest.TestCase):
         """Standard output of the entry rendered into .claude/settings.json for hook `name`; the exit code must be 0."""
         with open(os.path.join(self.d, ".claude", "settings.json"), encoding="utf-8") as f:
             settings = json.load(f)
-        found = [h["command"] for groups in settings["hooks"].values() for g in groups for h in g["hooks"]
-                 if h["command"].rstrip().endswith("# sdlc-kit:" + name)]
+        found = [(event, g, h["command"]) for event, groups in settings["hooks"].items() for g in groups
+                 for h in g["hooks"] if h["command"].rstrip().endswith("# sdlc-kit:" + name)]
         self.assertEqual(len(found), 1, "no rendered hook entry for %s" % name)
+        event, group, command = found[0]
+        # The host calls the entry only for its event and, for a tool event, a tool its matcher matches in full.
+        self.assertEqual(event, "Stop" if name == "stop" else "PreToolUse", name)
+        if event == "PreToolUse":
+            self.assertRegex(payload["tool_name"], r"^(?:%s)$" % group.get("matcher", ""), "matcher of %s" % name)
         payload = dict(payload, cwd=self.d)
-        p = subprocess.run(["sh", "-c", found[0]], input=json.dumps(payload), cwd=self.d, capture_output=True, text=True,
-                           env=dict(os.environ, CLAUDE_PROJECT_DIR=self.d), timeout=60)
+        p = subprocess.run(["sh", "-c", command], input=json.dumps(payload), cwd=self.d, capture_output=True, text=True,
+                           env=clean_env(CLAUDE_PROJECT_DIR=self.d), timeout=60)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return p.stdout.strip()
 
@@ -97,8 +114,9 @@ class Project(unittest.TestCase):
         return self.hook("bash", {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}})
 
     def edit(self, rel="src/app.py", tool="Edit"):
+        key = "notebook_path" if tool == "NotebookEdit" else "file_path"
         return self.hook("edit", {"hook_event_name": "PreToolUse", "tool_name": tool,
-                                  "tool_input": {"file_path": os.path.join(self.d, rel)}})
+                                  "tool_input": {key: os.path.join(self.d, rel)}})
 
     def stop(self):
         return self.hook("stop", {"hook_event_name": "Stop", "stop_hook_active": False})
@@ -107,9 +125,18 @@ class Project(unittest.TestCase):
 class PushWhileTestsAreRed(Project):
     RULE = "Push while tests are red"
 
-    def test_a_push_without_a_record_is_refused(self):
-        self.assertTrue(denied(self.push()))
-        self.assertTrue(denied(self.push("gh pr create --fill")))
+    def test_a_push_without_a_record_is_refused_in_its_everyday_forms(self):
+        for command in ("git push origin main", "gh pr create --fill", "git -C . push", "git -c a.b=c push",
+                        "sudo git push", "env X=1 git push", "timeout 30 git push", "bash -c 'git push'",
+                        "sh -c \"git push origin main\"", "/usr/bin/git push", "gh -R o/r pr create",
+                        "git status; git push", "git status\ngit push", "(git push)"):
+            with self.subTest(command):
+                self.assertTrue(denied(self.push(command)))
+
+    def test_commands_that_do_not_push_are_allowed_without_a_record(self):
+        for command in ("git status", "git push --help", "echo git push", "ls"):
+            with self.subTest(command):
+                self.assertEqual(self.push(command), "")
 
     def test_a_push_on_a_red_record_is_refused_and_a_green_one_is_allowed(self):
         self.config(enforce=True, commands={"test": "false"})
@@ -146,8 +173,9 @@ class PushWhileTestsAreRed(Project):
         self.assertTrue(denied(self.push()))
 
     def test_all_three_hooks_are_rendered_when_enforce_is_on(self):
-        for name in ("bash", "edit", "stop"):
-            self.hook(name, {"tool_name": "Bash", "tool_input": {"command": "ls"}})
+        self.assertEqual(self.push("ls"), "")
+        self.assertEqual(self.edit("README.md"), "")
+        self.assertEqual(self.stop(), "")
 
 
 class SourceEditWithoutApproval(Project):
@@ -159,23 +187,32 @@ class SourceEditWithoutApproval(Project):
         self.commit("approve")
 
     def test_a_source_edit_on_a_draft_spec_is_refused_by_every_edit_tool(self):
-        for tool in ("Edit", "Write", "MultiEdit"):
+        for tool, rel in (("Edit", "src/app.py"), ("Write", "src/app.py"), ("MultiEdit", "src/app.py"),
+                          ("NotebookEdit", "src/n.ipynb")):
             with self.subTest(tool):
-                self.assertTrue(denied(self.edit(tool=tool)))
+                self.assertTrue(denied(self.edit(rel, tool)))
 
     def test_documents_and_kit_files_are_never_refused(self):
         for rel in ("README.md", "specs/009-demo/plan.md", "docs/notes.txt", ".sdlc/config.json", ".claude/settings.json"):
             with self.subTest(rel):
                 self.assertEqual(self.edit(rel), "")
 
-    def test_an_approved_spec_allows_source_edits_until_a_document_changes(self):
-        self.approve()
-        self.assertEqual(sdlc("gate", "approved", self.d, "--spec", "009")[0], 0)
-        self.assertEqual(self.edit(), "")
-        self.write("specs/009-demo/plan.md", "# Plan\n\nchanged after approval\n")
-        self.commit("edit plan")
-        self.assertEqual(sdlc("gate", "approved", self.d, "--spec", "009")[0], 1)
-        self.assertTrue(denied(self.edit()))
+    def test_an_approved_spec_allows_source_edits_until_any_approved_document_changes(self):
+        for rel, text in (("specs/009-demo/spec.md", "\nA new requirement.\n"), ("specs/009-demo/plan.md", "\nchanged\n"),
+                          ("specs/009-demo/tasks.md", "- [ ] T002 more\n"), ("specs/009-demo/contracts/api.md", "\nv2\n")):
+            with self.subTest(rel):
+                self.setUp()
+                self.write("specs/009-demo/contracts/api.md", "# API\n")
+                self.commit("contract")
+                self.approve()
+                self.assertEqual(sdlc("gate", "approved", self.d, "--spec", "009")[0], 0)
+                self.assertEqual(self.edit(), "")
+                body = self.read(rel)
+                cut = body.find("## Progress log")  # the log is outside the digest on purpose: change the task list
+                self.write(rel, body[:cut] + text + body[cut:] if cut >= 0 else body + text)
+                self.commit("change after approval")
+                self.assertEqual(sdlc("gate", "approved", self.d, "--spec", "009")[0], 1)
+                self.assertTrue(denied(self.edit()))
 
     def test_a_spec_set_back_to_draft_is_not_approved(self):
         self.approve()
@@ -194,8 +231,8 @@ class SourceEditWithoutApproval(Project):
 class TickWithoutEvidence(Project):
     RULE = "Task ticked without evidence"
 
-    def tick(self, log=""):
-        self.write("specs/009-demo/tasks.md", "# Tasks\n\n- [x] T001 do it\n\n## Progress log\n\n" + log)
+    def tick(self, log="", tasks="- [x] T001 do it\n"):
+        self.write("specs/009-demo/tasks.md", "# Tasks\n\n" + tasks + "\n## Progress log\n\n" + log)
         return self.commit("tick")
 
     def test_a_tick_with_no_log_line_or_a_made_up_commit_is_reported_by_the_gate_and_warned_by_stop(self):
@@ -205,6 +242,16 @@ class TickWithoutEvidence(Project):
         self.tick("- 2026-11-06 `0000000` T001 done\n")
         self.assertEqual(sdlc("gate", "evidence-for-ticks", self.d, "--spec", "009")[0], 1)
         self.assertIn("ticked tasks without evidence", message(self.stop()))
+
+    def test_a_commit_logged_for_another_task_is_not_evidence(self):
+        both = "- [x] T001 do it\n- [x] T002 and this\n"
+        sha = self.tick(tasks=both)
+        self.tick("- 2026-11-06 `%s` T002 done\n" % sha, tasks=both)
+        code, out = sdlc("gate", "evidence-for-ticks", self.d, "--spec", "009")
+        self.assertEqual(code, 1, out)
+        self.assertIn("T001", out)
+        self.assertNotIn("T002:", out)
+        self.assertIn("T001", message(self.stop()))
 
     def test_stop_only_warns_it_never_refuses(self):
         self.tick()
@@ -231,7 +278,8 @@ def read_only_roles():
 class ReviewerAbleToWrite(Project):
     RULE = "Reviewer able to write"
     targets = "claude,copilot"
-    WRITERS = ("Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "edit", "execute")
+    CLAUDE_READ_ONLY = {"Read", "Grep", "Glob"}
+    COPILOT_READ_ONLY = {"read", "search"}
 
     def test_the_reviewers_are_among_the_read_only_roles(self):
         self.assertTrue({"reviewer", "security-reviewer"} <= set(read_only_roles()))
@@ -241,13 +289,15 @@ class ReviewerAbleToWrite(Project):
         self.assertIsNotNone(m, "%s has no tools line, so it would inherit every tool" % rel)
         return m.group(1)
 
-    def test_a_read_only_role_renders_without_a_write_or_execute_tool_for_both_hosts(self):
+    def test_a_read_only_role_renders_with_read_tools_only_for_both_hosts(self):
+        # An allow list, not a deny list: a new tool that writes, runs commands or delegates must not slip through.
         for name in read_only_roles():
-            for rel in (".claude/agents/sdlc-%s.md" % name, ".github/agents/sdlc-%s.agent.md" % name):
+            for rel, allowed in ((".claude/agents/sdlc-%s.md" % name, self.CLAUDE_READ_ONLY),
+                                 (".github/agents/sdlc-%s.agent.md" % name, self.COPILOT_READ_ONLY)):
                 with self.subTest(rel):
-                    tools = self.tools(rel)
-                    for writer in self.WRITERS:
-                        self.assertNotRegex(tools, r"\b%s\b" % writer, rel)
+                    tools = set(re.findall(r"[A-Za-z]+", self.tools(rel)))
+                    self.assertTrue(tools, rel)
+                    self.assertLessEqual(tools, allowed, rel)
 
     def test_a_full_access_role_keeps_its_tools(self):
         self.assertIn("edit", self.tools(".github/agents/sdlc-implementer.agent.md"))

@@ -1,6 +1,6 @@
 # Mini-spec: a "must never happen" test for every enforced rule (E1.7)
 
-Track: T2 · Status: draft · Owner: phong.ngo.vn · Created: 2026-11-05
+Track: T2 · Status: approved · Owner: phong.ngo.vn · Created: 2026-11-05
 
 <!-- Roadmap story E1.7, the last of wave 1; ADR-0003 decision 2 lists four rules (push on red, source edit without approval, tick without evidence, reviewer able to write). Specs 004 to 008 each mutation-checked their own code once, by hand, and the result sits in a progress log. This makes the check a file in the repository that anyone can re-run. No product code changes. -->
 
@@ -18,7 +18,9 @@ Each rule of ADR-0003 is enforced by up to three mechanisms (the gate command, t
 
 Verify: `python3 -B -m unittest tests.test_never -v`, `python3 -B tests/mutate_never.py` and `python3 bin/sdlc lint`
 
-## Open questions (they decide the shape)
+Red first: the mechanisms already exist, so the red evidence is the mutation script. Its first run caught 19 of 21 mutations; the two survivors (a record made on a dirty tree accepted, a spec set back to draft after approval accepted) each drove a new end-to-end test, and the second run caught 21 of 21. `tests/test_mutate_never.py` pins the script itself (a no-op mutation survives, a moved text or a red baseline is exit 2, every listed text still applies to the kit).
+
+## Decisions (2026-11-06, phong.ngo.vn accepted all four recommendations in chat; the track stays T2)
 
 1. **Is the mutation script part of the unit suite?** Recommended no: each mutation re-runs a test file, so the script takes about a minute and a half and would double the suite; it is run by hand before a release and its result is quoted in the PR. A small unit test covers only its no-op survivor case on a trivial fixture.
 2. **How do mutations apply to a copy?** Recommended: a table of (file, exact text to find, replacement) in the script; a text that is not found exactly once is a script error (exit 2), so a refactor that moves the code fails loudly instead of silently skipping a mutation.

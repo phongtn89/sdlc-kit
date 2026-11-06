@@ -50,6 +50,10 @@ class Script(unittest.TestCase):
                 with open(os.path.join(root, *rel.split("/")), encoding="utf-8") as f:
                     self.assertEqual(f.read().count(old), 1, "%s: %s" % (label, rel))
 
+    def test_the_readme_names_the_script(self):
+        with open(os.path.join(mutate_never.ROOT, "README.md"), encoding="utf-8") as f:
+            self.assertIn("python3 -B tests/mutate_never.py", f.read())
+
 
 if __name__ == "__main__":
     unittest.main()

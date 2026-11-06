@@ -1,4 +1,4 @@
-VERDICT: REJECTED
+VERDICT: APPROVED
 
 # Review: spec 009 must-never-happen tests (E1.7)
 
@@ -39,6 +39,18 @@ Left, from the reviewer's list of other survivors (low, fail-closed or outside t
 
 Product advisory, out of scope for this story (a follow-up): after approval, deleting `tasks.md` makes `gate approved` exit 2 and the edit hook allow with a note (the ADR's "never block on a guess"). A cheap way past the approval rule; consider denying when an approved spec's documents become unreadable.
 
-## Pass 3
+## Pass 3 on `552ce0b`: VERDICT: APPROVED
 
-Pending.
+N1 to N6 closed (the 11 mutations re-run: 11 of 11 caught); no new defect in the last commit (front-matter split, stricter `denied()`, enforce-off loop, the `failures=` regex on eight real summary lines, copy paths with a space). 19 fresh mutations against `tests.test_never` alone left four low survivors, each caught by an older unit file or outside the four rules, none a core mechanism that a realistic regression would slip through:
+
+| Id | Advisory | Note |
+|---|---|---|
+| P3-1 | An uppercase `[X]`, an indented or `*`-bulleted tick is not tried end to end | Caught by none of the older tests either; worth one test in a follow-up |
+| P3-2 | `exit` and `result` in a hand-made record are not tested separately | `sdlc verify` writes consistent records; follow-up |
+| P3-3 | A hash in a later `## ` section still counting as evidence is not tried | follow-up |
+| P3-4 | The branch rule is not exercised on `main` or an unnumbered branch | Killed by `test_hooks` |
+| A | A Stop hook refusing with `{"continue": false}` would pass the "only warns" test | Assert that `systemMessage` is the only top-level key; follow-up |
+
+The full 46-mutation run was done by the author (46 of 46 caught by a failing test, after the pass-2 fixes); the reviewer re-ran the 11 new ones only.
+
+Not covered: Windows or other shells, behaviour under load.

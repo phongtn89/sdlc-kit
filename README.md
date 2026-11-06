@@ -14,7 +14,7 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 
 | | |
 |---|---|
-| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order, `sdlc verify`, `sdlc gate`; opt-in enforcement hooks (spec 006); CI template workflow (spec 007), `sdlc budget` (spec 008) |
+| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order, `sdlc verify`, `sdlc gate`; opt-in enforcement hooks (spec 006); CI template workflow (spec 007), `sdlc budget` (spec 008), must-never-happen tests and mutation script (spec 009) |
 | State | Usable. Last checked 2026-11-03 on `main` after the spec 003 merge: `sdlc lint` is clean and 228 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code (first-class) and GitHub Copilot (rendered, not evaluated); see [Supported hosts](#supported-hosts) |
 | Requirements | Python 3.9+, stdlib only, no network |
@@ -223,5 +223,6 @@ python3 -m unittest discover -s tests -t .
 - Every skill follows the same sections: When to use, Inputs, Process, Rationalizations, Red flags, Verification, Principles applied. It stays at 200 lines or fewer; put detail in `references/`.
 - Shared docs are referenced only as `.sdlc/...`. Lint fails on a path that doesn't exist.
 - Bump `VERSION` for each release. `sdlc check` in a project reports `OUTDATED` when its lock is older.
+- Each "must never happen" rule of ADR-0003 has an end-to-end test class in `tests/test_never.py`; adding a rule to the ADR's table without one fails the suite. Before a release, run `python3 -B tests/mutate_never.py`: it removes each enforcement mechanism in a temporary copy of the kit and exits 1 if `tests.test_never` stays green on any of them (a few minutes, longer on a busy machine; it never writes the kit; `python3 -B tests/mutate_never.py <words>` re-runs only the mutations whose label contains one of them).
 - Lessons from projects arrive via `sdlc-retro` as proposals against this repo.
 - `evals/` holds scenario prompts with expected behaviour. When you change a skill, run its prompt against a scratch repo with `python3 evals/run.py <prompt-file> <scratch-repo> --out <transcript.jsonl>` (see `evals/scenarios.md`).

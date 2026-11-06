@@ -1316,6 +1316,19 @@ class AtomicWrite(unittest.TestCase):
         self.assertEqual(slurp(target), "x")
 
 
+class SpacedKitPath(unittest.TestCase):
+    def test_the_entry_runs_a_kit_installed_under_a_path_with_a_space(self):
+        import sdlc_hooks
+        with tempfile.TemporaryDirectory() as d:
+            kit = os.path.join(d, "My Projects", "sdlc kit", "bin")
+            os.makedirs(kit)
+            cli = os.path.join(kit, "sdlc")
+            with open(cli, "w") as f:
+                f.write("import sys\nprint('ran', sys.argv[1:])\n")
+            p = subprocess.run(["sh", "-c", sdlc_hooks.command(cli, "bash")], capture_output=True, text=True)
+            self.assertEqual((p.returncode, p.stdout.strip()), (0, "ran ['hook', 'bash']"), p.stdout + p.stderr)
+
+
 class Imports(unittest.TestCase):
     def test_only_stdlib_and_sibling_modules(self):
         path = os.path.join(ROOT, "bin", "sdlc_hooks.py")

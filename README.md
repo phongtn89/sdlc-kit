@@ -14,7 +14,7 @@ On top of these it keeps a few hard-won engineering rules (a decision ladder, a 
 
 | | |
 |---|---|
-| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order, `sdlc verify`, `sdlc gate`; opt-in enforcement hooks (spec 006); CI template workflow (spec 007), `sdlc budget` (spec 008) |
+| Version | **0.6.0** (see `VERSION`); unreleased changes on `main`: licence, router model-invocable, debug usage order, `sdlc verify`, `sdlc gate`; opt-in enforcement hooks (spec 006); CI template workflow (spec 007), `sdlc budget` (spec 008), must-never-happen tests and mutation script (spec 009) |
 | State | Usable. Last checked 2026-11-03 on `main` after the spec 003 merge: `sdlc lint` is clean and 228 tests pass. Install, check and uninstall are verified on a fresh repo. |
 | Targets | Claude Code (first-class) and GitHub Copilot (rendered, not evaluated); see [Supported hosts](#supported-hosts) |
 | Requirements | Python 3.9+, stdlib only, no network |

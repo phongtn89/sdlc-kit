@@ -1,6 +1,6 @@
 # Mini-spec: a "must never happen" test for every enforced rule (E1.7)
 
-Track: T2 · Status: approved · Owner: phong.ngo.vn · Created: 2026-11-05
+Track: T2 · Status: implemented · Owner: phong.ngo.vn · Created: 2026-11-05
 
 <!-- Roadmap story E1.7, the last of wave 1; ADR-0003 decision 2 lists four rules (push on red, source edit without approval, tick without evidence, reviewer able to write). Specs 004 to 008 each mutation-checked their own code once, by hand, and the result sits in a progress log. This makes the check a file in the repository that anyone can re-run. No product code changes. -->
 

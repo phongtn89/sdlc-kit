@@ -28,3 +28,7 @@ Commands tried, in order: (1) `echo hello` (2) `echo hello; echo second` (3) `ec
 ## Limits
 
 n = 1 per variant, one model, one Claude Code version. The front-matter `hooks:` block may need other syntax or a newer host; not pursued. Whether the host also sends `agent_type` for a sub-agent started by another sub-agent was not tried. `agent_type` equal to the agent's `name` was seen with a custom agent; the rendered `sdlc-reviewer` is assumed to behave the same and is part of the spec's live eval (SC-001).
+
+## Probe 3: the rendered roles (added 2026-11-07, closes the analyze finding A6)
+
+The kit installed with `sdlc install --targets claude` into a scratch project, a project-level `PreToolUse` logging hook (matcher `Read|Grep|Glob|Bash`), and a fresh `claude -p` asked to have `sdlc-reviewer` and then `sdlc-security-reviewer` read `README.md`. The hook log shows one call each: `agent_type` is `sdlc-reviewer` (tool `Read`, an `agent_id` set) and `sdlc-security-reviewer`. So `agent_type` equals the rendered `name:`; the spec's roles list is `sdlc-reviewer` and `sdlc-security-reviewer`. n = 1 each. Not tried: a sub-agent started by a sub-agent.

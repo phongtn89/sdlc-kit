@@ -27,11 +27,13 @@ Track: T3
 - A limit through the role's `tools:` line or a `hooks:` block in its front matter (both probed, neither works on this version)
 - Making the reviewer run `sdlc verify` or write the evidence record (the skill reads the record, it does not run it, spec 004)
 - Choosing the reviewer's model (E2.2)
+- Reading the commands from the base revision instead of the tree under review (see the README note: do not enable this for review of untrusted branches)
+- Windows and other non-POSIX shells (the hook entry and `verify` are POSIX only)
 
 ## Glossary terms used
 
 - **Read-only role**: a role whose source says `access: read-only`; rendered without any tool that writes, runs commands or delegates (spec 009, class `ReviewerAbleToWrite`).
-- **Check command**: a value of `commands.<name>` in `.sdlc/config.json` (test, lint, typecheck, build, integration).
+- **Check command**: the value of `commands.<name>` in `.sdlc/config.json` for a name `sdlc verify` runs (test, lint, typecheck, build, integration; the same set and nothing else).
 
 ## User scenarios
 
@@ -41,7 +43,7 @@ As a person asking for a review, I want the reviewer to run the project's test c
 
 **Independent test:** a fixture project with a failing test and a one-line fix; the reviewer is told "the test `test_x` fails, confirm it".
 
-1. **Given** `enforce` is on and `commands.test` is set, **When** the reviewer runs exactly that command, **Then** the hook allows it and the reviewer sees the output
+1. **Given** `enforce` is on and `commands.test` is set, **When** the reviewer runs exactly that command string from the project root, **Then** the hook allows it and the reviewer sees the output
 2. **Given** any other command (`git commit`, `rm`, `python3 -c ...`, the test command with a second command chained after it, or with a redirect), **When** the reviewer tries it, **Then** the hook refuses it with the reason, and the main session's own commands are not affected
 
 ### S2 — The reviewer still cannot write (P1)
@@ -59,11 +61,11 @@ As a Copilot user, I want no surprise, so the Copilot reviewer stays read and se
 
 ## Requirements
 
-- **FR-001**: The reviewing read-only roles (reviewer, security-reviewer) MUST render, for Claude Code, with the `Bash` tool added, only when `enforce` is true, the Claude target is on and at least one check command is configured. (S1)
-- **FR-002**: The kit's `bash` hook MUST, for a call whose `agent_type` is one of those roles, allow exactly the configured check commands, each compared as the whole command string, and refuse every other command with a reason that starts `sdlc: refused`; a command with a chain, a redirect or an extra argument is another command. A call with no `agent_type` is judged as before. (S1, S2)
+- **FR-001**: The reviewing read-only roles (reviewer, security-reviewer) MUST render, for Claude Code, with the `Bash` tool added, only when `enforce` is true, the Claude target is on, no `repos` is configured and at least one check command is configured, and only when the `bash` hook entry is going to be present and unedited in `.claude/settings.json` after the same install or update. (S1)
+- **FR-002**: The kit's `bash` hook MUST, for a call whose `agent_type` is one of those roles, allow exactly the configured check commands, each compared as the whole command string after removing whitespace around it (inner characters, including a newline, are never removed), and refuse every other command with a reason that starts `sdlc: refused`; a command with a chain, a redirect or an extra argument is another command. Only `tool_input.command` is compared, and a call that sets `dangerouslyDisableSandbox` to true is refused. A call with no `agent_type`, or one that is not a reviewing role, is judged as before. (S1, S2)
 - **FR-003**: A read-only role MUST still render without Write, Edit, MultiEdit, NotebookEdit or any agent tool; its only addition is `Bash`, under FR-001. (S2)
-- **FR-008**: A role source marks the roles that may get the limited `Bash` with `checks: true`, valid only with `access: read-only`; `sdlc lint` refuses `checks` on a full-access role or with a value other than `true` or `false`; the hook's list of roles equals the roles marked so. (S2)
-- **FR-009**: The reviewing roles MUST be rendered with `Bash` only when the `bash` hook entry is going to be present in `.claude/settings.json` after the same install or update (not when the settings file is skipped, not for a workspace config); the hook MUST refuse every `Bash` call of those roles when `enforce` is not true. (S1, S2)
+- **FR-008**: A role source marks the roles that may get the limited `Bash` with `checks: true`, valid only with `access: read-only`; `sdlc lint` refuses `checks` on a full-access role or with a value other than `true` or `false`; the hook's list of roles equals the roles of the kit's core and modules marked so (the check is `is True`). (S2)
+- **FR-009**: The hook MUST refuse every `Bash` call of a reviewing role when `enforce` is not true or `repos` is configured (the role file may carry `Bash` until the next `update`), judged before the hook's other gates, and MUST allow with a note, as spec 006 does, when there is no project, no lock or the config cannot be read. `sdlc check` MUST report a reviewing role's file whose `tools:` line has `Bash` while the `bash` hook entry is missing or edited (`DRIFT`, exit 1), and `update` MUST say `KEPT` for such a file it leaves alone. (S1, S2)
 - **FR-004**: With `enforce` off, no configured command, or for GitHub Copilot, a read-only role MUST render as today (no `Bash`). (S3)
 - **FR-005**: `sdlc update` MUST re-render the reviewer when `commands` change, and `sdlc check` MUST report the rendered file as modified only if it was edited by hand, as for any rendered file. (S1)
 - **FR-006**: The end-to-end test for the rule "Reviewer able to write" (spec 009) MUST keep failing when a read-only role gets any write, edit, delegate or unlimited command tool, and MUST pass with the limited `Bash`. (S2)
@@ -71,16 +73,17 @@ As a Copilot user, I want no surprise, so the Copilot reviewer stays read and se
 
 ## Non-functional
 
-- **NFR-001**: If the hook cannot read the configured commands or the input has an `agent_type` it does not recognise, it MUST fail as spec 006 does (allow with a note), never refuse on a guess; a refusal is only ever for a read-only reviewing role and a command that is not exactly a configured one.
+- **NFR-001**: If the config cannot be read (invalid JSON, an exception) the hook MUST fail as spec 006 does (allow with a note); an `agent_type` it does not recognise is the main session. A refusal is only ever for a reviewing role and a computed fact: `enforce` not true, `repos` present, no usable command, or a command that is not exactly a configured one. A readable config with no usable command is such a fact, not a guess.
 
 ## Success criteria
 
-- **SC-001**: In a live session on a fixture project, the reviewer reproduces a named failing test by running the configured command, and a write attempt of each kind (edit, shell redirect, another command) is refused by the host: 3 of 3 refusals and the reproduction in n = 3 runs — measured with `evals/run.py`, recorded in `evals/results/`.
-- **SC-002**: The mutation script of spec 009 catches the removal of each limit (the role check, the exact-match comparison, `Bash` added without `enforce`, a write tool added) — 100% of the new mutations.
+- **SC-001**: In a live session on a fixture project, the reviewer reproduces a named failing test by running the configured command, and a write attempt of each kind (an edit tool, a shell redirect, another command, the configured command with an added argument) is refused by the host: 4 of 4 refusals and the reproduction in n = 3 runs — measured with `evals/run.py`, recorded in `evals/results/`.
+- **SC-002**: The mutation script of spec 009 catches the removal of each limit (the role check, the exact-match comparison, `Bash` added without `enforce` or with a skipped settings entry, a write tool added) — 100% of the new mutations.
 
 ## Assumptions & dependencies
 
-- Assumption (verified 2026-11-07, `evals/results/reviewer-bash-probe.md`): a project-level `PreToolUse` hook receives `agent_type` for a sub-agent's calls and its deny binds for them. Not verified: the same for a sub-agent started by a sub-agent, and `agent_type` for the rendered `sdlc-reviewer` (covered by SC-001).
+- Assumption (verified 2026-11-07, `evals/results/reviewer-bash-probe.md`, probes 2 and 3): a project-level `PreToolUse` hook receives `agent_type` for a sub-agent's calls, equal to the rendered name (`sdlc-reviewer`, `sdlc-security-reviewer`), and its deny binds for them. Not verified: the same for a sub-agent started by a sub-agent. If the host stopped sending `agent_type`, the reviewer's calls would be judged as the main session's, so the HR1 re-check row pins the field.
+- Residual risk, stated in the README: the allowed commands run code from the tree under review (test scripts, a Makefile) and are read from that tree's `.sdlc/config.json`, so a branch that changes either gets its code run by the reviewer. Do not enable this for review of untrusted branches. The limit also exists only while the kit folder, the hook entry and `enforce` are intact (`sdlc check` reports a moved kit and an edited or missing entry).
 - Dependency: spec 009 (the rule's end-to-end test and the mutation script), spec 004 (`commands`).
 
 ## Clarifications

@@ -306,6 +306,94 @@ class ReviewerBash(Proj):
         s_["agent_type"] = "sdlc-reviewer"
         self.assertEqual(self.fire("stop", json.dumps(s_))[1].strip(), "")
 
+    def allowed(self, command):
+        return self.decision(self.call(command)).get("permissionDecision") == "allow"
+
+    def test_every_string_under_a_verify_name_is_allowed_and_nothing_else_is(self):
+        cmds = {"test": "run-test", "lint": "run-lint", "typecheck": "run-types", "build": "run-build",
+                "integration": "run-it", "deploy": "run-deploy", "format": "run-format"}
+        self.set_config(enforce=True, commands=cmds)
+        for name in ("test", "lint", "typecheck", "build", "integration"):
+            with self.subTest(name):
+                self.assertTrue(self.allowed(cmds[name]))
+        for name in ("deploy", "format"):
+            with self.subTest(name):
+                self.assertFalse(self.allowed(cmds[name]))  # not a name `sdlc verify` runs
+
+    def test_non_strings_and_blank_values_are_ignored(self):
+        self.set_config(enforce=True, commands={"test": 5, "lint": "   ", "typecheck": ["x"], "build": None,
+                                               "integration": "run-it"})
+        self.assertTrue(self.allowed("run-it"))
+        self.assertFalse(self.allowed("5"))
+        self.assertFalse(self.allowed(""))
+        self.assertFalse(self.allowed("   "))
+        reason = self.reason(self.call("x"))
+        self.assertIn("(integration)", reason)
+
+    def test_whitespace_around_the_whole_command_is_removed_and_nothing_else(self):
+        for wrap in ("{}", " {}", "{} ", "\t{}\t", "{}\n", "\n{}\n", "\r\n{}\r\n", "  {}  \n"):
+            with self.subTest(repr(wrap)):
+                self.assertTrue(self.allowed(wrap.format(self.TEST_COMMAND)))
+        self.set_config(enforce=True, commands={"test": "  run-test \n"})  # blanks in the config are stripped too
+        self.assertTrue(self.allowed("run-test"))
+
+    def test_a_chain_a_pipe_a_redirect_a_subshell_or_an_added_argument_is_another_command(self):
+        c = self.TEST_COMMAND
+        for command in (c + "; echo x", c + " && echo x", c + " || echo x", c + " | tee out", c + " > out.txt",
+                        c + " >> out.txt", c + " & ", "(" + c + ")", "$(" + c + ")", "`" + c + "`", c + " -v",
+                        c.replace(" ", "  ", 1), c.replace(" ", "\t", 1), c + "\necho x", c + "\n\nrm -rf x", "echo x\n" + c, "cd /tmp && " + c, "sudo " + c,
+                        "bash -c '" + c + "'", c.replace("python3", "python"), c.upper(), c + " # comment"):
+            with self.subTest(repr(command)):
+                self.assertFalse(self.allowed(command))
+                self.assertIn("configured check commands", self.reason(self.call(command)))
+
+    def test_no_usable_command_refuses_every_call_with_a_reason_that_says_so(self):
+        for commands in ({}, {"test": ""}, {"deploy": "run-deploy"}, "test", None, ["x"]):
+            with self.subTest(repr(commands)):
+                self.set_config(enforce=True, **({} if commands is None else {"commands": commands}))
+                self.assertIn("none is configured", self.reason(self.call()))
+                self.assertIn("none is configured", self.reason(self.call("git status")))
+
+    def test_the_reasons_name_at_most_five_commands_and_never_a_command_string(self):
+        self.set_config(enforce=True, commands={"test": "run-test", "lint": "run-lint", "typecheck": "run-types",
+                                               "build": "run-build", "integration": "run-it"})
+        reason = self.reason(self.call("x"))
+        self.assertIn("(build, integration, lint, test, typecheck)", reason)
+        for secret in ("run-test", "run-lint", "run-types", "run-build", "run-it"):
+            self.assertNotIn(secret, reason)
+
+    def test_a_configured_command_that_pushes_gets_the_push_decision(self):
+        self.set_config(enforce=True, commands={"test": "git push origin main"})
+        self.assertIn("sdlc verify", self.reason(self.call("git push origin main")))  # red: no record
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "config")
+        self.set_config(enforce=True, commands={"test": "git push origin main", "lint": "true"})
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "config again")
+        code, vout, verr = run("verify", self.d)  # `git push` itself fails in the fixture, so the record is red
+        self.assertEqual(code, 1, vout + verr)
+        self.assertIn("sdlc verify", self.reason(self.call("git push origin main")))
+
+    def test_a_configured_command_that_pushes_on_a_green_record_is_allowed_explicitly(self):
+        self.set_config(enforce=True, commands={"test": "true", "lint": "git push origin main"})
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "config")
+        # a record that is green at HEAD: write it the way `sdlc verify` would, with every command passing
+        head = subprocess.run(["git", "-C", self.d, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        os.makedirs(os.path.join(self.d, ".sdlc", "evidence"), exist_ok=True)
+        with open(os.path.join(self.d, ".sdlc", "evidence", "verify.json"), "w") as f:
+            json.dump({"version": 1, "revision": head, "dirty": False,
+                       "commands": [{"name": "test", "exit": 0, "result": "pass"}]}, f)
+        self.assertEqual(self.decision(self.call("git push origin main")).get("permissionDecision"), "allow")
+
+    def test_a_configured_command_with_an_unbalanced_quote_is_refused_for_the_role_only(self):
+        self.set_config(enforce=True, commands={"test": 'echo "x'})
+        reason = self.reason(self.call('echo "x'))
+        self.assertIn("could not tell whether the command pushes", reason)
+        self.assertNotIn("allowed", reason)
+        out = self.call('echo "x', agent=None)
+        self.assertIn("unbalanced quote", json.loads(out)["systemMessage"])  # the main session keeps spec 006's note
+
     def test_a_fixture_command_that_is_not_configured_is_not_allowed_by_name(self):
         self.write_config({"commands": {"test": "python3 -m unittest"}})
         git(self.d, "add", "-A")

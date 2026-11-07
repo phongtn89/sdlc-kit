@@ -477,9 +477,14 @@ def role_bash(root, cfg, data, role, safe_path):
     allowed = check_commands(cfg)
     if isinstance(cmd, str) and cmd.strip(" \t\r\n") in allowed.values():
         out = on_bash(root, cfg, data, safe_path)
-        return out or decision("allow", "sdlc: a configured check command")
+        if not out:
+            return decision("allow", "sdlc: a configured check command")
+        message = json.loads(out).get("systemMessage")
+        if message:  # a note means the push check could not decide: the main session is let through, a role is not
+            return refuse_role(role, ": " + message.replace("sdlc: ", "", 1).replace(", allowed", ""))
+        return out
     return deny("sdlc: refused: the %s may only run the project's configured check commands (%s)" % (
-        role.replace("sdlc-", "", 1), ", ".join(sorted(allowed)[:5]) or "none is configured"))
+        role.replace("sdlc-", "", 1), ", ".join(sorted(allowed)) or "none is configured"))
 
 
 def on_edit(root, cfg, data, safe_path):

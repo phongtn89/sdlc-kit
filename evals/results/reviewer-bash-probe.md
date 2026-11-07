@@ -32,3 +32,14 @@ n = 1 per variant, one model, one Claude Code version. The front-matter `hooks:`
 ## Probe 3: the rendered roles (added 2026-11-07, closes the analyze finding A6)
 
 The kit installed with `sdlc install --targets claude` into a scratch project, a project-level `PreToolUse` logging hook (matcher `Read|Grep|Glob|Bash`), and a fresh `claude -p` asked to have `sdlc-reviewer` and then `sdlc-security-reviewer` read `README.md`. The hook log shows one call each: `agent_type` is `sdlc-reviewer` (tool `Read`, an `agent_id` set) and `sdlc-security-reviewer`. So `agent_type` equals the rendered `name:`; the spec's roles list is `sdlc-reviewer` and `sdlc-security-reviewer`. n = 1 each. Not tried: a sub-agent started by a sub-agent.
+
+## Probe 4: does a silent hook let a command through? (added 2026-11-07, analyze pass 2, finding N2)
+
+A sub-agent `probe` (tools `Read, Bash`), a project-level `PreToolUse` hook for `agent_type == probe`, and a main session allowed only `Agent`. Commands: `python3 -c "print(40+2)"`, `touch made-by-agent.txt`, `python3 -m unittest --help`.
+
+| Hook output for the sub-agent's calls | Result |
+|---|---|
+| nothing (the spec 006 "allow") | all three stopped: "This command requires approval" (and the `touch` write rule); nothing ran |
+| `{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow", ...}}` | all three ran, `made-by-agent.txt` exists |
+
+**A silent hook leaves the host's permission pipeline in charge**: a configured test command is not read-only, so it would be refused in a headless run and prompted for in an interactive one. For the reviewer to run a configured command the hook must answer an explicit `allow`. n = 1 per variant; the default permission rules are the host's and may differ with a project's own allow rules.

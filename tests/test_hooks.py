@@ -173,6 +173,234 @@ class BashHook(Proj):
                 os.remove(marker)
 
 
+class ReviewerBash(Proj):
+    """Spec 010: a reviewing role's Bash calls are judged by `agent_type`; the main session is not."""
+
+    TEST_COMMAND = "python3 -m unittest discover -s tests -t ."
+    config = {"enforce": True, "commands": {"test": TEST_COMMAND}}
+
+    def call(self, command=None, agent="sdlc-reviewer", **extra):
+        d = json.loads(fixture("agent-bash.json", self.d))
+        if command is not None:
+            d["tool_input"]["command"] = command
+        if agent is None:
+            d.pop("agent_type")
+            d.pop("agent_id")
+        else:
+            d["agent_type"] = agent
+        d.update(extra)
+        rc, out, err = self.fire("bash", json.dumps(d))
+        self.assertEqual(rc, 0, out + err)
+        return out.strip()
+
+    def decision(self, out):
+        return (json.loads(out).get("hookSpecificOutput") or {}) if out else {}
+
+    def test_the_exact_configured_command_gets_an_explicit_allow(self):
+        d = self.decision(self.call())
+        self.assertEqual((d.get("hookEventName"), d.get("permissionDecision")), ("PreToolUse", "allow"), d)
+        self.assertTrue(d.get("permissionDecisionReason"))
+
+    def test_any_other_command_is_refused_with_the_reason(self):
+        reason = deny_reason(self.call("git status"))
+        self.assertIsNotNone(reason)
+        self.assertTrue(reason.startswith("sdlc: refused"), reason)
+        self.assertIn("configured check commands", reason)
+        self.assertIn("test", reason)  # the name of the configured command, never its string
+        self.assertNotIn(self.TEST_COMMAND, reason)
+
+    def test_the_main_session_is_judged_as_before(self):
+        self.assertEqual(self.call(agent=None), "")  # the same command, no agent_type: silence
+        self.assertEqual(self.call("git status", agent=None), "")
+        self.assertIsNotNone(deny_reason(self.call("git push origin main", agent=None)))  # a push on red still denied
+
+    def set_config(self, **cfg):
+        with open(os.path.join(self.d, ".sdlc", "config.json"), "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+
+    def reason(self, out):
+        r = deny_reason(out)
+        self.assertIsNotNone(r, out)
+        self.assertTrue(r.startswith("sdlc: refused"), r)
+        return r
+
+    def test_the_security_reviewer_is_judged_like_the_reviewer(self):
+        self.assertEqual(self.decision(self.call(agent="sdlc-security-reviewer")).get("permissionDecision"), "allow")
+        self.reason(self.call("git status", agent="sdlc-security-reviewer"))
+
+    def test_other_agents_and_odd_agent_types_are_the_main_session(self):
+        for agent in ("sdlc-explorer", "sdlc-planner", "sdlc-implementer", "", 7, ["sdlc-reviewer"], None):
+            with self.subTest(repr(agent)):
+                self.assertEqual(self.call("git status", agent=agent), "")
+                self.assertEqual(self.decision(self.call(agent=agent)), {})  # not allowed explicitly either
+                self.assertIsNotNone(deny_reason(self.call("git push origin main", agent=agent)))
+
+    def test_a_missing_agent_type_key_is_the_main_session(self):
+        d = json.loads(fixture("agent-bash.json", self.d))
+        d.pop("agent_type")
+        d["tool_input"]["command"] = "git status"
+        self.assertEqual(self.fire("bash", json.dumps(d))[1].strip(), "")
+
+    def test_enforce_not_exactly_true_refuses_the_role_and_not_the_main_session(self):
+        for cfg in ({"enforce": False}, {"enforce": "true"}, {"enforce": 1}, {}):
+            with self.subTest(repr(cfg)):
+                self.set_config(commands={"test": self.TEST_COMMAND}, **cfg)
+                self.assertIn("enforce", self.reason(self.call()))
+                self.assertEqual(self.call("git status", agent=None), "")
+
+    def test_a_workspace_config_refuses_the_role(self):
+        self.set_config(enforce=True, commands={"test": self.TEST_COMMAND}, repos={"a": {"path": "a"}})
+        self.assertIn("workspace", self.reason(self.call()))
+        self.assertIn("workspaces are not supported", json.loads(self.call("git status", agent=None))["systemMessage"])
+
+    def test_a_call_outside_the_sandbox_is_refused_for_the_role_only(self):
+        d = json.loads(fixture("agent-bash.json", self.d))
+        d["tool_input"]["dangerouslyDisableSandbox"] = True
+        self.assertIn("sandbox", self.reason(self.fire("bash", json.dumps(d))[1].strip()))
+        d.pop("agent_type")
+        self.assertEqual(self.fire("bash", json.dumps(d))[1].strip(), "")
+
+    def test_an_unreadable_config_refuses_the_role_and_only_notes_for_the_main_session(self):
+        for text in ("{not json", "[1, 2]", ""):
+            with self.subTest(text):
+                with open(os.path.join(self.d, ".sdlc", "config.json"), "w", encoding="utf-8") as f:
+                    f.write(text)
+                self.assertIn("could not be read", self.reason(self.call()))
+                out = self.call("git status", agent=None)
+                self.assertIn("systemMessage", json.loads(out) if out else {})
+
+    def test_no_lock_refuses_the_role_and_is_silent_for_the_main_session(self):
+        os.remove(os.path.join(self.d, ".sdlc", "lock.json"))
+        self.assertIn("could not be read", self.reason(self.call()))
+        self.assertEqual(self.call("git status", agent=None), "")
+
+    def test_an_exception_inside_the_gate_refuses_the_role(self):
+        import sdlc_hooks
+        def broken(root):
+            raise RuntimeError("boom")
+        raw = fixture("agent-bash.json", self.d)
+        out = sdlc_hooks.run("bash", raw, {"CLAUDE_PROJECT_DIR": self.d}, broken, None)
+        self.assertIn("could not be read", self.reason(out))
+        main = json.loads(raw)
+        main.pop("agent_type")
+        self.assertIn("RuntimeError", json.loads(sdlc_hooks.run("bash", json.dumps(main), {"CLAUDE_PROJECT_DIR": self.d}, broken, None))["systemMessage"])
+
+    def test_input_the_hook_cannot_read_but_that_names_a_role_is_refused(self):
+        import sdlc_hooks
+        env = {"CLAUDE_PROJECT_DIR": self.d}
+        big = '{"agent_type": "sdlc-reviewer", "pad": "' + "x" * sdlc_hooks.INPUT_CAP + '"}'
+        for label, raw in (("over the cap", big), ("not json", 'oops "agent_type": "sdlc-security-reviewer" oops'),
+                           ("not an object", '["agent_type", "x"] "agent_type":"sdlc-reviewer"')):
+            with self.subTest(label):
+                self.assertIn("could not be read", self.reason(sdlc_hooks.run("bash", raw, env, lambda r: {}, None)))
+        for label, raw in (("over the cap", '{"agent_type": "sdlc-explorer", "pad": "' + "x" * sdlc_hooks.INPUT_CAP + '"}'),
+                           ("not json", "oops"), ("a role name inside a value", 'oops "x": "sdlc-reviewer"')):
+            with self.subTest("no role, " + label):
+                self.assertIn("systemMessage", json.loads(sdlc_hooks.run("bash", raw, env, lambda r: {}, None)))
+
+    def test_the_edit_and_stop_hooks_do_not_judge_a_role_by_its_agent_type(self):
+        d = json.loads(fixture("edit-file.json", self.d))
+        d["agent_type"] = "sdlc-reviewer"
+        self.assertEqual(self.fire("edit", json.dumps(d))[1].strip(), "")
+        s_ = json.loads(fixture("stop.json", self.d))
+        s_["agent_type"] = "sdlc-reviewer"
+        self.assertEqual(self.fire("stop", json.dumps(s_))[1].strip(), "")
+
+    def allowed(self, command):
+        return self.decision(self.call(command)).get("permissionDecision") == "allow"
+
+    def test_every_string_under_a_verify_name_is_allowed_and_nothing_else_is(self):
+        cmds = {"test": "run-test", "lint": "run-lint", "typecheck": "run-types", "build": "run-build",
+                "integration": "run-it", "deploy": "run-deploy", "format": "run-format"}
+        self.set_config(enforce=True, commands=cmds)
+        for name in ("test", "lint", "typecheck", "build", "integration"):
+            with self.subTest(name):
+                self.assertTrue(self.allowed(cmds[name]))
+        for name in ("deploy", "format"):
+            with self.subTest(name):
+                self.assertFalse(self.allowed(cmds[name]))  # not a name `sdlc verify` runs
+
+    def test_non_strings_and_blank_values_are_ignored(self):
+        self.set_config(enforce=True, commands={"test": 5, "lint": "   ", "typecheck": ["x"], "build": None,
+                                               "integration": "run-it"})
+        self.assertTrue(self.allowed("run-it"))
+        self.assertFalse(self.allowed("5"))
+        self.assertFalse(self.allowed(""))
+        self.assertFalse(self.allowed("   "))
+        reason = self.reason(self.call("x"))
+        self.assertIn("(integration)", reason)
+
+    def test_whitespace_around_the_whole_command_is_removed_and_nothing_else(self):
+        for wrap in ("{}", " {}", "{} ", "\t{}\t", "{}\n", "\n{}\n", "\r\n{}\r\n", "  {}  \n"):
+            with self.subTest(repr(wrap)):
+                self.assertTrue(self.allowed(wrap.format(self.TEST_COMMAND)))
+        self.set_config(enforce=True, commands={"test": "  run-test \n"})  # blanks in the config are stripped too
+        self.assertTrue(self.allowed("run-test"))
+
+    def test_a_chain_a_pipe_a_redirect_a_subshell_or_an_added_argument_is_another_command(self):
+        c = self.TEST_COMMAND
+        for command in (c + "; echo x", c + " && echo x", c + " || echo x", c + " | tee out", c + " > out.txt",
+                        c + " >> out.txt", c + " & ", "(" + c + ")", "$(" + c + ")", "`" + c + "`", c + " -v",
+                        c.replace(" ", "  ", 1), c.replace(" ", "\t", 1), c + "\necho x", c + "\n\nrm -rf x", "echo x\n" + c, "cd /tmp && " + c, "sudo " + c,
+                        "bash -c '" + c + "'", c.replace("python3", "python"), c.upper(), c + " # comment"):
+            with self.subTest(repr(command)):
+                self.assertFalse(self.allowed(command))
+                self.assertIn("configured check commands", self.reason(self.call(command)))
+
+    def test_no_usable_command_refuses_every_call_with_a_reason_that_says_so(self):
+        for commands in ({}, {"test": ""}, {"deploy": "run-deploy"}, "test", None, ["x"]):
+            with self.subTest(repr(commands)):
+                self.set_config(enforce=True, **({} if commands is None else {"commands": commands}))
+                self.assertIn("none is configured", self.reason(self.call()))
+                self.assertIn("none is configured", self.reason(self.call("git status")))
+
+    def test_the_reasons_name_at_most_five_commands_and_never_a_command_string(self):
+        self.set_config(enforce=True, commands={"test": "run-test", "lint": "run-lint", "typecheck": "run-types",
+                                               "build": "run-build", "integration": "run-it"})
+        reason = self.reason(self.call("x"))
+        self.assertIn("(build, integration, lint, test, typecheck)", reason)
+        for secret in ("run-test", "run-lint", "run-types", "run-build", "run-it"):
+            self.assertNotIn(secret, reason)
+
+    def test_a_configured_command_that_pushes_gets_the_push_decision(self):
+        self.set_config(enforce=True, commands={"test": "git push origin main"})
+        self.assertIn("sdlc verify", self.reason(self.call("git push origin main")))  # red: no record
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "config")
+        self.set_config(enforce=True, commands={"test": "git push origin main", "lint": "true"})
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "config again")
+        code, vout, verr = run("verify", self.d)  # `git push` itself fails in the fixture, so the record is red
+        self.assertEqual(code, 1, vout + verr)
+        self.assertIn("sdlc verify", self.reason(self.call("git push origin main")))
+
+    def test_a_configured_command_that_pushes_on_a_green_record_is_allowed_explicitly(self):
+        self.set_config(enforce=True, commands={"test": "true", "lint": "git push origin main"})
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "config")
+        # a record that is green at HEAD: write it the way `sdlc verify` would, with every command passing
+        head = subprocess.run(["git", "-C", self.d, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        os.makedirs(os.path.join(self.d, ".sdlc", "evidence"), exist_ok=True)
+        with open(os.path.join(self.d, ".sdlc", "evidence", "verify.json"), "w") as f:
+            json.dump({"version": 1, "revision": head, "dirty": False,
+                       "commands": [{"name": "test", "exit": 0, "result": "pass"}]}, f)
+        self.assertEqual(self.decision(self.call("git push origin main")).get("permissionDecision"), "allow")
+
+    def test_a_configured_command_with_an_unbalanced_quote_is_refused_for_the_role_only(self):
+        self.set_config(enforce=True, commands={"test": 'echo "x'})
+        reason = self.reason(self.call('echo "x'))
+        self.assertIn("could not tell whether the command pushes", reason)
+        self.assertNotIn("allowed", reason)
+        out = self.call('echo "x', agent=None)
+        self.assertIn("unbalanced quote", json.loads(out)["systemMessage"])  # the main session keeps spec 006's note
+
+    def test_a_fixture_command_that_is_not_configured_is_not_allowed_by_name(self):
+        self.write_config({"commands": {"test": "python3 -m unittest"}})
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "other command")
+        self.assertIsNotNone(deny_reason(self.call()))
+
+
 class Parse(unittest.TestCase):
     MATCH = [
         "git push", "git push origin main", "a && git push", "a; git push", "a | git push", "a\ngit push",
@@ -1314,6 +1542,34 @@ class AtomicWrite(unittest.TestCase):
         target = os.path.join(d, "a", "b.json")
         sdlc_hooks.write_atomic(target, b"x")
         self.assertEqual(slurp(target), "x")
+
+
+class CheckRoles(unittest.TestCase):
+    """The hook's list of reviewing roles is the roles whose source says `checks: true` (spec 010, FR-008)."""
+
+    def marked_roles(self):
+        cli = load_cli()
+        names = set()
+        mods = os.path.join(ROOT, "modules")
+        modules = sorted(m for m in os.listdir(mods) if os.path.isdir(os.path.join(mods, m)))
+        for r, role in cli.load_kit(ROOT, modules)["roles"].items():
+            if role["fm"].get("checks") is True:
+                names.add("sdlc-" + r)
+        return names
+
+    def test_the_hooks_list_equals_the_marked_roles_of_the_core_and_every_module(self):
+        import sdlc_hooks
+        self.assertEqual(set(sdlc_hooks.CHECK_ROLES), self.marked_roles())
+
+    def test_the_marked_roles_are_the_reviewer_and_the_security_reviewer_and_read_only(self):
+        self.assertEqual(self.marked_roles(), {"sdlc-reviewer", "sdlc-security-reviewer"})
+        cli = load_cli()
+        roles = cli.load_kit(ROOT, [])["roles"]
+        for r in ("reviewer", "security-reviewer"):
+            self.assertEqual(roles[r]["fm"].get("access"), "read-only")
+            self.assertIs(roles[r]["fm"].get("checks"), True)
+        for r in ("explorer", "planner", "implementer"):
+            self.assertIsNot(roles[r]["fm"].get("checks"), True)
 
 
 class SpacedKitPath(unittest.TestCase):

@@ -2,6 +2,7 @@
 name: reviewer
 description: "Independent read-only review for correctness, compatibility, tests, maintainability and spec traceability. Use after implementation or on a PR to get an APPROVED or REJECTED verdict."
 access: read-only
+checks: true
 ---
 # Reviewer
 

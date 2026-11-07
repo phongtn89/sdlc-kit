@@ -173,6 +173,54 @@ class BashHook(Proj):
                 os.remove(marker)
 
 
+class ReviewerBash(Proj):
+    """Spec 010: a reviewing role's Bash calls are judged by `agent_type`; the main session is not."""
+
+    TEST_COMMAND = "python3 -m unittest discover -s tests -t ."
+    config = {"enforce": True, "commands": {"test": TEST_COMMAND}}
+
+    def call(self, command=None, agent="sdlc-reviewer", **extra):
+        d = json.loads(fixture("agent-bash.json", self.d))
+        if command is not None:
+            d["tool_input"]["command"] = command
+        if agent is None:
+            d.pop("agent_type")
+            d.pop("agent_id")
+        else:
+            d["agent_type"] = agent
+        d.update(extra)
+        rc, out, err = self.fire("bash", json.dumps(d))
+        self.assertEqual(rc, 0, out + err)
+        return out.strip()
+
+    def decision(self, out):
+        return (json.loads(out).get("hookSpecificOutput") or {}) if out else {}
+
+    def test_the_exact_configured_command_gets_an_explicit_allow(self):
+        d = self.decision(self.call())
+        self.assertEqual((d.get("hookEventName"), d.get("permissionDecision")), ("PreToolUse", "allow"), d)
+        self.assertTrue(d.get("permissionDecisionReason"))
+
+    def test_any_other_command_is_refused_with_the_reason(self):
+        reason = deny_reason(self.call("git status"))
+        self.assertIsNotNone(reason)
+        self.assertTrue(reason.startswith("sdlc: refused"), reason)
+        self.assertIn("configured check commands", reason)
+        self.assertIn("test", reason)  # the name of the configured command, never its string
+        self.assertNotIn(self.TEST_COMMAND, reason)
+
+    def test_the_main_session_is_judged_as_before(self):
+        self.assertEqual(self.call(agent=None), "")  # the same command, no agent_type: silence
+        self.assertEqual(self.call("git status", agent=None), "")
+        self.assertIsNotNone(deny_reason(self.call("git push origin main", agent=None)))  # a push on red still denied
+
+    def test_a_fixture_command_that_is_not_configured_is_not_allowed_by_name(self):
+        self.write_config({"commands": {"test": "python3 -m unittest"}})
+        git(self.d, "add", "-A")
+        git(self.d, "commit", "-q", "-m", "other command")
+        self.assertIsNotNone(deny_reason(self.call()))
+
+
 class Parse(unittest.TestCase):
     MATCH = [
         "git push", "git push origin main", "a && git push", "a; git push", "a | git push", "a\ngit push",

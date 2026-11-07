@@ -236,9 +236,14 @@ def drift(text, lock):
 
 # ---------------------------------------------------------------- runtime
 
-def deny(reason):
-    return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+def decision(kind, reason):
+    """A PreToolUse answer: `allow` (the host asks nothing more) or `deny` (the host refuses and shows the reason)."""
+    return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": kind,
                                               "permissionDecisionReason": reason}})
+
+
+def deny(reason):
+    return decision("deny", reason)
 
 
 def note(text):
@@ -413,6 +418,37 @@ def on_bash(root, cfg, data, safe_path):
     return deny(reason)
 
 
+# The roles whose source says `checks: true` (spec 010): read-only reviewers that may run the project's check commands.
+CHECK_ROLES = ("sdlc-reviewer", "sdlc-security-reviewer")
+
+
+def check_role(data):
+    """The reviewing role making this Bash call (the host sets `agent_type`), else None: the main session."""
+    role = data.get("agent_type")
+    return role if isinstance(role, str) and role in CHECK_ROLES else None
+
+
+def check_commands(cfg):
+    """{name: command string} of the usable configured check commands: the names `sdlc verify` runs."""
+    commands = cfg.get("commands")
+    if not isinstance(commands, dict):
+        return {}
+    return {k: commands[k].strip(" \t\r\n") for k in sdlc_verify.ORDER
+            if isinstance(commands.get(k), str) and commands[k].strip(" \t\r\n")}
+
+
+def role_bash(root, cfg, data, role, safe_path):
+    """A reviewing role's Bash call: only an exact configured check command is allowed, and said so explicitly,
+    because a silent hook leaves the host's permission rules in charge and a test command is not read-only."""
+    cmd = (data.get("tool_input") or {}).get("command")
+    allowed = check_commands(cfg)
+    if isinstance(cmd, str) and cmd.strip(" \t\r\n") in allowed.values():
+        out = on_bash(root, cfg, data, safe_path)
+        return out or decision("allow", "sdlc: a configured check command")
+    return deny("sdlc: refused: the %s may only run the project's configured check commands (%s)" % (
+        role.replace("sdlc-", "", 1), ", ".join(sorted(allowed)[:5]) or "none is configured"))
+
+
 def on_edit(root, cfg, data, safe_path):
     tool_input = data.get("tool_input")
     tool_input = tool_input if isinstance(tool_input, dict) else {}
@@ -473,6 +509,9 @@ def run(name, raw, env, read_config, safe_path):
         if root is None:
             return ""
         cfg = read_config(root)
+        role = check_role(data) if name == "bash" and data.get("tool_name") == "Bash" else None
+        if role:  # before the gates below, which return early, so a role file's Bash is never left unchecked
+            return role_bash(root, cfg, data, role, safe_path)
         if cfg.get("enforce") is not True:
             return ""
         if "repos" in cfg:  # the stop hook fires every turn: silent

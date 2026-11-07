@@ -18,10 +18,13 @@ Track: T3
 
 **Why now:** Wave 1 made the gates and hooks real; the reviewer is the one role still working on trust. ADR-0003 already names this as the follow-up (E2.1) and allows it only when the role stays unable to write.
 
+**What the probe found (2026-11-07, `evals/results/reviewer-bash-probe.md`):** a `Bash(<pattern>)` entry in a sub-agent's `tools:` line does not limit or grant anything on Claude Code 2.1.316, so the first design (FR-001 as drafted) does not work. A project-level `PreToolUse` hook, by contrast, receives `agent_type` (the sub-agent's name) for every call a sub-agent makes, and its deny binds for that sub-agent only. This spec therefore uses the hook mechanism of spec 006: it needs `enforce`, and it is Claude Code only.
+
 ## Out of scope
 
 - Any other command for a read-only role (`git`, a shell, an editor): only the project's configured `commands`
 - GitHub Copilot: its tool list has no way to limit a command, so its read-only roles stay `read` and `search` only
+- A limit through the role's `tools:` line or a `hooks:` block in its front matter (both probed, neither works on this version)
 - Making the reviewer run `sdlc verify` or write the evidence record (the skill reads the record, it does not run it, spec 004)
 - Choosing the reviewer's model (E2.2)
 
@@ -38,8 +41,8 @@ As a person asking for a review, I want the reviewer to run the project's test c
 
 **Independent test:** a fixture project with a failing test and a one-line fix; the reviewer is told "the test `test_x` fails, confirm it".
 
-1. **Given** the project's `commands.test` is set, **When** the rendered reviewer runs exactly that command, **Then** the host allows it and the reviewer sees the output
-2. **Given** any other command (`git commit`, `rm`, `python3 -c ...`, or the test command with a second command chained after it), **When** the reviewer tries it, **Then** the host refuses it
+1. **Given** `enforce` is on and `commands.test` is set, **When** the reviewer runs exactly that command, **Then** the hook allows it and the reviewer sees the output
+2. **Given** any other command (`git commit`, `rm`, `python3 -c ...`, the test command with a second command chained after it, or with a redirect), **When** the reviewer tries it, **Then** the hook refuses it with the reason, and the main session's own commands are not affected
 
 ### S2 — The reviewer still cannot write (P1)
 
@@ -56,26 +59,26 @@ As a Copilot user, I want no surprise, so the Copilot reviewer stays read and se
 
 ## Requirements
 
-- **FR-001**: A read-only role MUST render, for Claude Code, with `Bash` limited to the project's configured check commands, and only when at least one is configured. (S1)
-- **FR-002**: The limit MUST name each configured command in full, so a different command, or the same command followed by another, is not allowed. (S1)
-- **FR-003**: A read-only role MUST still render without Write, Edit, MultiEdit, NotebookEdit, any agent tool, or a `Bash` that is not limited as in FR-001. (S2)
-- **FR-004**: With no configured command, or for GitHub Copilot, a read-only role MUST render as today. (S3)
+- **FR-001**: The reviewing read-only roles (reviewer, security-reviewer) MUST render, for Claude Code, with the `Bash` tool added, only when `enforce` is true, the Claude target is on and at least one check command is configured. (S1)
+- **FR-002**: The kit's `bash` hook MUST, for a call whose `agent_type` is one of those roles, allow exactly the configured check commands, each compared as the whole command string, and refuse every other command with a reason that starts `sdlc: refused`; a command with a chain, a redirect or an extra argument is another command. A call with no `agent_type` is judged as before. (S1, S2)
+- **FR-003**: A read-only role MUST still render without Write, Edit, MultiEdit, NotebookEdit or any agent tool; its only addition is `Bash`, under FR-001. (S2)
+- **FR-004**: With `enforce` off, no configured command, or for GitHub Copilot, a read-only role MUST render as today (no `Bash`). (S3)
 - **FR-005**: `sdlc update` MUST re-render the reviewer when `commands` change, and `sdlc check` MUST report the rendered file as modified only if it was edited by hand, as for any rendered file. (S1)
 - **FR-006**: The end-to-end test for the rule "Reviewer able to write" (spec 009) MUST keep failing when a read-only role gets any write, edit, delegate or unlimited command tool, and MUST pass with the limited `Bash`. (S2)
 - **FR-007**: The README and the reviewer role text MUST say what the reviewer may run, that the project's own commands are trusted not to write, and that a run does not replace `sdlc verify`. (S2)
 
 ## Non-functional
 
-- **NFR-001**: A command in `commands` with a character the limit's syntax gives a meaning to (a wildcard, a quote, a newline) MUST be refused at render time with a one-line message and the role rendered without `Bash`, never with a looser limit.
+- **NFR-001**: If the hook cannot read the configured commands or the input has an `agent_type` it does not recognise, it MUST fail as spec 006 does (allow with a note), never refuse on a guess; a refusal is only ever for a read-only reviewing role and a command that is not exactly a configured one.
 
 ## Success criteria
 
 - **SC-001**: In a live session on a fixture project, the reviewer reproduces a named failing test by running the configured command, and a write attempt of each kind (edit, shell redirect, another command) is refused by the host: 3 of 3 refusals and the reproduction in n = 3 runs — measured with `evals/run.py`, recorded in `evals/results/`.
-- **SC-002**: The mutation script of spec 009 catches the removal of each limit (an unlimited `Bash`, a prefix instead of the full command, a write tool added) — 100% of the new mutations.
+- **SC-002**: The mutation script of spec 009 catches the removal of each limit (the role check, the exact-match comparison, `Bash` added without `enforce`, a write tool added) — 100% of the new mutations.
 
 ## Assumptions & dependencies
 
-- Assumption (UNVERIFIED, decides the design): a Claude Code sub-agent's `tools:` line accepts `Bash(<pattern>)` entries that the host enforces. If it does not, FR-001 needs another mechanism (see Open questions).
+- Assumption (verified 2026-11-07, `evals/results/reviewer-bash-probe.md`): a project-level `PreToolUse` hook receives `agent_type` for a sub-agent's calls and its deny binds for them. Not verified: the same for a sub-agent started by a sub-agent, and `agent_type` for the rendered `sdlc-reviewer` (covered by SC-001).
 - Dependency: spec 009 (the rule's end-to-end test and the mutation script), spec 004 (`commands`).
 
 ## Clarifications
@@ -86,6 +89,6 @@ As a Copilot user, I want no surprise, so the Copilot reviewer stays read and se
 
 ## Open questions
 
-- [NEEDS CLARIFICATION: does a sub-agent's `tools: Bash(...)` limit really bind, with what pattern syntax (prefix with `:*`, exact), and does the host refuse a chained second command? — blocks FR-001, FR-002 — owner: phong.ngo.vn, settled by a one-hour live probe with `claude -p` before planning]
-- [NEEDS CLARIFICATION: if the limit cannot be exact (prefix only), is a prefix of the full configured command acceptable, given `cmd; other` could then pass? The alternative is a role-scoped `PreToolUse` hook, which depends on the host telling the hook which agent called — blocks FR-002 — owner: phong.ngo.vn]
+- [NEEDS CLARIFICATION: is a hook-based limit, which exists only with `enforce` on and only for Claude Code, acceptable for this story? (recommended yes: it is level 3 of the ladder, as the other hooks, and without `enforce` the reviewer stays read-only as today) — blocks FR-001 — owner: phong.ngo.vn]
+- [NEEDS CLARIFICATION: exact match of the whole configured command string, so a reviewer cannot add an argument such as a test filter (recommended, since the string is what `sdlc verify` runs); or also allow extra arguments after it? — blocks FR-002 — owner: phong.ngo.vn]
 - [NEEDS CLARIFICATION: should the security-reviewer get the same limited `Bash`, or only the reviewer? (recommended: both read-only roles that review, not the explorer and planner) — blocks FR-001 — owner: phong.ngo.vn]

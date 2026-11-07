@@ -62,6 +62,8 @@ As a Copilot user, I want no surprise, so the Copilot reviewer stays read and se
 - **FR-001**: The reviewing read-only roles (reviewer, security-reviewer) MUST render, for Claude Code, with the `Bash` tool added, only when `enforce` is true, the Claude target is on and at least one check command is configured. (S1)
 - **FR-002**: The kit's `bash` hook MUST, for a call whose `agent_type` is one of those roles, allow exactly the configured check commands, each compared as the whole command string, and refuse every other command with a reason that starts `sdlc: refused`; a command with a chain, a redirect or an extra argument is another command. A call with no `agent_type` is judged as before. (S1, S2)
 - **FR-003**: A read-only role MUST still render without Write, Edit, MultiEdit, NotebookEdit or any agent tool; its only addition is `Bash`, under FR-001. (S2)
+- **FR-008**: A role source marks the roles that may get the limited `Bash` with `checks: true`, valid only with `access: read-only`; `sdlc lint` refuses `checks` on a full-access role or with a value other than `true` or `false`; the hook's list of roles equals the roles marked so. (S2)
+- **FR-009**: The reviewing roles MUST be rendered with `Bash` only when the `bash` hook entry is going to be present in `.claude/settings.json` after the same install or update (not when the settings file is skipped, not for a workspace config); the hook MUST refuse every `Bash` call of those roles when `enforce` is not true. (S1, S2)
 - **FR-004**: With `enforce` off, no configured command, or for GitHub Copilot, a read-only role MUST render as today (no `Bash`). (S3)
 - **FR-005**: `sdlc update` MUST re-render the reviewer when `commands` change, and `sdlc check` MUST report the rendered file as modified only if it was edited by hand, as for any rendered file. (S1)
 - **FR-006**: The end-to-end test for the rule "Reviewer able to write" (spec 009) MUST keep failing when a read-only role gets any write, edit, delegate or unlimited command tool, and MUST pass with the limited `Bash`. (S2)
@@ -85,10 +87,11 @@ As a Copilot user, I want no surprise, so the Copilot reviewer stays read and se
 
 ### Session 2026-11-07
 
-(none yet)
+- Q: Is a hook-based limit (needs `enforce` and Claude Code) acceptable? → A: yes; without `enforce` the reviewer stays read-only as today (phong.ngo.vn, in chat)
+- Q: Exact match of the whole configured command, or extra arguments allowed? → A: exact match of the whole string; a test filter or any added argument is another command (phong.ngo.vn, in chat)
+- Q: Which roles get the limited `Bash`? → A: the reviewer and the security-reviewer, not the explorer and planner (phong.ngo.vn, in chat)
+- Decided while writing the plan, from the probe's limits: the hook refuses every `Bash` call of those roles when `enforce` is no longer true (the role file may still carry `Bash` until `update`), and the role is only rendered with `Bash` when the bash hook entry is really going to be in `.claude/settings.json` (not when the file is skipped, or for a workspace config).
 
 ## Open questions
 
-- [NEEDS CLARIFICATION: is a hook-based limit, which exists only with `enforce` on and only for Claude Code, acceptable for this story? (recommended yes: it is level 3 of the ladder, as the other hooks, and without `enforce` the reviewer stays read-only as today) — blocks FR-001 — owner: phong.ngo.vn]
-- [NEEDS CLARIFICATION: exact match of the whole configured command string, so a reviewer cannot add an argument such as a test filter (recommended, since the string is what `sdlc verify` runs); or also allow extra arguments after it? — blocks FR-002 — owner: phong.ngo.vn]
-- [NEEDS CLARIFICATION: should the security-reviewer get the same limited `Bash`, or only the reviewer? (recommended: both read-only roles that review, not the explorer and planner) — blocks FR-001 — owner: phong.ngo.vn]
+None.

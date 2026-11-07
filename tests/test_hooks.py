@@ -1544,6 +1544,34 @@ class AtomicWrite(unittest.TestCase):
         self.assertEqual(slurp(target), "x")
 
 
+class CheckRoles(unittest.TestCase):
+    """The hook's list of reviewing roles is the roles whose source says `checks: true` (spec 010, FR-008)."""
+
+    def marked_roles(self):
+        cli = load_cli()
+        names = set()
+        mods = os.path.join(ROOT, "modules")
+        modules = sorted(m for m in os.listdir(mods) if os.path.isdir(os.path.join(mods, m)))
+        for r, role in cli.load_kit(ROOT, modules)["roles"].items():
+            if role["fm"].get("checks") is True:
+                names.add("sdlc-" + r)
+        return names
+
+    def test_the_hooks_list_equals_the_marked_roles_of_the_core_and_every_module(self):
+        import sdlc_hooks
+        self.assertEqual(set(sdlc_hooks.CHECK_ROLES), self.marked_roles())
+
+    def test_the_marked_roles_are_the_reviewer_and_the_security_reviewer_and_read_only(self):
+        self.assertEqual(self.marked_roles(), {"sdlc-reviewer", "sdlc-security-reviewer"})
+        cli = load_cli()
+        roles = cli.load_kit(ROOT, [])["roles"]
+        for r in ("reviewer", "security-reviewer"):
+            self.assertEqual(roles[r]["fm"].get("access"), "read-only")
+            self.assertIs(roles[r]["fm"].get("checks"), True)
+        for r in ("explorer", "planner", "implementer"):
+            self.assertIsNot(roles[r]["fm"].get("checks"), True)
+
+
 class SpacedKitPath(unittest.TestCase):
     def test_the_entry_runs_a_kit_installed_under_a_path_with_a_space(self):
         import sdlc_hooks

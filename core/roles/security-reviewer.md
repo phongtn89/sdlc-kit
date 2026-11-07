@@ -2,6 +2,7 @@
 name: security-reviewer
 description: "Deep read-only security and production-risk review. Use when a change touches authentication, authorization, tenant isolation, secrets, infrastructure, CI, dependencies or other production risk."
 access: read-only
+checks: true
 ---
 # Security reviewer
 

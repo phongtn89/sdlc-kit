@@ -22,7 +22,7 @@ TRACKS = [
 ]
 SKILL_KEYS = {"name", "description", "argument-hint", "user-invocable", "disable-model-invocation"}
 SKILL_BOOLS = {"user-invocable", "disable-model-invocation"}
-ROLE_KEYS = {"name", "description", "access"}
+ROLE_KEYS = {"name", "description", "access", "checks"}
 SKILL_SECTIONS = ["## When to use", "## Process", "## Rationalizations", "## Red flags", "## Verification"]
 SHARED_DIRS = ["checklists", "templates"]
 
@@ -1006,6 +1006,11 @@ def cmd_lint(a, kit):
                     errors.append("%s: description required" % label)
                 if fm.get("access") not in ("read-only", "full"):
                     errors.append("%s: access must be read-only or full" % label)
+                if "checks" in fm:  # spec 010: a read-only reviewer that may run the project's check commands
+                    if fm["checks"] is not True and fm["checks"] is not False:
+                        errors.append("%s: checks must be true or false" % label)
+                    elif fm.get("access") != "read-only":
+                        errors.append("%s: checks is only valid on a read-only role" % label)
                 lint_refs(kit, text, label, errors, paths)
     for e in errors:
         print("ERROR " + e)

@@ -1164,6 +1164,37 @@ class LintTests(Base):
         self.assertIn("must equal file stem", out)
         self.assertIn("access must be", out)
 
+    def fresh(self, tag):
+        k = os.path.join(self._tmp.name, "k-" + re.sub(r"\W", "_", tag))
+        shutil.copytree(FIXKIT, k)
+        return k
+
+    def test_a_checks_key_is_valid_on_a_read_only_role_as_true_or_false(self):
+        for value in ("true", "false"):
+            with self.subTest(value):
+                k = self.fresh(value)
+                self.sub(os.path.join(k, "core", "roles", "explorer.md"), "access: read-only", "access: read-only\nchecks: " + value)
+                code, out = self.lint(k)
+                self.assertEqual(code, 0, out)
+
+    def test_a_checks_key_is_refused_on_a_full_access_role(self):
+        for value in ("true", "false"):
+            with self.subTest(value):
+                k = self.fresh(value)
+                self.sub(os.path.join(k, "core", "roles", "implementer.md"), "access: full", "access: full\nchecks: " + value)
+                code, out = self.lint(k)
+                self.assertEqual(code, 1, out)
+                self.assertIn("checks is only valid on a read-only role", out)
+
+    def test_a_checks_value_other_than_true_or_false_is_refused(self):
+        for value in ("yes", '"true"', "1", "maybe"):
+            with self.subTest(value):
+                k = self.fresh(value)
+                self.sub(os.path.join(k, "core", "roles", "explorer.md"), "access: read-only", "access: read-only\nchecks: " + value)
+                code, out = self.lint(k)
+                self.assertEqual(code, 1, out)
+                self.assertIn("checks must be true or false", out)
+
     def test_missing_sdlc_reference(self):
         k = self.kit()
         self.sub(self.sk(k), "`.sdlc/config.json`", "`.sdlc/templates/nope.md`")

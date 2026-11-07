@@ -1,6 +1,6 @@
 # Tasks: Reviewer can run the project's check commands
 
-Inputs: [spec.md](spec.md), [plan.md](plan.md) · Status: draft · Created: 2026-11-07 · Branch: `feat/010-reviewer-checks`
+Inputs: [spec.md](spec.md), [plan.md](plan.md) · Status: approved · Created: 2026-11-07 · Branch: `feat/010-reviewer-checks`
 
 Verify (kit root):
 - Narrow: `python3 -B -m unittest tests.test_hooks -v` (helpers in `tests/test_hooks.py`, 30 s timeout per call)
@@ -36,7 +36,7 @@ Every task keeps the full suite green at its tick (`python3 -B -m unittest disco
 
 ## Human steps
 
-- [ ] H1 Approve implementation after `sdlc-analyze` (the T3 gate); recorded with `sdlc gate approve --by <name>` — owner: phong.ngo.vn — T001 waits for it
+- [x] H1 Approve implementation after `sdlc-analyze` (the T3 gate); recorded with `sdlc gate approve --by <name>` — owner: phong.ngo.vn — T001 waits for it
 - [ ] H2 Approve merge (`sdlc-ship`; merges need explicit approval) — owner: phong.ngo.vn
 
 ## Progress log
@@ -45,3 +45,4 @@ Every task keeps the full suite green at its tick (`python3 -B -m unittest disco
 - 2026-11-07 `0cd7724` — analyze pass 1 (NOT READY: A1, A2 high; A3 to A11 medium): applied. The role gate moves into `run()` before the `enforce` gate and also refuses on `repos`; `check` and `update` report a role file with `Bash` and no live hook; unreadable config allows, no usable command denies; the allowed commands are the keys `verify` runs; the render verdict is the bash entry's hash; tasks split and reordered (the test and mutation updates sit with the change that breaks them), the hand mutation task dropped; role and skill text made conditional; the rendered roles' `agent_type` probed (probe 3 of `evals/results/reviewer-bash-probe.md`); residual risks added to spec, plan and docs tasks.
 - 2026-11-07 `7e85994` — analyze pass 2 (NOT READY: N1 high; N2 to N5 medium): applied. The render verdict is derived from the settings text the run leaves behind, by group hash, not from the lock (a skipped edited entry keeps a matching lock hash); the hook answers an explicit `allow` for a configured command (probe 4: a silent hook leaves the host's permission rules in charge, `python3 -m unittest --help` stopped at approval); a reviewing role fails closed on an unreadable config or an exception; the end-to-end tests for the skipped entry and `enforce` off sit in T009; the role gate must not repeat the `enforce` text the mutations expect once; every task ticks with a green full suite; T005, T008 and the old T008 split into T005/T006, T009/T010; `update` prints the existing SKIP plus a NOTE; a strip of spaces, tabs and newlines only; ADR addendum instead of an edit; residual risks added. Tasks now T001 to T015.
 - 2026-11-07 `21e78fb` — analyze pass 3 (NOT READY: B1 to B6 medium, nine low): applied. `bash_entry_ok` reads only `PreToolUse`, needs exactly one marker group and no `disableAllHooks`; the settings file is written before the role files; `check` and the `update` NOTE inspect role files on disk (also unlocked, the KEPT path) with the same function; `decision(kind, reason)` keeps the mutation anchors unique and T001 updates them; T009 gains the cases for the sandbox flag, an invalid config and a missing lock, T010 gains the `repos`, `enforce` and `PreToolUse` mutations; the gate fails closed for the roles also on no project or lock and on an input that names a role but cannot be parsed or is too large; a configured command that is green gets an explicit allow, an unbalanced quote denies for the roles; `\\r` stripped; usable commands by ORDER; T008 and H2 added to the blocked-by edges; the nested-reviewer case and a deleted lock stated as residuals; ADR addendum notes the departure from "computed results only".
+- 2026-11-07 `e54b2d5` — H1: implementation approved by phong.ngo.vn in chat after three analyze passes (the third NOT READY with no high finding, all applied); recorded with `gate approve`

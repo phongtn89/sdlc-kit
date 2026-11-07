@@ -2,8 +2,8 @@
 
 Feature: reviewer-checks
 Number: 010
-Status: draft <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
-Approved: <!-- written by `sdlc gate approve --by <name>`: name, YYYY-MM-DD, digest sha256:<64 hex> (spec, plan, tasks, contracts prefixes) -->
+Status: approved <!-- draft | approved | implemented | superseded by NNN | rejected (YYYY-MM-DD: one-line reason). sdlc-analyze sets approved; sdlc-ship sets implemented; rejected records a feature that was built or evaluated and deliberately not adopted. -->
+Approved: phong.ngo.vn, 2026-11-07, digest sha256:ca8e19c0d7e8df63b5babe8990c236718982e041ae66826c21204c6d017aaf4f (spec b2bb2d2a4314, plan 9458da42bcc2, tasks c91c16272d81, contracts e3b0c44298fc) <!-- written by `sdlc gate approve --by <name>`: name, YYYY-MM-DD, digest sha256:<64 hex> (spec, plan, tasks, contracts prefixes) -->
 Owner: phong.ngo.vn
 Created: 2026-11-07
 Track: T3

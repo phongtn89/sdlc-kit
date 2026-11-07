@@ -1,6 +1,6 @@
 # Plan: Reviewer can run the project's check commands, and still cannot write
 
-Spec: [spec.md](spec.md) · Status: draft · Created: 2026-11-07
+Spec: [spec.md](spec.md) · Status: approved · Created: 2026-11-07
 
 ## Summary
 

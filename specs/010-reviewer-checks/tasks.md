@@ -35,4 +35,4 @@ Legend: `- [ ] T001 [P?] [S1] Description — files: … — verify: … — blo
 
 ## Progress log
 
-- 2026-11-07 `PLACEHOLDER` — spec drafted; probe run (`evals/results/reviewer-bash-probe.md`: a `Bash(<pattern>)` tools entry limits nothing, a project-level hook gets `agent_type` and its deny binds); three open questions answered by phong.ngo.vn in chat; plan and tasks written.
+- 2026-11-07 `20e1a56` — spec drafted; probe run (`evals/results/reviewer-bash-probe.md`: a `Bash(<pattern>)` tools entry limits nothing, a project-level hook gets `agent_type` and its deny binds); three open questions answered by phong.ngo.vn in chat; plan and tasks written.

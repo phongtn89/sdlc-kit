@@ -214,6 +214,98 @@ class ReviewerBash(Proj):
         self.assertEqual(self.call("git status", agent=None), "")
         self.assertIsNotNone(deny_reason(self.call("git push origin main", agent=None)))  # a push on red still denied
 
+    def set_config(self, **cfg):
+        with open(os.path.join(self.d, ".sdlc", "config.json"), "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+
+    def reason(self, out):
+        r = deny_reason(out)
+        self.assertIsNotNone(r, out)
+        self.assertTrue(r.startswith("sdlc: refused"), r)
+        return r
+
+    def test_the_security_reviewer_is_judged_like_the_reviewer(self):
+        self.assertEqual(self.decision(self.call(agent="sdlc-security-reviewer")).get("permissionDecision"), "allow")
+        self.reason(self.call("git status", agent="sdlc-security-reviewer"))
+
+    def test_other_agents_and_odd_agent_types_are_the_main_session(self):
+        for agent in ("sdlc-explorer", "sdlc-planner", "sdlc-implementer", "", 7, ["sdlc-reviewer"], None):
+            with self.subTest(repr(agent)):
+                self.assertEqual(self.call("git status", agent=agent), "")
+                self.assertEqual(self.decision(self.call(agent=agent)), {})  # not allowed explicitly either
+                self.assertIsNotNone(deny_reason(self.call("git push origin main", agent=agent)))
+
+    def test_a_missing_agent_type_key_is_the_main_session(self):
+        d = json.loads(fixture("agent-bash.json", self.d))
+        d.pop("agent_type")
+        d["tool_input"]["command"] = "git status"
+        self.assertEqual(self.fire("bash", json.dumps(d))[1].strip(), "")
+
+    def test_enforce_not_exactly_true_refuses_the_role_and_not_the_main_session(self):
+        for cfg in ({"enforce": False}, {"enforce": "true"}, {"enforce": 1}, {}):
+            with self.subTest(repr(cfg)):
+                self.set_config(commands={"test": self.TEST_COMMAND}, **cfg)
+                self.assertIn("enforce", self.reason(self.call()))
+                self.assertEqual(self.call("git status", agent=None), "")
+
+    def test_a_workspace_config_refuses_the_role(self):
+        self.set_config(enforce=True, commands={"test": self.TEST_COMMAND}, repos={"a": {"path": "a"}})
+        self.assertIn("workspace", self.reason(self.call()))
+        self.assertIn("workspaces are not supported", json.loads(self.call("git status", agent=None))["systemMessage"])
+
+    def test_a_call_outside_the_sandbox_is_refused_for_the_role_only(self):
+        d = json.loads(fixture("agent-bash.json", self.d))
+        d["tool_input"]["dangerouslyDisableSandbox"] = True
+        self.assertIn("sandbox", self.reason(self.fire("bash", json.dumps(d))[1].strip()))
+        d.pop("agent_type")
+        self.assertEqual(self.fire("bash", json.dumps(d))[1].strip(), "")
+
+    def test_an_unreadable_config_refuses_the_role_and_only_notes_for_the_main_session(self):
+        for text in ("{not json", "[1, 2]", ""):
+            with self.subTest(text):
+                with open(os.path.join(self.d, ".sdlc", "config.json"), "w", encoding="utf-8") as f:
+                    f.write(text)
+                self.assertIn("could not be read", self.reason(self.call()))
+                out = self.call("git status", agent=None)
+                self.assertIn("systemMessage", json.loads(out) if out else {})
+
+    def test_no_lock_refuses_the_role_and_is_silent_for_the_main_session(self):
+        os.remove(os.path.join(self.d, ".sdlc", "lock.json"))
+        self.assertIn("could not be read", self.reason(self.call()))
+        self.assertEqual(self.call("git status", agent=None), "")
+
+    def test_an_exception_inside_the_gate_refuses_the_role(self):
+        import sdlc_hooks
+        def broken(root):
+            raise RuntimeError("boom")
+        raw = fixture("agent-bash.json", self.d)
+        out = sdlc_hooks.run("bash", raw, {"CLAUDE_PROJECT_DIR": self.d}, broken, None)
+        self.assertIn("could not be read", self.reason(out))
+        main = json.loads(raw)
+        main.pop("agent_type")
+        self.assertIn("RuntimeError", json.loads(sdlc_hooks.run("bash", json.dumps(main), {"CLAUDE_PROJECT_DIR": self.d}, broken, None))["systemMessage"])
+
+    def test_input_the_hook_cannot_read_but_that_names_a_role_is_refused(self):
+        import sdlc_hooks
+        env = {"CLAUDE_PROJECT_DIR": self.d}
+        big = '{"agent_type": "sdlc-reviewer", "pad": "' + "x" * sdlc_hooks.INPUT_CAP + '"}'
+        for label, raw in (("over the cap", big), ("not json", 'oops "agent_type": "sdlc-security-reviewer" oops'),
+                           ("not an object", '["agent_type", "x"] "agent_type":"sdlc-reviewer"')):
+            with self.subTest(label):
+                self.assertIn("could not be read", self.reason(sdlc_hooks.run("bash", raw, env, lambda r: {}, None)))
+        for label, raw in (("over the cap", '{"agent_type": "sdlc-explorer", "pad": "' + "x" * sdlc_hooks.INPUT_CAP + '"}'),
+                           ("not json", "oops"), ("a role name inside a value", 'oops "x": "sdlc-reviewer"')):
+            with self.subTest("no role, " + label):
+                self.assertIn("systemMessage", json.loads(sdlc_hooks.run("bash", raw, env, lambda r: {}, None)))
+
+    def test_the_edit_and_stop_hooks_do_not_judge_a_role_by_its_agent_type(self):
+        d = json.loads(fixture("edit-file.json", self.d))
+        d["agent_type"] = "sdlc-reviewer"
+        self.assertEqual(self.fire("edit", json.dumps(d))[1].strip(), "")
+        s_ = json.loads(fixture("stop.json", self.d))
+        s_["agent_type"] = "sdlc-reviewer"
+        self.assertEqual(self.fire("stop", json.dumps(s_))[1].strip(), "")
+
     def test_a_fixture_command_that_is_not_configured_is_not_allowed_by_name(self):
         self.write_config({"commands": {"test": "python3 -m unittest"}})
         git(self.d, "add", "-A")

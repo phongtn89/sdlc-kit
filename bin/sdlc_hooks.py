@@ -437,6 +437,39 @@ def check_commands(cfg):
             if isinstance(commands.get(k), str) and commands[k].strip(" \t\r\n")}
 
 
+ROLE_NAMED = re.compile(r'"agent_type"\s*:\s*"(?:%s)"' % "|".join(re.escape(r) for r in CHECK_ROLES))
+
+
+def refuse_role(role, why):
+    return deny("sdlc: refused: the %s may not run commands%s" % (role.replace("sdlc-", "", 1), why))
+
+
+def unreadable(name, raw, text):
+    """The answer to input the hook cannot use: a note for the main session, a deny when the raw text names a reviewing
+    role as the caller (that role's shell is limited only by this hook, so it fails closed)."""
+    if name == "bash" and ROLE_NAMED.search(raw):
+        return refuse_role(ROLE_NAMED.search(raw).group(0).split('"')[-2], ": the hook's input could not be read")
+    return note(text)
+
+
+def role_gate(root, data, role, read_config, safe_path):
+    """The reviewing roles' Bash calls, judged before the gates of run() that return early, and failing closed."""
+    unread = ": the project's config or lock could not be read"
+    try:
+        cfg = read_config(root)  # a non-object config raises on `.get` below, and fails closed too
+        enforced = cfg.get("enforce") is True
+        if not enforced:
+            return refuse_role(role, " while enforce is off; run sdlc update")
+        if "repos" in cfg:
+            return refuse_role(role, " in a workspace config; run sdlc update")
+        tool_input = data.get("tool_input")
+        if isinstance(tool_input, dict) and tool_input.get("dangerouslyDisableSandbox"):
+            return refuse_role(role, " outside the sandbox")
+        return role_bash(root, cfg, data, role, safe_path)
+    except Exception:
+        return refuse_role(role, unread)
+
+
 def role_bash(root, cfg, data, role, safe_path):
     """A reviewing role's Bash call: only an exact configured check command is allowed, and said so explicitly,
     because a silent hook leaves the host's permission rules in charge and a test command is not read-only."""
@@ -500,18 +533,18 @@ def run(name, raw, env, read_config, safe_path):
     """Standard output for hook `name` given the host's JSON `raw`. Never raises."""
     try:
         if len(raw) > INPUT_CAP:
-            return note("hook input too large, skipped")
+            return unreadable(name, raw, "hook input too large, skipped")
         data = json.loads(raw)
         if not isinstance(data, dict):
-            return note("hook input is not an object, skipped")
+            return unreadable(name, raw, "hook input is not an object, skipped")
         start = env.get("CLAUDE_PROJECT_DIR") or data.get("cwd")
         root = project_root(start) if isinstance(start, str) and start else None
+        role = check_role(data) if name == "bash" else None
         if root is None:
-            return ""
-        cfg = read_config(root)
-        role = check_role(data) if name == "bash" and data.get("tool_name") == "Bash" else None
+            return refuse_role(role, ": the project's config or lock could not be read") if role else ""
         if role:  # before the gates below, which return early, so a role file's Bash is never left unchecked
-            return role_bash(root, cfg, data, role, safe_path)
+            return role_gate(root, data, role, read_config, safe_path)
+        cfg = read_config(root)
         if cfg.get("enforce") is not True:
             return ""
         if "repos" in cfg:  # the stop hook fires every turn: silent
@@ -524,4 +557,4 @@ def run(name, raw, env, read_config, safe_path):
             return on_stop(root, cfg, data, safe_path)
         return ""
     except Exception as e:  # a hook never traps the session
-        return note("hook %s skipped: %s: %s" % (name, type(e).__name__, str(e)[:120]))
+        return unreadable(name, raw, "hook %s skipped: %s: %s" % (name, type(e).__name__, str(e)[:120]))

@@ -1754,6 +1754,149 @@ class SyncVerdict(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.d, ".claude", "agents", "sdlc-reviewer.md")))
 
 
+class RenderBash(Bare):
+    """Spec 010: the reviewing roles are rendered with Bash only when the limit is real."""
+
+    READ = "tools: Read, Grep, Glob"
+    WITH_BASH = "tools: Read, Grep, Glob, Bash"
+    REVIEWERS = ("reviewer", "security-reviewer")
+
+    def tools_line(self, name, host="claude"):
+        rel = (".claude/agents/sdlc-%s.md" if host == "claude" else ".github/agents/sdlc-%s.agent.md") % name
+        for line in self.read(*rel.split("/")).split("\n"):
+            if line.startswith("tools:"):
+                return line
+        return None
+
+    def reviewers(self, expected):
+        for name in self.REVIEWERS:
+            self.assertEqual(self.tools_line(name), expected, name)
+
+    def settings_edit(self, fn):
+        s = self.settings()
+        fn(s)
+        self.write(json.dumps(s, indent=2) + "\n", ".claude", "settings.json")
+
+    def test_enforce_with_a_command_gives_the_reviewing_roles_bash_and_nobody_else(self):
+        self.config(enforce=True, commands={"test": "true"})
+        code, out, err = self.install("--targets", "claude,copilot")
+        self.assertEqual(code, 0, out + err)
+        self.reviewers(self.WITH_BASH)
+        for name in ("explorer", "planner"):
+            self.assertEqual(self.tools_line(name), self.READ, name)
+        self.assertIsNone(self.tools_line("implementer"))  # full access: no tools key, every tool
+        for name in self.REVIEWERS:  # Copilot never changes
+            self.assertEqual(self.tools_line(name, "copilot"), "tools: ['read', 'search']")
+        self.assertEqual(run("check", self.d)[1].strip(), "ok")
+
+    def test_each_missing_condition_renders_the_roles_as_before(self):
+        cases = (("enforce off", dict(enforce=False, commands={"test": "true"})),
+                 ("enforce absent", dict(commands={"test": "true"})),
+                 ("enforce not the json true", dict(enforce="true", commands={"test": "true"})),
+                 ("no commands", dict(enforce=True)),
+                 ("blank command", dict(enforce=True, commands={"test": "  "})),
+                 ("only a name verify does not run", dict(enforce=True, commands={"deploy": "run-deploy"})),
+                 ("only non-strings", dict(enforce=True, commands={"test": 5, "lint": ["x"]})),
+                 ("workspace", dict(enforce=True, commands={"test": "true"}, repos={"a": {"path": "a"}})))
+        for label, cfg in cases:
+            with self.subTest(label):
+                shutil.rmtree(self.d)
+                os.mkdir(self.d)
+                self.config(**cfg)
+                code, out, err = self.install("--targets", "claude")
+                self.assertEqual(code, 0, out + err)
+                self.reviewers(self.READ)
+
+    def test_a_copilot_only_install_renders_the_copilot_roles_as_before(self):
+        self.config(enforce=True, commands={"test": "true"})
+        code, out, err = self.install("--targets", "copilot")
+        self.assertEqual(code, 0, out + err)
+        for name in self.REVIEWERS:
+            self.assertEqual(self.tools_line(name, "copilot"), "tools: ['read', 'search']")
+
+    def test_a_hand_edited_bash_entry_takes_bash_back_out_of_the_roles(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.reviewers(self.WITH_BASH)
+        self.settings_edit(lambda s: s["hooks"]["PreToolUse"][0]["hooks"][0].update(timeout=5))
+        code, out, err = self.update()
+        self.assertEqual(code, 2, out + err)  # the existing SKIP for the edited entry
+        self.reviewers(self.READ)
+        code, out, err = self.update("--force")
+        self.assertEqual(code, 0, out + err)
+        self.reviewers(self.WITH_BASH)
+
+    def test_an_invalid_settings_file_renders_the_roles_without_bash(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.write("{not json", ".claude", "settings.json")
+        code, out, err = self.install("--targets", "claude")
+        self.assertEqual(code, 2, out + err)
+        self.reviewers(self.READ)
+
+    def test_an_edited_edit_or_stop_entry_does_not_take_bash_away(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.settings_edit(lambda s: (s["hooks"]["PreToolUse"][1]["hooks"][0].update(timeout=5),
+                                      s["hooks"]["Stop"][0]["hooks"][0].update(timeout=5)))
+        code, out, err = self.update()
+        self.assertEqual(code, 2, out + err)
+        self.reviewers(self.WITH_BASH)
+
+    def test_turning_enforce_off_or_removing_the_last_command_takes_bash_out_at_the_next_update(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.config(enforce=False, commands={"test": "true"})
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.reviewers(self.READ)
+        self.assertEqual(run("check", self.d)[1].strip(), "ok")
+        self.config(enforce=True, commands={"test": "true"})
+        self.update()
+        self.reviewers(self.WITH_BASH)
+        self.config(enforce=True, commands={})
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.reviewers(self.READ)
+        self.assertEqual(run("check", self.d)[1].strip(), "ok")
+
+    def test_only_the_boolean_true_of_the_role_key_counts(self):
+        fix = os.path.join(ROOT, "tests", "fixtures", "kit")
+        for value, bash in (("true", True), ("false", False), ("yes", False), ('"true"', False), ("1", False)):
+            with self.subTest(value):
+                kit = os.path.join(self._tmp.name, "kit-%d" % hash(value))
+                shutil.copytree(fix, kit)
+                role = os.path.join(kit, "core", "roles", "explorer.md")
+                with open(role, encoding="utf-8") as f:
+                    text = f.read()
+                with open(role, "w", encoding="utf-8") as f:
+                    f.write(text.replace("access: read-only", "access: read-only\nchecks: " + value))
+                project = os.path.join(self._tmp.name, "p-%d" % hash(value))
+                os.makedirs(os.path.join(project, ".sdlc"))
+                with open(os.path.join(project, ".sdlc", "config.json"), "w") as f:
+                    json.dump({"enforce": True, "commands": {"test": "true"}}, f)
+                code, out, err = run("--kit", kit, "install", project, "--targets", "claude")
+                self.assertEqual(code, 0, out + err)
+                with open(os.path.join(project, ".claude", "agents", "sdlc-explorer.md"), encoding="utf-8") as f:
+                    self.assertEqual("tools: Read, Grep, Glob, Bash" in f.read(), bash)
+
+    def test_a_second_update_changes_nothing(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        before = {n: self.read(".claude", "agents", "sdlc-%s.md" % n) for n in self.REVIEWERS}
+        code, out, err = self.update()
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(before, {n: self.read(".claude", "agents", "sdlc-%s.md" % n) for n in self.REVIEWERS})
+
+    def test_uninstall_removes_the_roles_and_the_entries(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        for name in self.REVIEWERS:
+            self.assertFalse(os.path.exists(self.path(".claude", "agents", "sdlc-%s.md" % name)))
+        self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+
+
 class CheckRoles(unittest.TestCase):
     """The hook's list of reviewing roles is the roles whose source says `checks: true` (spec 010, FR-008)."""
 

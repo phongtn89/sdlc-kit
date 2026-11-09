@@ -289,6 +289,7 @@ class ReviewerAbleToWrite(Project):
     RULE = "Reviewer able to write"
     targets = "claude,copilot"
     CLAUDE_READ_ONLY = {"Read", "Grep", "Glob"}
+    CLAUDE_WITH_CHECKS = CLAUDE_READ_ONLY | {"Bash"}  # a reviewing role, with enforce and a configured command
     COPILOT_READ_ONLY = {"read", "search"}
 
     def test_the_reviewers_are_among_the_read_only_roles(self):
@@ -304,12 +305,23 @@ class ReviewerAbleToWrite(Project):
     def test_a_read_only_role_renders_with_read_tools_only_for_both_hosts(self):
         # An allow list, not a deny list: a new tool that writes, runs commands or delegates must not slip through.
         for name in read_only_roles():
-            for rel, allowed in ((".claude/agents/sdlc-%s.md" % name, self.CLAUDE_READ_ONLY),
+            for rel, allowed in ((".claude/agents/sdlc-%s.md" % name, self.CLAUDE_WITH_CHECKS),
                                  (".github/agents/sdlc-%s.agent.md" % name, self.COPILOT_READ_ONLY)):
                 with self.subTest(rel):
                     tools = set(re.findall(r"[A-Za-z]+", self.tools(rel)))
                     self.assertTrue(tools, rel)
                     self.assertLessEqual(tools, allowed, rel)
+
+    def test_bash_is_for_the_reviewing_roles_only_and_only_with_enforce_and_a_command(self):
+        # This project has enforce and a command: the two reviewing roles hold Bash, no other read-only role does.
+        for name in read_only_roles():
+            tools = set(re.findall(r"[A-Za-z]+", self.tools(".claude/agents/sdlc-%s.md" % name)))
+            self.assertEqual("Bash" in tools, name in ("reviewer", "security-reviewer"), name)
+        # Without enforce the same install renders them read-only again.
+        self.config(enforce=False, commands={"test": "true"})
+        self.assertEqual(sdlc("update", self.d)[0], 0)
+        for name in ("reviewer", "security-reviewer"):
+            self.assertEqual(self.tools(".claude/agents/sdlc-%s.md" % name), "Read, Grep, Glob")
 
     def test_a_full_access_role_keeps_its_tools(self):
         self.assertIn("edit", self.tools(".github/agents/sdlc-implementer.agent.md"))

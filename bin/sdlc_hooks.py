@@ -70,6 +70,36 @@ def group_hash(group):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def bash_entry_ok(text, cli):
+    """Whether the bash hook is really in the settings `text` (spec 010): it parses, `disableAllHooks` is not truthy,
+    exactly one group in the whole file carries the marker `# sdlc-kit:bash`, that group sits under `PreToolUse`, and
+    its hash equals the expected group's for kit `cli`. Judged on the text, never on the lock: a skipped, hand-edited
+    entry keeps its old lock hash, which still equals the expected one while the kit has not moved."""
+    if text is None:
+        return False
+    try:
+        settings = load(text)
+        check_shape(settings)
+    except SettingsError:
+        return False
+    if settings.get("disableAllHooks"):
+        return False
+    marked = [(event, g) for event, groups in (settings.get("hooks") or {}).items() for g in groups
+              if group_name(g) == "bash"]
+    if len(marked) != 1:
+        return False
+    event, g = marked[0]
+    return event == "PreToolUse" and group_hash(g) == group_hash(group(cli, "bash"))
+
+
+def bash_hook_ok(config, targets, text, cli):
+    """Whether a reviewing role may be rendered with `Bash`: hooks are wanted for this install and the bash entry is
+    in the settings text the run leaves behind."""
+    if config.get("enforce") is not True or "claude" not in targets or "repos" in config:
+        return False
+    return bash_entry_ok(text, cli)
+
+
 def check_shape(settings):
     if not isinstance(settings, dict):
         raise SettingsError("the top level is not an object")

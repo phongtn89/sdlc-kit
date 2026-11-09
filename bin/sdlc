@@ -275,11 +275,15 @@ def block_inner(data, config):
 def render_role(name, role, target, config, models):
     fm, body = role["fm"], role["body"]
     ro = fm.get("access") == "read-only"
+    # A reviewing role (`checks: true`) gets Bash only when the bash hook is really in place and a check command is
+    # configured: the hook is what limits that shell to the configured commands (spec 010).
+    bash = (fm.get("checks") is True and config.get("_bash_hook_ok") is True
+            and bool(hooks_module().check_commands(config)))  # used under `if ro:` only; lint keeps checks read-only
     lines = ["---", "name: sdlc-%s" % name, "description: %s" % yaml_scalar(str(fm.get("description", "")))]
     both = "claude" in config["_targets"]
     if target == "claude":
         if ro:
-            lines.append("tools: Read, Grep, Glob")
+            lines.append("tools: Read, Grep, Glob" + (", Bash" if bash else ""))
         model = (config.get("models", {}).get("claude", {}) or {}).get(name) or models.get("claude", {}).get(name)
         if model:
             lines.append("model: %s" % model)

@@ -294,12 +294,14 @@ def render_role(name, role, target, config, models):
     return ("\n".join(lines) + "\n" + body).encode("utf-8")
 
 
-def render(kit, targets, modules, config):
-    """Return (files {rel: bytes}, blocks {rel: inner})."""
+def render(kit, targets, modules, config, hooks_ok=False):
+    """Return (files {rel: bytes}, blocks {rel: inner}). `hooks_ok`: the bash hook entry is in the settings the run
+    leaves behind (spec 010); the roles marked `checks: true` may then be rendered with `Bash`."""
     data = load_kit(kit, modules)
     models = load_json(os.path.join(kit, "adapters", "models.json"), "models.json")
     cfg = dict(config)
     cfg["_targets"] = targets
+    cfg["_bash_hook_ok"] = hooks_ok
     files = dict(data["shared"])
     blocks = {}
     inner = block_inner(data, config)
@@ -377,11 +379,6 @@ def sync(target, kit, targets, modules, force, first):
     """Render into target. Returns (exit_code, report lines)."""
     old = read_lock(target) or {"files": {}, "blocks": {}}
     config = read_config(target, kit)
-    files, blocks = render(kit, targets, modules, config)
-    if "claude" in targets:
-        f_add, b_add = plan_claude_md(target, old)
-        files.update(f_add)
-        blocks.update(b_add)
     hk = hooks_module()
     enforce = config.get("enforce") is True
     want = enforce and "claude" in targets and "repos" not in config
@@ -398,6 +395,14 @@ def sync(target, kit, targets, modules, force, first):
     else:
         s_action, s_new, s_lock, s_lines, s_skipped = hk.settings_plan(
             s_text, want, os.path.join(os.path.realpath(kit), "bin", "sdlc"), s_old, force)
+    # The settings text this run leaves behind decides whether a reviewing role may get Bash (spec 010).
+    s_after = s_new if s_action == "write" else (None if s_action == "delete" else s_text)
+    files, blocks = render(kit, targets, modules, config,
+                           hooks_ok=hk.bash_hook_ok(config, targets, s_after, os.path.join(os.path.realpath(kit), "bin", "sdlc")))
+    if "claude" in targets:
+        f_add, b_add = plan_claude_md(target, old)
+        files.update(f_add)
+        blocks.update(b_add)
     out = list(s_lines)
     written = removed = 0
     skipped = s_skipped
@@ -476,6 +481,15 @@ def sync(target, kit, targets, modules, force, first):
     if not os.path.exists(os.path.join(target, ".sdlc", "config.json")):
         write_file(target, ".sdlc/config.json", read_bytes(os.path.join(kit, "adapters", "config.default.json")))
         written += 1
+    # The settings file goes first: a failed write then leaves the role files as they were, never a role with Bash and
+    # no hook entry (spec 010).
+    if s_action == "write":
+        hk.write_atomic(s_full, s_new.encode("utf-8"))
+        written += 1
+    elif s_action == "delete":
+        os.remove(s_full)
+        prune_dirs(target, SETTINGS_REL)
+        removed += 1
     for kind, rel, payload in actions:
         if kind == "write":
             write_file(target, rel, payload)
@@ -492,13 +506,6 @@ def sync(target, kit, targets, modules, force, first):
         else:
             if drop_block(target, rel):
                 removed += 1
-    if s_action == "write":
-        hk.write_atomic(s_full, s_new.encode("utf-8"))
-        written += 1
-    elif s_action == "delete":
-        os.remove(s_full)
-        prune_dirs(target, SETTINGS_REL)
-        removed += 1
     lock = {"kit_version": read_text(os.path.join(kit, "VERSION")).strip(), "kit_path": os.path.realpath(kit),
             "targets": targets,
             "modules": modules, "files": new_lock_files, "blocks": new_lock_blocks}

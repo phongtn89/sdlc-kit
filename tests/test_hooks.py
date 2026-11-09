@@ -1544,6 +1544,216 @@ class AtomicWrite(unittest.TestCase):
         self.assertEqual(slurp(target), "x")
 
 
+class BashEntryOk(unittest.TestCase):
+    """Spec 010, analyze N1 and B1: whether the bash hook is really in the settings text a run leaves behind."""
+
+    KIT = "/kit/bin/sdlc"
+
+    def text(self, mutate=None, cli=KIT):
+        import copy
+        import sdlc_hooks
+        settings = {"hooks": copy.deepcopy(sdlc_hooks.render_entries(cli))}
+        if mutate:
+            mutate(settings)
+        return sdlc_hooks.dump(settings, "")
+
+    def ok(self, text, cli=KIT):
+        import sdlc_hooks
+        return sdlc_hooks.bash_entry_ok(text, cli)
+
+    def test_an_intact_entry_is_ok(self):
+        self.assertTrue(self.ok(self.text()))
+
+    def test_a_missing_file_or_text_that_cannot_be_used_is_not_ok(self):
+        for text in (None, "", "{not json", "[]", '{"hooks": []}', '{"hooks": {"PreToolUse": [1]}}', "null"):
+            with self.subTest(repr(text)):
+                self.assertFalse(self.ok(text))
+
+    def test_a_hand_edited_bash_entry_is_not_ok_even_with_the_kit_unmoved(self):
+        def edit(s):
+            s["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = "true # sdlc-kit:bash"
+        self.assertFalse(self.ok(self.text(edit)))
+
+        def timeout(s):
+            s["hooks"]["PreToolUse"][0]["hooks"][0]["timeout"] = 5
+        self.assertFalse(self.ok(self.text(timeout)))
+
+        def matcher(s):
+            s["hooks"]["PreToolUse"][0]["matcher"] = "Read"
+        self.assertFalse(self.ok(self.text(matcher)))
+
+    def test_the_entry_must_sit_under_pretooluse(self):
+        def move(s):
+            s["hooks"]["Stop"].append(s["hooks"]["PreToolUse"].pop(0))
+        self.assertFalse(self.ok(self.text(move)))
+
+    def test_exactly_one_marked_group_in_the_whole_file(self):
+        def intact_under_stop_edited_under_pre(s):
+            s["hooks"]["Stop"].append(s["hooks"]["PreToolUse"][0])
+            s["hooks"]["PreToolUse"][0] = {"matcher": "Bash", "hooks": [{"type": "command", "command": "true # sdlc-kit:bash"}]}
+        self.assertFalse(self.ok(self.text(intact_under_stop_edited_under_pre)))
+
+        def twice(s):
+            s["hooks"]["PreToolUse"].append(s["hooks"]["PreToolUse"][0])
+        self.assertFalse(self.ok(self.text(twice)))
+
+    def test_disable_all_hooks_is_not_ok(self):
+        for value in (True, "yes", 1):
+            with self.subTest(repr(value)):
+                self.assertFalse(self.ok(self.text(lambda s, v=value: s.update(disableAllHooks=v))))
+        self.assertTrue(self.ok(self.text(lambda s: s.update(disableAllHooks=False))))
+
+    def test_the_other_entries_and_the_projects_own_settings_do_not_matter(self):
+        def tweak(s):
+            s["hooks"]["PreToolUse"][1]["hooks"][0]["timeout"] = 1  # the edit entry
+            s["hooks"]["Stop"][0]["hooks"][0]["command"] = "true # sdlc-kit:stop"
+            s["hooks"]["PreToolUse"].append({"matcher": "Bash", "hooks": [{"type": "command", "command": "mine.sh"}]})
+            s["permissions"] = {"allow": ["Bash(ls)"]}
+        self.assertTrue(self.ok(self.text(tweak)))
+
+    def test_an_entry_for_another_kit_path_is_not_ok(self):
+        self.assertFalse(self.ok(self.text(cli="/old/kit/bin/sdlc"), cli="/new/kit/bin/sdlc"))
+
+    def test_the_verdict_also_needs_enforce_the_claude_target_and_no_workspace(self):
+        import sdlc_hooks
+        text = self.text()
+        v = lambda cfg, targets: sdlc_hooks.bash_hook_ok(cfg, targets, text, self.KIT)
+        self.assertTrue(v({"enforce": True}, ["claude"]))
+        self.assertTrue(v({"enforce": True}, ["claude", "copilot"]))
+        for cfg in ({}, {"enforce": False}, {"enforce": "true"}, {"enforce": 1}, {"enforce": True, "repos": {}}):
+            with self.subTest(repr(cfg)):
+                self.assertFalse(v(cfg, ["claude"]))
+        self.assertFalse(v({"enforce": True}, ["copilot"]))
+
+
+class SyncVerdict(unittest.TestCase):
+    """`sync` hands `render` the verdict derived from the settings text the run leaves behind, and writes the settings
+    file before the role files."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.d = os.path.join(self._tmp.name, "proj")
+        os.makedirs(os.path.join(self.d, ".sdlc"))
+        self.cli = load_cli()
+        self.seen = []
+        original = self.cli.render
+
+        def spy(kit, targets, modules, config, *args, **kwargs):
+            self.seen.append(kwargs.get("hooks_ok", args[0] if args else None))
+            return original(kit, targets, modules, config, *args, **kwargs)
+        self.cli.render = spy
+
+    def config(self, **cfg):
+        with open(os.path.join(self.d, ".sdlc", "config.json"), "w", encoding="utf-8") as f:
+            json.dump(dict({"commands": {"test": "true"}}, **cfg), f)
+
+    def sync(self, kit=ROOT, targets=("claude",), force=False, first=False):
+        return self.cli.sync(self.d, kit, list(targets), [], force, first)
+
+    def settings_path(self):
+        return os.path.join(self.d, ".claude", "settings.json")
+
+    def edit_settings(self, fn):
+        with open(self.settings_path(), encoding="utf-8") as f:
+            s = json.load(f)
+        fn(s)
+        with open(self.settings_path(), "w", encoding="utf-8") as f:
+            json.dump(s, f)
+
+    def installed(self, **cfg):
+        self.config(enforce=True, **cfg)
+        code, lines = self.sync(first=True)
+        self.assertEqual(code, 0, lines)
+        self.seen.clear()
+
+    def test_a_fresh_install_with_enforce_has_a_true_verdict(self):
+        self.config(enforce=True)
+        code, lines = self.sync(first=True)
+        self.assertEqual((code, self.seen), (0, [True]), lines)
+
+    def test_without_enforce_the_verdict_is_false(self):
+        self.config()
+        self.sync(first=True)
+        self.assertEqual(self.seen, [False])
+
+    def test_a_settings_text_already_in_place_gives_a_true_verdict(self):
+        self.installed()
+        self.sync()
+        self.assertEqual(self.seen, [True])
+
+    def test_a_hand_edited_bash_entry_gives_false_unless_forced(self):
+        self.installed()
+        self.edit_settings(lambda s: s["hooks"]["PreToolUse"][0]["hooks"][0].update(timeout=5))
+        code, lines = self.sync()
+        self.assertEqual((code, self.seen), (2, [False]), lines)  # SKIP, and the kit has not moved
+        self.seen.clear()
+        code, lines = self.sync(force=True)
+        self.assertEqual((code, self.seen), (0, [True]), lines)
+
+    def test_a_hand_edited_edit_or_stop_entry_does_not_change_the_verdict(self):
+        self.installed()
+        self.edit_settings(lambda s: (s["hooks"]["PreToolUse"][1]["hooks"][0].update(timeout=5),
+                                      s["hooks"]["Stop"][0]["hooks"][0].update(timeout=5)))
+        code, lines = self.sync()
+        self.assertEqual((code, self.seen), (2, [True]), lines)
+
+    def test_invalid_settings_json_gives_false(self):
+        self.installed()
+        with open(self.settings_path(), "w", encoding="utf-8") as f:
+            f.write("{not json")
+        self.sync()
+        self.assertEqual(self.seen, [False])
+
+    def test_a_symlink_that_escapes_the_project_gives_false_and_one_inside_is_read_as_a_file(self):
+        self.installed()
+        outside = os.path.join(self._tmp.name, "outside.json")
+        shutil.move(self.settings_path(), outside)
+        os.symlink(outside, self.settings_path())
+        self.sync()
+        self.assertEqual(self.seen, [False])
+        self.seen.clear()
+        os.remove(self.settings_path())
+        inside = os.path.join(self.d, "shared.json")
+        shutil.move(outside, inside)
+        os.symlink(inside, self.settings_path())
+        self.sync()
+        self.assertEqual(self.seen, [True])
+
+    def test_a_workspace_config_and_a_copilot_only_target_give_false(self):
+        self.config(enforce=True, repos={"a": {"path": "a"}})
+        self.sync(first=True)
+        self.assertEqual(self.seen, [False])
+        self.seen.clear()
+        self.config(enforce=True)
+        self.sync(targets=("copilot",))
+        self.assertEqual(self.seen, [False])
+
+    def test_a_moved_kit_rewritten_by_the_same_run_gives_true(self):
+        self.installed()
+        moved = os.path.join(self._tmp.name, "kit2")
+        shutil.copytree(ROOT, moved, ignore=shutil.ignore_patterns(".git", "__pycache__", "specs", "evals"))
+        code, lines = self.sync(kit=moved)
+        self.assertEqual((code, self.seen), (0, [True]), lines)
+
+    def test_a_deleted_bash_entry_is_added_back_in_the_same_run_so_the_verdict_is_true(self):
+        self.installed()
+        self.edit_settings(lambda s: s["hooks"]["PreToolUse"].pop(0))
+        code, lines = self.sync()
+        self.assertEqual((code, self.seen), (0, [True]), lines)
+
+    def test_the_settings_file_is_written_before_the_role_files(self):
+        self.config()
+        self.sync(first=True)  # no hooks yet
+        os.remove(os.path.join(self.d, ".claude", "agents", "sdlc-reviewer.md"))  # a role file the next run restores
+        self.config(enforce=True)
+        os.chmod(os.path.join(self.d, ".claude"), 0o555)  # the settings file cannot be created
+        self.addCleanup(os.chmod, os.path.join(self.d, ".claude"), 0o755)
+        with self.assertRaises(OSError):
+            self.sync()
+        self.assertFalse(os.path.exists(os.path.join(self.d, ".claude", "agents", "sdlc-reviewer.md")))
+
+
 class CheckRoles(unittest.TestCase):
     """The hook's list of reviewing roles is the roles whose source says `checks: true` (spec 010, FR-008)."""
 

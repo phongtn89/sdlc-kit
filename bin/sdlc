@@ -379,6 +379,45 @@ def hooks_module():
     return sdlc_hooks
 
 
+def lists_bash(text):
+    """Whether a role file's front matter names Bash under its tools key, in any YAML form (spec 010)."""
+    m = re.match(r"---\n(.*?)\n---(?:\n|$)", text.replace("\r\n", "\n"), re.S)
+    lines = m.group(1).split("\n") if m else []
+    for i, line in enumerate(lines):
+        if line.startswith("tools:"):
+            value = [line[len("tools:"):]]
+            for nxt in lines[i + 1:]:
+                if nxt[:1] not in (" ", "\t", "-"):
+                    break
+                value.append(nxt)
+            return "Bash" in re.findall(r"\w+", " ".join(value))
+    return False
+
+
+def roles_with_bash(target, planned=None):
+    """The reviewing role files that list Bash: the text `planned` gives (None: removed), else the file on disk, also
+    one the lock does not record (spec 010)."""
+    found = []
+    for role in hooks_module().CHECK_ROLES:
+        rel = ".claude/agents/%s.md" % role
+        if planned is not None and rel in planned:
+            data = planned[rel]
+        else:
+            full = safe_path(target, rel)
+            data = read_bytes(full) if os.path.isfile(full) else None
+        if data is not None and lists_bash(data.decode("utf-8", "replace")):
+            found.append(rel)
+    return found
+
+
+def settings_text_or_none(target):
+    try:
+        full = safe_path(target, SETTINGS_REL)
+        return read_text(full) if os.path.isfile(full) else None
+    except (SdlcError, OSError, UnicodeDecodeError):
+        return None
+
+
 def sync(target, kit, targets, modules, force, first):
     """Render into target. Returns (exit_code, report lines)."""
     old = read_lock(target) or {"files": {}, "blocks": {}}
@@ -401,8 +440,8 @@ def sync(target, kit, targets, modules, force, first):
             s_text, want, os.path.join(os.path.realpath(kit), "bin", "sdlc"), s_old, force)
     # The settings text this run leaves behind decides whether a reviewing role may get Bash (spec 010).
     s_after = s_new if s_action == "write" else (None if s_action == "delete" else s_text)
-    files, blocks = render(kit, targets, modules, config,
-                           hooks_ok=hk.bash_hook_ok(config, targets, s_after, os.path.join(os.path.realpath(kit), "bin", "sdlc")))
+    cli = os.path.join(os.path.realpath(kit), "bin", "sdlc")
+    files, blocks = render(kit, targets, modules, config, hooks_ok=hk.bash_hook_ok(config, targets, s_after, cli))
     if "claude" in targets:
         f_add, b_add = plan_claude_md(target, old)
         files.update(f_add)
@@ -482,6 +521,12 @@ def sync(target, kit, targets, modules, force, first):
         if rel not in blocks:
             actions.append(("unblock", rel, None))
 
+    if not hk.bash_entry_ok(s_after, cli):  # a role file left alone that still lists Bash (spec 010)
+        planned = {rel: (payload if kind == "write" else None) for kind, rel, payload in actions
+                   if kind in ("write", "remove")}
+        for rel in roles_with_bash(target, planned):
+            out.append("NOTE %s lists Bash and the bash hook entry is not rendered; "
+                       "run sdlc update --force or delete the file" % rel)
     if not os.path.exists(os.path.join(target, ".sdlc", "config.json")):
         write_file(target, ".sdlc/config.json", read_bytes(os.path.join(kit, "adapters", "config.default.json")))
         written += 1
@@ -617,6 +662,10 @@ def cmd_check(a, kit):
             s_lines = ["DRIFT %s: cannot read it: %s" % (SETTINGS_REL, e if isinstance(e, SdlcError) else e.__class__.__name__)]
         out.extend(s_lines)
         drift = drift or bool(s_lines)
+    if not hk.bash_entry_ok(settings_text_or_none(target), os.path.join(os.path.realpath(kit), "bin", "sdlc")):
+        for rel in roles_with_bash(target):  # on disk, also unlocked: a shell no hook limits (spec 010)
+            out.append("DRIFT %s: lists Bash and the bash hook entry is not intact" % rel)
+            drift = True
     enforce = config.get("enforce") is True
     kit_path = lock.get("kit_path")
     if isinstance(kit_path, str) and not os.path.isdir(kit_path):

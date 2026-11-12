@@ -1064,6 +1064,9 @@ class Settings(unittest.TestCase):
 
 
 KIT_ENTRIES = ("bash", "edit", "stop")
+# With enforce and a command the reviewing roles list Bash; a broken bash entry adds these lines (spec 010).
+ROLE_DRIFT = ["DRIFT .claude/agents/sdlc-%s.md: lists Bash and the bash hook entry is not intact" % n
+              for n in ("reviewer", "security-reviewer")]
 
 
 class Bare(unittest.TestCase):
@@ -1371,7 +1374,7 @@ class Lifecycle(Bare):
         self.edit_settings(tweak)
         code, out, err = self.check()
         self.assertEqual(code, 1, out + err)
-        self.assertEqual(out.strip().splitlines(), ["DRIFT .claude/settings.json: kit hook bash edited"])
+        self.assertEqual(out.strip().splitlines(), ["DRIFT .claude/settings.json: kit hook bash edited"] + ROLE_DRIFT)
 
     def test_check_reports_a_missing_entry_and_a_missing_file(self):
         self.on()
@@ -1386,7 +1389,7 @@ class Lifecycle(Bare):
         code, out, err = self.check()
         self.assertEqual(code, 1, out + err)
         self.assertEqual(out.strip().splitlines(),
-                         ["DRIFT .claude/settings.json: kit hook %s missing" % n for n in KIT_ENTRIES])
+                         ["DRIFT .claude/settings.json: kit hook %s missing" % n for n in KIT_ENTRIES] + ROLE_DRIFT)
 
     def test_check_ignores_the_projects_own_entries(self):
         self.on()
@@ -1754,8 +1757,8 @@ class SyncVerdict(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.d, ".claude", "agents", "sdlc-reviewer.md")))
 
 
-class RenderBash(Bare):
-    """Spec 010: the reviewing roles are rendered with Bash only when the limit is real."""
+class RoleFiles(Bare):
+    """Helpers for the rendered role files (spec 010); no tests of its own."""
 
     READ = "tools: Read, Grep, Glob"
     WITH_BASH = "tools: Read, Grep, Glob, Bash"
@@ -1776,6 +1779,11 @@ class RenderBash(Bare):
         s = self.settings()
         fn(s)
         self.write(json.dumps(s, indent=2) + "\n", ".claude", "settings.json")
+
+
+
+class RenderBash(RoleFiles):
+    """Spec 010: the reviewing roles are rendered with Bash only when the limit is real."""
 
     def test_enforce_with_a_command_gives_the_reviewing_roles_bash_and_nobody_else(self):
         self.config(enforce=True, commands={"test": "true"})
@@ -1894,6 +1902,152 @@ class RenderBash(Bare):
         self.assertEqual(code, 0, out + err)
         for name in self.REVIEWERS:
             self.assertFalse(os.path.exists(self.path(".claude", "agents", "sdlc-%s.md" % name)))
+        self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
+
+
+class RoleDrift(RoleFiles):
+    """Spec 010 T007: `check` and `update` report a role file on disk that lists Bash while the bash hook entry is not
+    intact, also one the lock no longer records."""
+
+    def drift_line(self, name):
+        return "DRIFT .claude/agents/sdlc-%s.md: lists Bash and the bash hook entry is not intact" % name
+
+    def note_line(self, name):
+        return ("NOTE .claude/agents/sdlc-%s.md lists Bash and the bash hook entry is not rendered; "
+                "run sdlc update --force or delete the file" % name)
+
+    def add_bash(self, name):
+        rel = (".claude", "agents", "sdlc-%s.md" % name)
+        text = self.read(*rel)
+        self.assertIn(self.READ + "\n", text)
+        self.write(text.replace(self.READ + "\n", self.WITH_BASH + "\n", 1), *rel)
+
+    def test_check_is_ok_while_the_entry_is_intact(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.reviewers(self.WITH_BASH)
+        self.assertEqual(run("check", self.d)[:2], (0, "ok\n"))
+
+    def test_check_reports_a_role_with_bash_when_the_entry_was_edited(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        self.settings_edit(lambda s: s["hooks"]["PreToolUse"][0]["hooks"][0].update(timeout=5))
+        code, out, err = run("check", self.d)
+        self.assertEqual(code, 1, out + err)
+        for name in self.REVIEWERS:
+            self.assertIn(self.drift_line(name), out.splitlines())
+
+    def test_check_reports_a_role_with_bash_when_the_settings_file_is_gone_or_broken(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        for label, act in (("deleted", lambda: os.remove(self.path(".claude", "settings.json"))),
+                           ("broken", lambda: self.write("{not json", ".claude", "settings.json")),
+                           ("hooks off", lambda: self.write('{"disableAllHooks": true}', ".claude", "settings.json"))):
+            with self.subTest(label):
+                act()
+                code, out, err = run("check", self.d)
+                self.assertEqual(code, 1, out + err)
+                self.assertIn(self.drift_line("reviewer"), out.splitlines())
+
+    def test_check_reads_a_role_file_the_lock_does_not_record(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "copilot")
+        self.assertEqual(run("check", self.d)[:2], (0, "ok\n"))
+        self.write("---\nname: sdlc-reviewer\ntools: Read, Bash\n---\nbody\n", ".claude", "agents", "sdlc-reviewer.md")
+        code, out, err = run("check", self.d)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn(self.drift_line("reviewer"), out.splitlines())
+        self.assertNotIn(self.drift_line("security-reviewer"), out)
+
+    def test_bash_counts_in_any_form_of_the_tools_key_and_only_there(self):
+        self.config(enforce=True)
+        self.install("--targets", "copilot")
+        rel = (".claude", "agents", "sdlc-reviewer.md")
+        for text, listed in (("---\ntools: Read, Bash(git status)\n---\n", True),
+                             ("---\ntools: [Read, Bash]\n---\n", True),
+                             ("---\ntools:\n  - Read\n  - Bash\nmodel: x\n---\n", True),
+                             ("---\r\ntools: Read, Bash\r\n---\r\n", True),
+                             ("---\ndescription: never runs Bash\ntools: Read, Grep\n---\nBash in the body\n", False),
+                             ("---\ntools: Read, BashLike\n---\n", False),
+                             ("no front matter, tools: Bash\n", False),
+                             ("---\nname: sdlc-reviewer\n---\ntools: Bash\n", False)):
+            with self.subTest(text):
+                self.write(text, *rel)
+                code, out, err = run("check", self.d)
+                self.assertEqual(self.drift_line("reviewer") in out.splitlines(), listed, out + err)
+                self.assertEqual(code, 1 if listed else 0, out + err)
+
+    def test_the_kept_path_is_reported_by_update_and_check(self):
+        self.config(enforce=True)
+        self.install("--targets", "claude,copilot")
+        self.reviewers(self.READ)
+        self.add_bash("reviewer")
+        code, out, err = self.install("--targets", "copilot")
+        lines = out.splitlines()
+        self.assertIn("KEPT .claude/agents/sdlc-reviewer.md (modified locally, no longer managed)", lines)
+        self.assertIn(self.note_line("reviewer"), lines)
+        self.assertNotIn(self.note_line("security-reviewer"), out)
+        self.assertLess(lines.index(self.note_line("reviewer")), len(lines) - 1)  # the summary stays last
+        code, out, err = run("check", self.d)
+        self.assertEqual(code, 1, out + err)
+        self.assertIn(self.drift_line("reviewer"), out.splitlines())
+
+    def test_update_notes_a_skipped_role_with_bash_after_the_entries_were_removed(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        rel = (".claude", "agents", "sdlc-reviewer.md")
+        self.write(self.read(*rel) + "\nlocal line\n", *rel)
+        self.config(enforce=False, commands={"test": "true"})
+        code, out, err = self.update()
+        self.assertEqual(code, 2, out + err)
+        lines = out.splitlines()
+        self.assertIn("SKIP .claude/agents/sdlc-reviewer.md (modified locally)", lines)
+        self.assertIn(self.note_line("reviewer"), lines)
+        self.assertNotIn(self.note_line("security-reviewer"), out)  # re-rendered without Bash
+        self.assertEqual(self.tools_line("security-reviewer"), self.READ)
+        self.assertEqual(run("check", self.d)[0], 1)
+        code, out, err = self.update("--force")
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("NOTE .claude/agents", out)
+        self.reviewers(self.READ)
+        self.assertEqual(run("check", self.d)[:2], (0, "ok\n"))
+
+    def test_no_note_for_role_files_the_run_removes(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude,copilot")
+        self.reviewers(self.WITH_BASH)
+        code, out, err = self.install("--targets", "copilot")
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("NOTE .claude/agents", out)
+        self.assertFalse(os.path.exists(self.path(".claude", "agents", "sdlc-reviewer.md")))
+        self.assertEqual(run("check", self.d)[:2], (0, "ok\n"))
+
+    def test_update_prints_no_note_while_the_entry_is_rendered(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        rel = (".claude", "agents", "sdlc-reviewer.md")
+        self.write(self.read(*rel) + "\nlocal line\n", *rel)
+        code, out, err = self.update()
+        self.assertIn("SKIP .claude/agents/sdlc-reviewer.md (modified locally)", out)
+        self.assertNotIn("NOTE .claude/agents", out)
+
+    def test_deleting_the_file_clears_the_drift(self):
+        self.config(enforce=True)
+        self.install("--targets", "claude,copilot")
+        self.add_bash("reviewer")
+        self.install("--targets", "copilot")
+        os.remove(self.path(".claude", "agents", "sdlc-reviewer.md"))
+        self.assertEqual(run("check", self.d)[:2], (0, "ok\n"))
+
+    def test_uninstall_keeps_a_hand_edited_role_and_removes_the_rest(self):
+        self.config(enforce=True, commands={"test": "true"})
+        self.install("--targets", "claude")
+        rel = (".claude", "agents", "sdlc-reviewer.md")
+        self.write(self.read(*rel) + "\nlocal line\n", *rel)
+        code, out, err = run("uninstall", self.d)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("KEPT .claude/agents/sdlc-reviewer.md (modified locally)", out.splitlines())
+        self.assertFalse(os.path.exists(self.path(".claude", "agents", "sdlc-security-reviewer.md")))
         self.assertFalse(os.path.exists(self.path(".claude", "settings.json")))
 
 

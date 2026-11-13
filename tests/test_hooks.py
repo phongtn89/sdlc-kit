@@ -634,7 +634,8 @@ class Fixtures(unittest.TestCase):
 
     NAMES = {"bash-push.json": ("PreToolUse", "Bash"), "edit-file.json": ("PreToolUse", "Edit"),
              "write-file.json": ("PreToolUse", "Write"), "multiedit.json": ("PreToolUse", "MultiEdit"),
-             "notebook.json": ("PreToolUse", "NotebookEdit"), "stop.json": ("Stop", None)}
+             "notebook.json": ("PreToolUse", "NotebookEdit"), "stop.json": ("Stop", None),
+             "agent-bash.json": ("PreToolUse", "Bash")}
 
     def test_fixtures_carry_the_fields_the_hooks_read(self):
         for name, (event, tool) in self.NAMES.items():
@@ -646,6 +647,24 @@ class Fixtures(unittest.TestCase):
                     self.assertEqual(d["tool_name"], tool)
                     key = {"Bash": "command", "NotebookEdit": "notebook_path"}.get(tool, "file_path")
                     self.assertIsInstance(d["tool_input"][key], str)
+
+    def test_a_subagent_call_carries_its_agent_type(self):
+        """Spec 010: the role gate reads `agent_type`; the host sends it with `agent_id` for a sub-agent's call."""
+        import sdlc_hooks
+        d = json.loads(fixture("agent-bash.json", "/proj"))
+        for key in ("agent_id", "agent_type", "tool_name", "tool_input", "cwd"):
+            self.assertIn(key, d)
+        self.assertIsInstance(d["agent_id"], str)
+        self.assertIn(d["agent_type"], sdlc_hooks.CHECK_ROLES)
+        self.assertEqual(sdlc_hooks.check_role(d), d["agent_type"])
+        for name in set(self.NAMES) - {"agent-bash.json"}:  # the main session's calls carry no agent_type
+            self.assertNotIn("agent_type", json.loads(fixture(name, "/proj")), name)
+
+    def test_the_hand_run_recheck_covers_the_reviewer_calls(self):
+        with open(os.path.join(ROOT, "evals", "scenarios.md"), encoding="utf-8") as f:
+            row = next(line for line in f if line.startswith("| HR1 |"))
+        for text in ("`agent_type`", "agent-bash.json", '"allow"', "sdlc-reviewer"):
+            self.assertIn(text, row)
 
     def test_rendered_entries_match_the_host_format(self):
         import sdlc_hooks

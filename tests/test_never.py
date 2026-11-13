@@ -326,6 +326,122 @@ class ReviewerAbleToWrite(Project):
     def test_a_full_access_role_keeps_its_tools(self):
         self.assertIn("edit", self.tools(".github/agents/sdlc-implementer.agent.md"))
 
+    # Spec 010: the reviewing roles' Bash is limited by the rendered bash hook, driven here as the host drives it.
+    ROLES = ("sdlc-reviewer", "sdlc-security-reviewer")
+
+    def as_role(self, command, role="sdlc-reviewer", **extra):
+        return self.hook("bash", {"hook_event_name": "PreToolUse", "tool_name": "Bash", "agent_id": "a-1",
+                                  "agent_type": role, "tool_input": dict({"command": command}, **extra)})
+
+    def allowed(self, out):
+        try:
+            out = json.loads(out).get("hookSpecificOutput") or {}
+        except ValueError:
+            return False
+        return out.get("hookEventName") == "PreToolUse" and out.get("permissionDecision") == "allow"
+
+    def edit_settings(self, fn):
+        path = os.path.join(self.d, ".claude", "settings.json")
+        with open(path, encoding="utf-8") as f:
+            settings = json.load(f)
+        fn(settings)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+
+    def test_a_reviewing_role_may_run_exactly_the_configured_command(self):
+        for role in self.ROLES:
+            with self.subTest(role):
+                self.assertTrue(self.allowed(self.as_role("true", role)), role)  # explicit allow: no approval prompt
+
+    def test_anything_else_a_reviewing_role_runs_is_refused(self):
+        for role in self.ROLES:
+            for command in ("true; touch x", "true && touch x", "true > out.txt", "true | tee x", "true extra",
+                            "$(true)", "git status", "touch x", "python3 -c 1", ""):
+                with self.subTest(role=role, command=command):
+                    self.assertTrue(denied(self.as_role(command, role)), command)
+
+    def test_the_main_session_is_unaffected(self):
+        out = self.push("git status")
+        self.assertFalse(denied(out), out)
+        self.assertFalse(self.allowed(out), out)  # silent: the host's own permission rules decide
+        explorer = self.as_role("git status", "sdlc-explorer")  # not a reviewing role: the main-session rules
+        self.assertFalse(denied(explorer), explorer)
+
+    def test_the_sandbox_flag_is_refused_even_with_the_exact_command(self):
+        for role in self.ROLES:
+            with self.subTest(role):
+                self.assertTrue(denied(self.as_role("true", role, dangerouslyDisableSandbox=True)), role)
+
+    def test_turning_enforce_off_without_update_refuses_the_roles(self):
+        self.config(enforce=False, commands={"test": "true"})  # the role file still lists Bash until the next update
+        self.assertEqual(set(re.findall(r"[A-Za-z]+", self.tools(".claude/agents/sdlc-reviewer.md"))),
+                         self.CLAUDE_WITH_CHECKS)
+        for role in self.ROLES:
+            self.assertTrue(denied(self.as_role("true", role)), role)
+        self.assertEqual(self.push("git status"), "")
+
+    def test_a_workspace_config_refuses_the_roles(self):
+        self.config(enforce=True, commands={"test": "true"}, repos={"a": {"path": "a"}})
+        for role in self.ROLES:
+            self.assertTrue(denied(self.as_role("true", role)), role)
+
+    def test_an_invalid_config_refuses_the_roles_and_notes_the_main_session(self):
+        self.write(".sdlc/config.json", "{not json")
+        for role in self.ROLES:
+            self.assertTrue(denied(self.as_role("true", role)), role)
+        out = self.push("git status")
+        self.assertFalse(denied(out), out)
+        self.assertIn("sdlc", message(out))
+
+    def test_a_missing_lock_refuses_the_roles(self):
+        os.remove(os.path.join(self.d, ".sdlc", "lock.json"))
+        for role in self.ROLES:
+            self.assertTrue(denied(self.as_role("true", role)), role)
+        self.assertFalse(denied(self.push("git status")))
+
+    def test_a_hand_edited_bash_entry_takes_bash_out_at_the_next_update(self):
+        self.edit_settings(lambda s: s["hooks"]["PreToolUse"][0]["hooks"][0].update(timeout=5))
+        self.assertEqual(sdlc("update", self.d)[0], 2)  # the edited entry is skipped, not overwritten
+        for name in ("reviewer", "security-reviewer"):
+            self.assertEqual(self.tools(".claude/agents/sdlc-%s.md" % name), "Read, Grep, Glob")
+
+    def test_a_bash_entry_moved_to_another_event_takes_bash_out(self):
+        def move(s):
+            group = next(g for g in s["hooks"]["PreToolUse"] if "# sdlc-kit:bash" in g["hooks"][0]["command"])
+            s["hooks"]["PreToolUse"].remove(group)
+            s["hooks"]["PostToolUse"] = [group]
+        self.edit_settings(move)
+        code, out = sdlc("check", self.d)  # the role files still list Bash: the entry under another event limits nothing
+        self.assertEqual(code, 1, out)
+        self.assertIn("DRIFT .claude/agents/sdlc-reviewer.md: lists Bash and the bash hook entry is not intact", out)
+        sdlc("update", self.d)
+        for name in ("reviewer", "security-reviewer"):
+            self.assertEqual(self.tools(".claude/agents/sdlc-%s.md" % name), "Read, Grep, Glob")
+
+    def test_an_intact_entry_left_behind_with_enforce_off_gives_no_bash(self):
+        # The lock's record no longer matches, so the run keeps the entry as the project's own: still no Bash.
+        path = os.path.join(self.d, ".sdlc", "lock.json")
+        with open(path, encoding="utf-8") as f:
+            lock = json.load(f)
+        lock["settings"][".claude/settings.json"]["hooks"]["bash"] = "0" * 64
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(lock, f)
+        self.config(enforce=False, commands={"test": "true"})
+        sdlc("update", self.d)
+        self.assertIn("# sdlc-kit:bash", self.read(".claude/settings.json"))  # the entry stayed, intact
+        for name in ("reviewer", "security-reviewer"):
+            self.assertEqual(self.tools(".claude/agents/sdlc-%s.md" % name), "Read, Grep, Glob")
+
+    def test_enforce_off_with_commands_renders_no_bash_at_install(self):
+        project = os.path.join(self._tmp.name, "off")
+        os.makedirs(os.path.join(project, ".sdlc"))
+        with open(os.path.join(project, ".sdlc", "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"enforce": False, "commands": {"test": "true"}}, f)
+        self.assertEqual(sdlc("install", project, "--targets", "claude")[0], 0)
+        for name in ("reviewer", "security-reviewer"):
+            with open(os.path.join(project, ".claude", "agents", "sdlc-%s.md" % name), encoding="utf-8") as f:
+                self.assertIn("\ntools: Read, Grep, Glob\n", f.read())
+
 
 def rules_in_the_adr():
     with open(ADR, encoding="utf-8") as f:
